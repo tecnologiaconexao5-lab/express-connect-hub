@@ -5,7 +5,11 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { municipioComSigla, municipioComSiglaDeTexto } from "@/lib/resumoRotaOS";
+import {
+  municipioComSigla,
+  municipioComSiglaDeTexto,
+  rotuloPontoRotaDetalhado,
+} from "@/lib/resumoRotaOS";
 import { gerarMensagemWhatsAppMotoboy } from "@/lib/osWhatsAppMessage";
 
 const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
@@ -17,6 +21,8 @@ const alertas = readSrc("src/hooks/useOSSiteAlerts.ts");
 const rede = readSrc("src/services/operacao/redePrestadoresService.ts");
 const lista = readSrc("src/components/operacao/OrdensServicoLista.tsx");
 const sheet = readSrc("src/components/torre-controle/DetalhesOperacaoSheet.tsx");
+const osService = readSrc("src/services/ordemServicoService.ts");
+const formatDates = readSrc("src/lib/formatDates.ts");
 
 describe("1) Numeração da OS só é consumida ao Salvar", () => {
   it("não gera número na montagem (sem efeito void gerarNumeroOS)", () => {
@@ -77,6 +83,36 @@ describe("4) Duplicidade da Rede com mensagem amigável", () => {
   it("os toasts da Rede não exibem o erro técnico", () => {
     expect(lista).toContain("MSG_REDE_JA_EXISTE");
     expect(osForm).toContain("MSG_REDE_JA_EXISTE");
+  });
+});
+
+describe("6) Sequenciador sem random e timezone date-fns-tz", () => {
+  it("gera o número pelo maior existente + 1 (sem Math.random)", () => {
+    expect(osService).toContain("f_proximo_numero_os_sequencial");
+    expect(osService).not.toContain("Math.random");
+    expect(osService).toContain("maior + 1");
+    // O formulário também não pode gerar número aleatório/provisório.
+    expect(osForm).not.toContain("Math.random");
+    expect(osForm).toContain('numero: "",');
+  });
+
+  it("conversão visual usa date-fns-tz America/Sao_Paulo", () => {
+    expect(formatDates).toContain('from "date-fns-tz"');
+    expect(formatDates).toContain("formatInTimeZone");
+    expect(formatDates).toContain("fromZonedTime");
+    expect(formatDates).toContain("America/Sao_Paulo");
+  });
+
+  it("não repete o município (São Paulo São Paulo → São Paulo (SAO))", () => {
+    expect(municipioComSigla({ cidade: "São Paulo São Paulo", uf: "SP" })).toBe(
+      "São Paulo (SAO)",
+    );
+    expect(municipioComSiglaDeTexto("São Paulo São Paulo - SP")).toBe(
+      "São Paulo (SAO)",
+    );
+    expect(
+      rotuloPontoRotaDetalhado({ bairro: "São Paulo", cidade: "São Paulo", uf: "SP" }),
+    ).toBe("São Paulo");
   });
 });
 

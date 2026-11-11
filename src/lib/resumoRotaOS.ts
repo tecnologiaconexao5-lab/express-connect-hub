@@ -159,6 +159,24 @@ export function siglaCidade(cidade?: string | null, uf?: string | null): string 
 }
 
 /**
+ * Remove repetições acidentais no nome do município:
+ * "São Paulo São Paulo" → "São Paulo".
+ */
+const semMunicipioRepetido = (valor: string): string => {
+  const texto = valor.replace(/\s+/g, " ").trim();
+  if (!texto) return texto;
+  const palavras = texto.split(" ");
+  const n = palavras.length;
+  if (n > 1 && n % 2 === 0) {
+    const metade = n / 2;
+    const a = palavras.slice(0, metade).join(" ").toLowerCase();
+    const b = palavras.slice(metade).join(" ").toLowerCase();
+    if (a === b) return palavras.slice(0, metade).join(" ");
+  }
+  return texto;
+};
+
+/**
  * Município + sigla a partir de um endereço estruturado: "São Caetano do Sul (SCS)".
  * Usado no cabeçalho do WhatsApp e no alerta da rede (nunca o bairro).
  */
@@ -173,6 +191,9 @@ export function municipioComSigla(endereco?: EnderecoResumoRota | null): string 
   }
   const fallback = String(endereco.endereco || endereco.logradouro || "").trim();
   if (!cidade) return fallback;
+  cidade = semMunicipioRepetido(cidade);
+  // Se já veio formatado com sigla, não duplica.
+  if (/\([A-Z]{2,4}\)\s*$/.test(cidade)) return cidade;
   const sigla = siglaCidade(cidade, uf);
   return sigla ? `${cidade} (${sigla})` : cidade;
 }
@@ -185,8 +206,11 @@ export function municipioComSiglaDeTexto(texto?: string | null): string {
   const bruto = String(texto || "").trim();
   if (!bruto) return "";
   const derivado = derivarBairroCidade(bruto);
-  const cidade = derivado.cidade || bruto.replace(/\s*[-–]\s*[A-Za-z]{2}$/, "").trim();
+  const cidade = semMunicipioRepetido(
+    derivado.cidade || bruto.replace(/\s*[-–]\s*[A-Za-z]{2}$/, "").trim(),
+  );
   if (!cidade) return bruto;
+  if (/\([A-Z]{2,4}\)\s*$/.test(cidade)) return cidade;
   const sigla = siglaCidade(cidade, derivado.uf);
   return sigla ? `${cidade} (${sigla})` : cidade;
 }
@@ -230,7 +254,13 @@ export function rotuloPontoRotaDetalhado(endereco?: EnderecoResumoRota | null): 
     if (!uf) uf = derivado.uf;
   }
 
-  if (bairro && cidade) return `${bairro} ${cidade}`;
+  if (bairro && cidade) {
+    const b = normalizarCidade(bairro);
+    const c = normalizarCidade(cidade);
+    // Nunca repete o município: "São Paulo São Paulo" → "São Paulo".
+    if (b === c || c.includes(b)) return cidade;
+    return `${bairro} ${cidade}`;
+  }
   if (bairro) return uf ? `${bairro} ${uf}` : bairro;
   if (cidade) return uf ? `${cidade}-${uf}` : cidade;
   return uf || String(endereco.endereco || endereco.logradouro || "").trim();

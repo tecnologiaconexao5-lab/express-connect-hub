@@ -21,22 +21,41 @@ const STATUS_OS_PARA_ESCALA: Record<string, string> = {
 
 /**
  * Número sequencial da OS — formato oficial `OS-AAAAMM-<sequência>`.
- * A sequência vive no banco (`os_numero_seq`, começa em 1200) e é lida pela
- * RPC `f_proximo_numero_os`. O fallback aleatório só é usado enquanto a
- * migration não estiver aplicada no ambiente.
+ *
+ * Regra: SEMPRE o maior número existente no mês + 1. Sem geração aleatória
+ * e sem consumir a sequence global (não há pulos por tentativas/falhas).
+ * A RPC `f_proximo_numero_os_sequencial` faz o cálculo no banco; o fallback
+ * local repete a mesma regra se a migration ainda não estiver aplicada.
  */
 export async function gerarNumeroOS(): Promise<string> {
   try {
-    const { data, error } = await supabase.rpc("f_proximo_numero_os");
+    const { data, error } = await supabase.rpc("f_proximo_numero_os_sequencial");
     if (!error && typeof data === "string" && data.trim()) return data.trim();
   } catch {
-    // segue para o fallback
+    // segue para o fallback sequencial no cliente
   }
-  const now = new Date();
-  const ano = now.getFullYear();
-  const mes = String(now.getMonth() + 1).padStart(2, "0");
-  const seq = String(Math.floor(Math.random() * 900000) + 100000).padStart(6, "0");
-  return `OS-${ano}${mes}-${seq}`;
+
+  const [ano, mes] = hojeISOSP().split("-");
+  const prefixo = `OS-${ano}${mes}-`;
+  try {
+    const { data } = await supabase
+      .from("ordens_servico")
+      .select("numero")
+      .like("numero", `${prefixo}%`)
+      .limit(2000);
+
+    let maior = 1199;
+    for (const row of (data || []) as Array<{ numero?: string | null }>) {
+      const sufixo = Number(String(row.numero || "").slice(prefixo.length));
+      if (Number.isInteger(sufixo) && sufixo >= 1000 && sufixo <= 99999 && sufixo > maior) {
+        maior = sufixo;
+      }
+    }
+    return `${prefixo}${String(maior + 1).padStart(4, "0")}`;
+  } catch {
+    // Último recurso determinístico (não aleatório); o save valida duplicidade.
+    return `${prefixo}1200`;
+  }
 }
 
 function mapearStatusOSParaEscala(statusOS: string): string {

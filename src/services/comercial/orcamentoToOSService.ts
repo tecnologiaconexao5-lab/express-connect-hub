@@ -4,6 +4,8 @@
 // ============================================================
 
 import { supabase } from "@/lib/supabase";
+import { agoraSaoPauloISO } from "@/lib/formatDates";
+import { gerarNumeroOS } from "@/services/ordemServicoService";
 import type { Orcamento } from "@/components/comercial/types";
 import { verificarInadimplenciaEName } from "@/services/financeiro/inadimplenciaService";
 import {
@@ -24,51 +26,7 @@ export interface GerarOSResult {
  * (`toISOString`) fazia a tela somar +3h em "Solicitada". Geramos o valor já
  * no fuso local de São Paulo (UTC-3) para a coluna naive.
  */
-const agoraSaoPauloISO = (): string => {
-  const partes = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const get = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "00";
-  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`;
-};
-
 // ─── Gerador de número OS (formato: OS-AAAAMM-NNNNNN) ─────────────────────────
-const gerarNumeroOS = async (): Promise<string> => {
-  const agora = new Date();
-  const ano = agora.getFullYear();
-  const mes = String(agora.getMonth() + 1).padStart(2, "0");
-  const prefixo = `OS-${ano}${mes}-`;
-
-  try {
-    const { data } = await supabase
-      .from("ordens_servico")
-      .select("numero")
-      .ilike("numero", `${prefixo}%`)
-      .order("numero", { ascending: false })
-      .limit(1);
-
-    if (data && data.length > 0) {
-      const ultimo = data[0].numero as string;
-      const seq = parseInt(ultimo.replace(prefixo, ""), 10);
-      if (!isNaN(seq)) {
-        return `${prefixo}${String(seq + 1).padStart(6, "0")}`;
-      }
-    }
-  } catch {
-    // silencia erros de sequência e usa random
-  }
-
-  const rand = Math.floor(Math.random() * 900000) + 100000;
-  return `${prefixo}${rand}`;
-};
-
 // ─── Aprovar orçamento ────────────────────────────────────────────────────────
 export const aprovarOrcamento = async (
   orc: Orcamento

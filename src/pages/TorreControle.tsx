@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 import MapboxMap, { MapLocation } from "@/components/MapboxMap";
 import { useTheme } from "@/hooks/useTheme";
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
+import { formatarDataBR } from "@/lib/formatDates";
 import {
   isOSConcluida,
   calcularRiscoOperacional,
@@ -86,7 +87,7 @@ const timeAgo = (timestamp: string): string => {
   if (diffH < 24) return `${diffH}h${diffMin % 60}min`;
   const diffD = Math.floor(diffH / 24);
   if (diffD < 30) return `${diffD}d`;
-  return new Date(timestamp).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return formatarDataBR(timestamp).slice(0, 5);
 };
 
 interface FiltrosMapaProps {

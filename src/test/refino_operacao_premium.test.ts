@@ -176,7 +176,7 @@ describe("E) Sequência oficial da OS (OS-AAAAMM-1200+)", () => {
   });
 
   it("E.3 frontend: serviço e formulário usam gerarNumeroOS()", () => {
-    expect(osService).toContain('supabase.rpc("f_proximo_numero_os")');
+    expect(osService).toContain('supabase.rpc("f_proximo_numero_os_sequencial")');
     expect(osService).toContain("export async function gerarNumeroOS");
     expect(osService).toContain("const numero = await gerarNumeroOS();");
     expect(osForm).toContain("gerarNumeroOS");

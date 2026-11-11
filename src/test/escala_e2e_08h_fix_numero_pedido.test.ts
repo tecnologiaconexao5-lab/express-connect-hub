@@ -38,13 +38,12 @@ describe("ESCALA-E2E-08H — B: payload sem campo inválido", () => {
 });
 
 describe("ESCALA-E2E-08H — C: numeração interna da OS preservada", () => {
-  it("numero = OS-{ano}{mes}-{seq} via sequência oficial (f_proximo_numero_os)", () => {
-    // Sequência oficial no banco (os_numero_seq começa em 1200)
-    expect(ORDEM_SERVICO).toContain('supabase.rpc("f_proximo_numero_os")');
+  it("numero = OS-{ano}{mes}-{seq} via sequenciador sequencial do mês", () => {
+    // Maior número existente no mês + 1 (sem Math.random, sem pular a sequence)
+    expect(ORDEM_SERVICO).toContain('supabase.rpc("f_proximo_numero_os_sequencial")');
     expect(ORDEM_SERVICO).toContain("export async function gerarNumeroOS");
     expect(ORDEM_SERVICO).toContain("const numero = await gerarNumeroOS();");
-    // Fallback local mantém o formato quando a migration ainda não foi aplicada
-    expect(ORDEM_SERVICO).toMatch(/return `OS-\$\{ano\}\$\{mes\}-\$\{seq\}`;/);
+    expect(ORDEM_SERVICO).toContain("maior + 1");
   });
 });
 

@@ -52,7 +52,7 @@ import { useRouterBlocker } from "@/hooks/useRouterBlocker";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO, sugerirVeiculo, VEICULO_PARAMETROS } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
-import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
+import { formatarDataBR, formatarDataHoraBR, hojeISOSP } from "@/lib/formatDates";
 import { formatarDistanciaKm } from "@/lib/formatNumbers";
 import { criarClienteRapido, criarPrestadorRapido, ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
 import { STATUS_CLIENTES_SELECIONAVEIS } from "@/lib/clienteStatus";
@@ -299,7 +299,8 @@ const emptyOS = (): OrdemServico => {
   // Data de emissão no fuso de São Paulo (evita "dia anterior/seguinte" no UTC).
   const dataHoje = hojeISOSP();
   return {
-    numero: `OS-${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900000)+100000).padStart(6,'0')}`,
+    // Número provisório vazio: o sequencial real é gerado APENAS no Salvar.
+    numero: "",
     data: dataHoje, cliente: "", unidade: "", centroCusto: "", orcamentoOrigem: "", prestador: "", veiculoAlocado: "", veiculoPlaca: "",
     tipoOperacao: "Coleta e Entrega", modalidade: "esporadico", prioridade: "normal", status: "em_analise", responsavel: "", refCliente: "", pedidoInterno: "", slaOperacao: "", observacoesGerais: "",
     comprovanteObrigatorio: true, cteObrigatorio: false, xmlObrigatorio: false, operacaoDedicada: false,
@@ -568,7 +569,7 @@ const ResumoOperacionalPanel = ({
           <div className="mb-2 space-y-0.5 text-[11px] text-slate-500">
             <div className="flex items-center gap-1.5"><User className="h-3 w-3 text-slate-400" /> Última operação do prestador</div>
             <div className="pl-4 text-[10px]">
-              {ultimaOperacaoPrestador.data ? new Date(ultimaOperacaoPrestador.data).toLocaleDateString("pt-BR") : "N/A"}
+              {ultimaOperacaoPrestador.data ? formatarDataBR(ultimaOperacaoPrestador.data) : "N/A"}
               {verReceitaMargem && ultimaOperacaoPrestador.valor ? ` • R$ ${ultimaOperacaoPrestador.valor.toFixed(2)}` : ""}
             </div>
           </div>
@@ -2114,10 +2115,27 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         }
       }
 
-      const { data: dbResult, error } = data.id 
+      let insertResult = data.id
         ? await supabase.from("ordens_servico").update(sanitizedPayload).eq("id", data.id).select().single()
         : await supabase.from("ordens_servico").insert([sanitizedPayload]).select().single();
 
+      // Concorrência: se outro usuário salvou o mesmo número, gera o próximo
+      // sequencial e tenta uma vez mais (sem erro técnico para o operador).
+      if (
+        insertResult.error &&
+        !data.id &&
+        /duplicate key|unique constraint|23505/i.test(insertResult.error.message || "")
+      ) {
+        numeroFinal = await gerarNumeroOS();
+        sanitizedPayload.numero = numeroFinal;
+        insertResult = await supabase
+          .from("ordens_servico")
+          .insert([sanitizedPayload])
+          .select()
+          .single();
+      }
+
+      const { data: dbResult, error } = insertResult;
       if (error) throw error;
       const savedOS = dbResult;
 
@@ -2497,7 +2515,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
           <MetaChip icon={Calendar} label="Programação" value={obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")} tone={diagnosticoEscala?.status === "sincronizada" ? "emerald" : diagnosticoEscala?.status?.startsWith("divergencia") ? "red" : "amber"} />
           {ultimaOperacaoPrestador && (
             <span className="ml-auto text-[10px] text-slate-400">
-              Última operação do prestador: {ultimaOperacaoPrestador.data ? new Date(ultimaOperacaoPrestador.data).toLocaleDateString('pt-BR') : 'N/A'}
+              Última operação do prestador: {ultimaOperacaoPrestador.data ? formatarDataBR(ultimaOperacaoPrestador.data) : 'N/A'}
               {verReceitaMargem && ultimaOperacaoPrestador.valor ? <> • R$ {ultimaOperacaoPrestador.valor.toFixed(2)}</> : null}
             </span>
           )}
@@ -2570,7 +2588,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         <TabsContent value="identificacao" className="space-y-4">
               <FormSectionCard icon={FileText} title="Dados do Documento" description="Identificação básica da ordem de serviço.">
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                  <Field label="Nº OS"><Input value={data.numero} readOnly className="bg-slate-50 font-bold" /></Field>
+                   <Field label="Nº OS"><Input value={data.numero || "Gerado ao salvar"} readOnly className="bg-slate-50 font-bold" /></Field>
                   <Field label="Romaneio / OC Cliente">
                     <Input
                       value={data.romaneio || ""}
@@ -4478,7 +4496,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                             <span className="text-indigo-600 font-medium">Expira em</span>
                             <p className="font-bold text-indigo-900">
                               {redeOportunidade.prazo_expiracao
-                                ? new Date(redeOportunidade.prazo_expiracao).toLocaleString("pt-BR")
+                                ? formatarDataHoraBR(redeOportunidade.prazo_expiracao)
                                 : "Sem prazo"}
                             </p>
                           </div>
@@ -4506,7 +4524,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                                 <span className="text-green-600 font-medium">Aceite em</span>
                                 <p className="font-bold text-green-900">
                                   {aceiteRedeInfo.aceite_em
-                                    ? new Date(aceiteRedeInfo.aceite_em).toLocaleString("pt-BR")
+                                    ? formatarDataHoraBR(aceiteRedeInfo.aceite_em)
                                     : "—"}
                                 </p>
                               </div>
@@ -4821,7 +4839,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                              <div>
                                <p className="text-sm font-bold text-slate-800">{h.acao}</p>
                                <div className="flex items-center gap-3 mt-1">
-                                 <span className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(h.data).toLocaleString('pt-BR')}</span>
+                                 <span className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {formatarDataHoraBR(h.data)}</span>
                                  <span className="text-[10px] uppercase font-bold text-primary flex items-center gap-1"><Avatar className="w-4 h-4"><AvatarFallback className="text-[8px]">{h.usuario[0]}</AvatarFallback></Avatar> {h.usuario}</span>
                                </div>
                                {h.status_novo && <Badge variant="outline" className="mt-2 text-[9px] uppercase tracking-wider">{STATUS_CORES[h.status_novo as OSStatus]?.label || h.status_novo}</Badge>}
