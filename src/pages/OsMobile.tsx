@@ -99,6 +99,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toClienteInsert } from "@/lib/dbMappers";
 import { gerarMensagemComprovantePOD } from "@/lib/podComprovante";
 import { limparCacheHistoricoEnderecos, salvarEnderecoFavoritoCliente } from "@/services/clientes/historicoEnderecosCliente";
+import { bairroComSigla } from "@/lib/resumoRotaOS";
 import ReciboPagamento from "@/components/os-mobile/ReciboPagamento";
 
 // ============================================================
@@ -289,7 +290,7 @@ const statusBadge = (status: string) => {
     em_andamento: { label: "Em andamento", className: "bg-indigo-100 text-indigo-800 border-indigo-200" },
     em_rota: { label: "Em rota", className: "bg-violet-100 text-violet-800 border-violet-200" },
     coletado: { label: "Coletado", className: "bg-cyan-100 text-cyan-800 border-cyan-200" },
-    finalizada: { label: "Finalizada", className: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+    finalizada: { label: "Finalizada", className: "bg-green-500 text-white border-green-600" },
   };
   return mapa[status] || { label: status, className: "bg-slate-100 text-slate-700 border-slate-200" };
 };
@@ -357,16 +358,14 @@ const formatarEnderecoCompletoPonto = (ponto: Record<string, unknown>): string =
   );
 };
 
-const bairroDoPonto = (ponto: Record<string, unknown>): string => {
-  const bairro = primeiroTexto(ponto.bairro);
-  if (bairro) return bairro;
-  const endereco = primeiroTexto(ponto.endereco_formatado, ponto.endereco);
-  const partes = endereco
-    .split(",")
-    .map((parte) => parte.trim())
-    .filter(Boolean);
-  return partes.length >= 2 ? partes[1] : "";
-};
+const bairroDoPonto = (ponto: Record<string, unknown>): string =>
+  bairroComSigla({
+    bairro: primeiroTexto(ponto.bairro),
+    cidade: primeiroTexto(ponto.cidade),
+    uf: primeiroTexto(ponto.estado, ponto.uf),
+    endereco: primeiroTexto(ponto.endereco_formatado, ponto.endereco),
+    logradouro: primeiroTexto(ponto.logradouro),
+  });
 
 const horarioDoPonto = (ponto: Record<string, unknown>): string => {
   const inicio = primeiroTexto(ponto.janela_inicio, ponto.janelaInicio);

@@ -108,7 +108,7 @@ describe("Template 1 — Resumo da Rota (padrão obrigatório)", () => {
     expect(linhas[0]).toBe("🟠 *CONEXÃO ⚡ EXPRESS* 🟣");
     expect(linhas[1]).toBe("━━━━━━━━━━━━━━━━━🏍️");
     expect(linhas[2]).toBe("");
-    expect(linhas[3]).toBe("*São Paulo (SAO) ━➤ São Paulo (SAO)* | *12,5 km*");
+    expect(linhas[3]).toBe("*Vila Madalena (SAO) ━➤ Bela Vista (SAO)* | *12,5 km*");
     expect(linhas[4]).toBe("");
     expect(linhas[5]).toBe("🟣 *【 1 】 RET* • Rua das Flores - CEP: 01310-100");
     expect(linhas[6]).toBe("⏰ 09:00–10:00");
@@ -190,7 +190,7 @@ describe("Template WhatsApp — MESMO gerador no /os-mobile (snake_case)", () =>
 
   it("preenche rota, janelas e CEP a partir do jsonb enderecos do mobile", () => {
     expect(linhas[1]).toBe("━━━━━━━━━━━━━━━━━🏍️");
-    expect(linhas[3]).toBe("*Guarulhos (GRU) ━➤ São Paulo (SAO)* | *10 km*");
+    expect(linhas[3]).toBe("*Centro (GRU) ━➤ Jardim Paulista (SAO)* | *10 km*");
     expect(linhas[5]).toBe("🟣 *【 1 】 RET* • Rua Alegre - CEP: 07010-000");
     expect(linhas[6]).toBe("⏰ 08:00–09:00");
     expect(linhas[9]).toBe("🟠 *【 2 】 ENT* • Rua do Campo - CEP: 02000-000");
@@ -271,7 +271,7 @@ describe("Template 2 — Orientação de Execução (OS completa)", () => {
   });
 
   it("rota + blocos RET e ENT com endereço COMPLETO (com número)", () => {
-    expect(msg).toContain("*São Paulo (SAO) ━➤ São Paulo (SAO)* | *12,5 km*");
+    expect(msg).toContain("*Vila Madalena (SAO) ━➤ Bela Vista (SAO)* | *12,5 km*");
     expect(msg).toContain("🟣 *【 1 】 RET* • Rua das Flores, 1234 - Vila Madalena, São Paulo/SP - 01310-100");
     expect(msg).toContain("🟠 *【 2 】 ENT* • Av. Paulista, 1000 - Bela Vista, São Paulo/SP - 01310-100");
     expect(msg).toContain("👤 *PROCURAR:* João Portaria");

@@ -53,6 +53,10 @@ const IGNORADOS = new Set(["de", "da", "do", "das", "dos", "e"]);
 
 const CEP_OU_NUMERO = /^(\d{5}-?\d{3}|\d+)$/;
 
+/** Prefixos que indicam logradouro (não bairro). */
+const PARECE_VIA =
+  /^(rua|r\.|av\.?|avenida|alameda|al\.|travessa|estrada|rodovia|rod\.?|praça|praca|largo|viela|via|estrada)\b/i;
+
 const capitalizar = (valor: string): string =>
   valor
     .toLowerCase()
@@ -62,6 +66,46 @@ const capitalizar = (valor: string): string =>
       return palavra.replace(/^\p{L}/u, (letra) => letra.toUpperCase());
     })
     .join(" ");
+
+/** Remove CEP e normaliza espaços de um trecho de endereço. */
+const limparTrecho = (valor: string): string =>
+  String(valor || "")
+    .replace(/\b\d{5}-?\d{3}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Extrai o BAIRRO de um trecho no padrão brasileiro:
+ *   "100 - Centro"      → "Centro"
+ *   "1234 - Vila Maria" → "Vila Maria"
+ *   "Rua X - Jardim"    → "Jardim"
+ *   "Centro, São Paulo" → "Centro"
+ *   "Vila Madalena"     → "Vila Madalena"
+ * Nunca devolve número de porta/CEP nem texto sem letras.
+ */
+const extrairBairroDeTrecho = (parte: string): string => {
+  let texto = limparTrecho(parte);
+  if (!texto) return "";
+
+  // "Rua X - Centro" / "100 - Centro": o bairro é o último trecho após o hífen.
+  if (/\s[-–]\s/.test(texto) || /^\d+[A-Za-z]?\s*[-–]/.test(texto)) {
+    const segmentos = texto
+      .split(/\s*[-–]\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (segmentos.length > 1) texto = segmentos[segmentos.length - 1];
+  }
+
+  // Remove número de porta no início ("100, Centro" / "100 Centro").
+  texto = texto.replace(/^\d+[A-Za-z]?\s*[,;]?\s*/, "").trim();
+
+  // "Centro, São Paulo" → fica apenas o primeiro trecho.
+  texto = texto.split(",").map((s) => s.trim()).filter(Boolean)[0] || "";
+
+  if (!texto || CEP_OU_NUMERO.test(texto.replace(/\s/g, ""))) return "";
+  if (!/\p{L}/u.test(texto)) return "";
+  return texto;
+};
 
 /**
  * Deriva bairro/cidade/UF do texto do endereço quando a OS não trouxe os
@@ -103,22 +147,22 @@ export function derivarBairroCidade(enderecoTexto?: string | null): {
   let bairro = "";
   if (idxCidade > 0) {
     for (let j = idxCidade - 1; j >= 0; j--) {
-      const parte = partes[j];
-      if (CEP_OU_NUMERO.test(parte.replace(/\s/g, ""))) {
-        if (/^\d{5}-?\d{3}$/.test(parte.replace(/\s/g, ""))) continue; // CEP
-        continue; // número de porta
-      }
-      // a primeira parte normalmente é a via (rua/avenida)
-      if (j === 0) break;
-      bairro = parte;
+      const candidato = extrairBairroDeTrecho(partes[j]);
+      if (!candidato) continue;
+      // A primeira parte normalmente é a via (rua/avenida) — o bairro,
+      // quando existe, vem depois dela (ou após o hífen, no fallback abaixo).
+      if (j === 0 && PARECE_VIA.test(partes[0])) break;
+      bairro = candidato;
       break;
     }
   }
 
-  // "Rua Y - Centro" → usa o trecho após o hífen como bairro
+  // "Rua Y - Centro" → usa o trecho após o hífen como bairro (nunca a via)
   if (!bairro && idxCidade > 0) {
-    const m = partes[0].match(/[-–]\s*(.+)$/);
-    if (m) bairro = m[1].trim();
+    const trecho = partes[0];
+    if (/\s[-–]\s/.test(trecho) || /^\d+[A-Za-z]?\s*[-–]/.test(trecho)) {
+      bairro = extrairBairroDeTrecho(trecho);
+    }
   }
 
   return {
@@ -213,6 +257,69 @@ export function municipioComSiglaDeTexto(texto?: string | null): string {
   if (/\([A-Z]{2,4}\)\s*$/.test(cidade)) return cidade;
   const sigla = siglaCidade(cidade, derivado.uf);
   return sigla ? `${cidade} (${sigla})` : cidade;
+}
+
+/**
+ * Formata um nome com a sigla da cidade: "Vila Madalena (SAO)".
+ * Nunca duplica o município ("Cidade Cidade").
+ */
+const formatarComSigla = (nome: string, cidade: string, uf: string): string => {
+  const limpo = capitalizar(semMunicipioRepetido(String(nome || "").trim()));
+  if (!limpo) return "";
+  if (/\([A-Z]{2,4}\)\s*$/.test(limpo)) return limpo;
+  const sigla = siglaCidade(cidade || limpo, uf);
+  return sigla ? `${limpo} (${sigla})` : limpo;
+};
+
+/**
+ * BAIRRO + sigla da cidade a partir de um endereço estruturado:
+ *   "Vila Madalena (SAO)".
+ *
+ * Regra estrita (pedido da operação): a rota do WhatsApp e da Rede usa o
+ * BAIRRO, nunca o município isolado. Formatos aceitos para extrair o bairro:
+ *   "Rua X, 100 - BAIRRO, Cidade - UF"
+ *   "Av. Sumaré, BAIRRO, Cidade - UF, CEP"
+ *   "Rua Y - BAIRRO, Cidade - UF"
+ * Se não houver bairro explícito, cai para a cidade (sem repeti-la).
+ */
+export function bairroComSigla(endereco?: EnderecoResumoRota | null): string {
+  if (!endereco) return "";
+  let bairro = String(endereco.bairro || "").trim();
+  let cidade = String(endereco.cidade || "").trim();
+  let uf = String(endereco.uf || endereco.estado || "").trim();
+
+  if (!bairro || !cidade) {
+    const derivado = derivarBairroCidade(endereco.endereco || endereco.logradouro || "");
+    if (!bairro) bairro = derivado.bairro;
+    if (!cidade) cidade = derivado.cidade;
+    if (!uf) uf = derivado.uf;
+  }
+
+  bairro = extrairBairroDeTrecho(bairro);
+  cidade = semMunicipioRepetido(limparTrecho(cidade));
+
+  // Fallback: sem bairro explícito, usa o município (nunca "Cidade Cidade").
+  const nome = bairro || cidade;
+  if (nome) return formatarComSigla(nome, cidade || nome, uf);
+
+  const fallback = limparTrecho(endereco.endereco || endereco.logradouro || "");
+  return fallback ? formatarComSigla(fallback, "", uf) : "";
+}
+
+/** BAIRRO + sigla a partir de texto livre ("Bairro, Cidade - UF"). */
+export function bairroComSiglaDeTexto(texto?: string | null): string {
+  const bruto = String(texto || "").trim();
+  if (!bruto) return "";
+  const derivado = derivarBairroCidade(bruto);
+  if (!derivado.bairro && !derivado.cidade) {
+    return semMunicipioRepetido(bruto.replace(/\s*[-–]\s*[A-Za-z]{2}$/, "").trim()) || bruto;
+  }
+  return bairroComSigla({
+    bairro: derivado.bairro,
+    cidade: derivado.cidade,
+    uf: derivado.uf,
+    endereco: bruto,
+  });
 }
 
 /** "Bairro-SIGLA" (ou apenas "SIGLA" quando o bairro não veio no endereço). */

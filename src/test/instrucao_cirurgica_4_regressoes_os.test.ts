@@ -48,7 +48,7 @@ describe("2) Municípios no formato Município (Sigla)", () => {
     );
   });
 
-  it("cabeçalho do WhatsApp usa município, não bairro", () => {
+  it("cabeçalho do WhatsApp usa o bairro (com sigla da cidade)", () => {
     const msg = gerarMensagemWhatsAppMotoboy({
       veiculoTipo: "Moto",
       enderecos: [
@@ -57,10 +57,10 @@ describe("2) Municípios no formato Município (Sigla)", () => {
       ],
       distanciaKm: 12,
     });
-    expect(msg).toContain("*São Caetano do Sul (SCS) ━➤ Diadema (DIA)*");
-    expect(msg).not.toContain("*Santa Maria ━➤ Taboão*");
-    expect(resumo).toContain("export function municipioComSigla");
-    expect(whatsapp).toContain("municipioComSigla");
+    expect(msg).toContain("*Santa Maria (SCS) ━➤ Taboão (DIA)*");
+    expect(msg).not.toContain("*São Caetano do Sul (SCS) ━➤ Diadema (DIA)*");
+    expect(resumo).toContain("export function bairroComSigla");
+    expect(whatsapp).toContain("bairroComSigla");
   });
 });
 

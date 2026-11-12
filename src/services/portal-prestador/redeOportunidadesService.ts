@@ -5,7 +5,7 @@
 // ============================================================
 
 import { supabase } from "@/lib/supabase";
-import { municipioComSigla, municipioComSiglaDeTexto } from "@/lib/resumoRotaOS";
+import { bairroComSigla, bairroComSiglaDeTexto } from "@/lib/resumoRotaOS";
 
 export interface OportunidadeRedeMobile {
   id: string;
@@ -100,14 +100,15 @@ export async function buscarOportunidadesRede(): Promise<OportunidadeRedeMobile[
       osId: row.os_id || null,
       osNumero: texto(os.numero) || null,
       status: texto(row.status) || "publicada",
-      // Cabeçalho sempre no formato "Município (Sigla)" — nunca bairro cortado.
+      // Cabeçalho no formato "Bairro (Sigla)" — bairro explícito do endereço,
+      // com fallback para o município (nunca repete "Cidade Cidade").
       origem:
-        municipioComSigla(coleta) ||
-        municipioComSiglaDeTexto(os.origem) ||
+        bairroComSigla(coleta) ||
+        bairroComSiglaDeTexto(os.origem) ||
         "Origem não informada",
       destino:
-        municipioComSigla(entrega) ||
-        municipioComSiglaDeTexto(os.destino) ||
+        bairroComSigla(entrega) ||
+        bairroComSiglaDeTexto(os.destino) ||
         "Destino não informado",
       regiao: texto(row.regiao) || null,
       distanciaKm: numero(os.distancia_km),

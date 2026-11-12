@@ -81,7 +81,7 @@ describe("4) WhatsApp sem mojibake e cabeçalho em negrito", () => {
       distanciaKm: 108.741547,
     });
     expect(msg).toContain("🏍️");
-    expect(msg).toContain("*São Paulo (SAO) ━➤ Campinas (CAM)*");
+    expect(msg).toContain("*Centro (SAO) ━➤ Jardim (CAM)*");
     expect(msg).not.toContain("\uFFFD");
   });
 });

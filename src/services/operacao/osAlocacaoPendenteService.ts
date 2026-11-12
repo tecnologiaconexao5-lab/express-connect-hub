@@ -10,7 +10,7 @@
 // prestador via vw_app_notificacoes_pendentes) e registra histórico na OS.
 // ============================================================================
 import { supabase } from "@/lib/supabase";
-import { municipioComSigla } from "@/lib/resumoRotaOS";
+import { bairroComSigla } from "@/lib/resumoRotaOS";
 import { veiculoCompativel, tiposVeiculoDoPrestador } from "@/services/operacao/redeVeiculoFiltro";
 
 /** Horas sem prestador a partir das quais a OS entra em "Risco de SLA". */
@@ -59,7 +59,7 @@ function cidadeColeta(enderecos: OsResumo["enderecos"]): string {
   try {
     const lista = Array.isArray(enderecos) ? enderecos : [];
     const coleta = lista.find((e) => e?.tipo === "coleta") || lista[0];
-    return municipioComSigla(coleta) || "";
+    return bairroComSigla(coleta) || "";
   } catch {
     return "";
   }
@@ -71,7 +71,7 @@ function cidadeEntrega(enderecos: OsResumo["enderecos"]): string {
     const entrega =
       [...lista].reverse().find((e) => e?.tipo === "entrega" || e?.tipo === "destino") ||
       lista[lista.length - 1];
-    return municipioComSigla(entrega) || "";
+    return bairroComSigla(entrega) || "";
   } catch {
     return "";
   }

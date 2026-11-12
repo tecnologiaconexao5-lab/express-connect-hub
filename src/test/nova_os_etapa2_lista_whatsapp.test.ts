@@ -113,7 +113,7 @@ describe("C) Template 2 — WhatsApp padrão Conexão Express", () => {
   });
 
   it("C.2 rota com asteriscos e km formatado", () => {
-    expect(msg).toContain("*São Paulo (SAO) ━➤ São Paulo (SAO)* | *18,3 km*");
+    expect(msg).toContain("*Vila Madalena (SAO) ━➤ Bela Vista (SAO)* | *18,3 km*");
   });
 
   it("C.3 pontos RET/ENT com emoji, asteriscos e bullet", () => {

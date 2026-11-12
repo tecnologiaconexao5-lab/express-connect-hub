@@ -92,7 +92,7 @@ export function obterClasseBadgeStatus(status: string | null | undefined): strin
   const ui = normalizarStatusParaUI(status);
   if (ui === 'cancelado') return 'bg-red-100 text-red-700 border-red-200';
   if (ui === 'confirmado') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-  if (ui === 'finalizado') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+  if (ui === 'finalizado') return 'bg-green-500 text-white border-green-600';
   if (ui === 'operacao') return 'bg-orange-500 text-white border-orange-600';
   return 'bg-amber-100 text-amber-700 border-amber-200';
 }

@@ -19,7 +19,7 @@ export const STATUS_OPERACIONAL: Record<OSStatus, StatusInfo> = {
   "em_rota": { label: "Em Rota", twClass: "bg-indigo-600 text-white" },
   "coletado": { label: "Carregando", twClass: "bg-orange-500 text-white" },
   "entregue": { label: "Entregue", twClass: "bg-green-600 text-white" },
-  "finalizada": { label: "Finalizado", twClass: "bg-emerald-600 text-white" },
+  "finalizada": { label: "Finalizado", twClass: "bg-green-500 text-white" },
   "cancelada": { label: "Cancelada", twClass: "bg-slate-400 text-white" },
   "ocorrencia": { label: "Ocorrência", twClass: "bg-orange-500 text-white" },
 };

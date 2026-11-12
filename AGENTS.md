@@ -1,5 +1,32 @@
 # Summary
 
+## MISSÃO ROTA-BAIRRO-SIGLA + BADGE-FINALIZADO-VERDE — Rota com bairro no WhatsApp/Rede e badge finalizado verde (2026-11-12)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` em `osTypes.ts`) · testes alvo **151/151** (10 ficheiros, inclui novo `rota_bairro_sigla`) · `npm run build` ok (52,21s).
+
+### Causa
+A rota do WhatsApp e da Rede usava `municipioComSigla` (município), produzindo “Herculândia (HER) ━➤ São Paulo (SAO)” mesmo quando o endereço tinha bairro explícito. O badge “Finalizado” estava em `emerald-600`/`emerald-100`.
+
+### O que mudou
+1. **`src/lib/resumoRotaOS.ts`** — `derivarBairroCidade` passou a extrair o bairro de forma estrita (`extrairBairroDeTrecho`: remove CEP, número de porta e pega o último trecho após hífen/vírgula; ignora via no início). Novas `bairroComSigla` e `bairroComSiglaDeTexto` devolvem **`${bairro} (${SIGLA})`**, com fallback para a cidade e sem “Cidade Cidade”.
+2. **Geradores** — `osWhatsAppMessage.ts` (`municipio` → `bairroRota`), `redeOportunidadesService.ts` (notificações da Rede), `osAlocacaoPendenteService.ts` (notificar base/agregados) e `OsMobile.tsx` (`bairroDoPonto`) passaram a usar `bairroComSigla`.
+3. **Badge verde** — `finalizado` agora é `green` com `bg-green-500 text-white` em `statusGlobal.ts` (lista de OS + cabeçalho do formulário), `osTypes.ts` (Preview/STATUS_CORES), `escalaStatus.ts` e `statusBadge` do `/os-mobile`.
+
+### Testes/validação
+- **NOVO** `src/test/rota_bairro_sigla.test.ts` (9 casos: bairro após hífen/vírgula, fallback cidade, nenhuma repetição “Cidade Cidade”, WhatsApp/Rede/base).
+- Atualizados: `fix_autocomplete_whatsapp`, `nova_os_etapa2_lista_whatsapp`, `instrucao_cirurgica_4_regressoes_os`, `correcao_cirurgica_2_3_tms_torre` (cabeçalho passa a bairro).
+- `npx vitest run` (10 ficheiros) → **151/151**; `npx tsc --noEmit` → 0; `npm run build` → ok.
+
+### Arquivos
+- `src/lib/resumoRotaOS.ts` · `src/lib/osWhatsAppMessage.ts` · `src/services/portal-prestador/redeOportunidadesService.ts` · `src/services/operacao/osAlocacaoPendenteService.ts` · `src/pages/OsMobile.tsx` · `src/components/operacao/statusGlobal.ts` · `src/components/operacao/osTypes.ts` · `src/components/operacao/escalaStatus.ts`
+- `src/test/rota_bairro_sigla.test.ts` (NOVO) · 4 testes de regressão atualizados · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (push) e conferir WhatsApp/Rede com bairro + badge verde.
+2. (nota) `municipioComSigla`/`municipioComSiglaDeTexto` permanecem para usos que exigem município (ex.: contexto fiscal).
+
+---
+
 ## MISSÃO FILTROS-PAGINACAO-OS — Filtros da lista de OS aplicados na query antes da paginação (2026-11-09)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **108/108** (8 ficheiros) + 6 ficheiros extra que leem a lista **todos verdes** · suíte completa **20 ficheiros / 46 testes falhos** = baseline + flaky `fin_prog05c3b` sob carga (**5/5 isolado**) · **2747 pass** · `npm run build` ok (2m16s).
