@@ -18,9 +18,10 @@ import {
   ExternalLink,
   Satellite,
 } from "lucide-react";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { supabase } from "@/lib/supabase";
 import MapboxMap, { type MapLocation } from "@/components/MapboxMap";
-import { formatarDataHoraBR } from "@/lib/formatDates";
+import { FUSO_BR, formatarDataHoraBR, parseDataHoraSP } from "@/lib/formatDates";
 
 interface Props {
   open: boolean;
@@ -53,10 +54,68 @@ const STATUS_OPERACIONAL_LABEL: Record<string, string> = {
   online: "Online",
 };
 
+/** Converte para número finito ou `null`. */
+const numeroOuNulo = (valor: unknown): number | null => {
+  if (valor === null || valor === undefined || valor === "") return null;
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : null;
+};
+
+/**
+ * Minutos decorridos desde o sinal do motorista, calculados no fuso
+ * America/Sao_Paulo. Converte o timestamp para São Paulo com `date-fns-tz`
+ * antes de comparar com o `new Date()` atual.
+ */
+const minutosDesdeSinalSP = (valor?: string | null): number | null => {
+  const instante = parseDataHoraSP(valor);
+  if (!instante) return null;
+
+  const sinalSP = fromZonedTime(
+    formatInTimeZone(instante, FUSO_BR, "yyyy-MM-dd'T'HH:mm:ss"),
+    FUSO_BR,
+  );
+  const agoraSP = fromZonedTime(
+    formatInTimeZone(new Date(), FUSO_BR, "yyyy-MM-dd'T'HH:mm:ss"),
+    FUSO_BR,
+  );
+  const minutos = Math.floor((agoraSP.getTime() - sinalSP.getTime()) / 60000);
+  return Math.max(0, minutos);
+};
+
+/**
+ * Bateria (%) a partir do payload real do App: coluna `bateria` ou
+ * `metadata.battery_level` / `batteryLevel` / `bateria` / `battery`.
+ * `null` quando o App não enviou o dado (0 também é tratado como ausente).
+ */
+const lerBateriaPct = (
+  bateriaColuna: unknown,
+  metadata: Record<string, unknown>,
+): number | null => {
+  const bruto =
+    numeroOuNulo(bateriaColuna) ??
+    numeroOuNulo(metadata.battery_level) ??
+    numeroOuNulo(metadata.batteryLevel) ??
+    numeroOuNulo(metadata.bateria) ??
+    numeroOuNulo(metadata.battery);
+
+  if (bruto == null || bruto <= 0) return null;
+  // 0..1 = fração do novo payload; > 1 = percentual (0..100).
+  return bruto <= 1 ? bruto * 100 : bruto;
+};
+
 /**
  * LOTE 2 — Rastreamento real da OS.
  * Lê a telemetria que o App envia para `portal_tracking_realtime`
  * (fonte atual: origem = app_motorista).
+ *
+ * TIMEZONE: a idade do GPS é SEMPRE calculada no fuso America/Sao_Paulo com
+ * `date-fns-tz`. O `updated_at` (hora do servidor) é convertido para o fuso da
+ * operação antes de comparar com `new Date()` — o fuso do navegador não pode
+ * gerar "GPS muito antigo" falso.
+ *
+ * BATERIA: lê `bateria` (coluna) ou `battery_level`/`batteryLevel`/
+ * `bateria`/`battery` (metadata do novo payload do App). Sem dado válido o
+ * card é ocultado (nunca exibe "100%" nem "0%").
  */
 export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) {
   const [posicao, setPosicao] = useState<Telemetria | null>(null);
@@ -86,7 +145,9 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
             "latitude, longitude, velocidade, precisao, bateria, status, origem, captured_at, updated_at, metadata",
           )
           .or(`os_id.eq.${os.id},alocacao_id.eq.${alocacaoId}`)
-          .order("captured_at", { ascending: false, nullsFirst: false })
+          // `updated_at` é a hora confiável do servidor (captured_at pode vir
+          // do relógio do aparelho, fora do fuso e no passado/futuro).
+          .order("updated_at", { ascending: false, nullsFirst: false })
           .limit(1)
           .maybeSingle();
 
@@ -105,13 +166,14 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
           longitude: Number(data.longitude),
           velocidade: data.velocidade != null ? Number(data.velocidade) : null,
           precisao: data.precisao != null ? Number(data.precisao) : null,
-          bateria: data.bateria != null ? Number(data.bateria) : null,
+          bateria: lerBateriaPct(data.bateria, metadata),
           status: data.status ? String(data.status) : null,
           statusOperacional: metadata.status_operacional
             ? String(metadata.status_operacional)
             : null,
           origem: data.origem ? String(data.origem) : null,
-          atualizadoEm: data.captured_at || data.updated_at || null,
+          // Hora do sinal: `updated_at` (servidor) é a fonte de verdade.
+          atualizadoEm: data.updated_at || data.captured_at || null,
         });
         setErro("");
       } catch (e) {
@@ -136,19 +198,11 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
     posicao?.velocidade != null && Number.isFinite(posicao.velocidade)
       ? posicao.velocidade * 3.6
       : null;
-  // Bateria 0/ausente = NÃO informada pelo App (não exibir "0%").
-  const bateriaPct =
-    posicao?.bateria != null && posicao.bateria > 0
-      ? posicao.bateria <= 1
-        ? posicao.bateria * 100
-        : posicao.bateria
-      : null;
+  // Bateria já normalizada em % por `lerBateriaPct`; ausente → card oculto.
+  const bateriaPct = posicao?.bateria ?? null;
 
-  // GPS: classifica pela idade real do último ponto (não pela origem).
-  const minutosGps =
-    posicao?.atualizadoEm != null
-      ? Math.max(0, Math.floor((Date.now() - new Date(posicao.atualizadoEm).getTime()) / 60000))
-      : null;
+  // GPS: idade real do último ponto, sempre no fuso America/Sao_Paulo.
+  const minutosGps = minutosDesdeSinalSP(posicao?.atualizadoEm);
   const gpsState: "atualizado" | "antigo" | "muito_antigo" | "sem_rastreamento" =
     minutosGps == null
       ? "sem_rastreamento"
@@ -244,14 +298,16 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
                   {posicao.precisao != null ? `${posicao.precisao.toFixed(0)} m` : "—"}
                 </p>
               </div>
-              <div className="rounded-lg border bg-slate-50 p-3">
-                <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-400">
-                  <Battery className="h-3 w-3" /> Bateria
-                </p>
-                <p className="mt-1 text-sm font-bold text-slate-800">
-                  {bateriaPct != null ? `${bateriaPct.toFixed(0)}%` : "Não informada"}
-                </p>
-              </div>
+              {bateriaPct != null && (
+                <div className="rounded-lg border bg-slate-50 p-3">
+                  <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-400">
+                    <Battery className="h-3 w-3" /> Bateria
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-800">
+                    {bateriaPct.toFixed(0)}%
+                  </p>
+                </div>
+              )}
               <div className="rounded-lg border bg-slate-50 p-3">
                 <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-400">
                   <Satellite className="h-3 w-3" /> GPS

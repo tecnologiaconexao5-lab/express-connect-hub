@@ -74,16 +74,23 @@ describe("3) WhatsApp — negrito em RET/ENT e ATENÇÃO", () => {
 });
 
 describe("4) Telemetria do mapa (bateria e GPS reais)", () => {
-  it("4.1 bateria 0/ausente vira 'Não informada' (nunca 0%)", () => {
-    expect(rastreio).toContain("posicao.bateria > 0");
-    expect(rastreio).toContain('"Não informada"');
+  it("4.1 bateria lê bateria/battery_level e oculta o card quando nula", () => {
+    expect(rastreio).toContain("lerBateriaPct");
+    expect(rastreio).toContain("metadata.battery_level");
+    expect(rastreio).toContain("bateriaPct != null &&");
+    expect(rastreio).not.toContain('"Não informada"');
   });
 
-  it("4.2 GPS classificado pela idade real do ponto", () => {
+  it("4.2 GPS classificado pela idade real do ponto no fuso de São Paulo", () => {
     expect(rastreio).toContain("minutosGps");
     expect(rastreio).toContain('gpsState');
     expect(rastreio).toContain('"atualizado"');
     expect(rastreio).toContain('"muito_antigo"');
+    expect(rastreio).toContain("date-fns-tz");
+    expect(rastreio).toContain("formatInTimeZone");
+    expect(rastreio).toContain("fromZonedTime");
+    expect(rastreio).toContain("FUSO_BR");
+    expect(rastreio).toContain("updated_at");
   });
 
   it("4.3 lê status_operacional do App e humaniza", () => {

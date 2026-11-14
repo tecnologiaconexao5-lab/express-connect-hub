@@ -1,5 +1,29 @@
 # Summary
 
+## MISSÃO RASTREIO-FUSO-BATERIA — Idade do GPS no fuso de SP e bateria ocultada quando nula (2026-11-14)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 ficheiros) · testes alvo **58/58** (correcao2 15 + refino_os_dados 11 + a25B 14 + a25D 18) · `npm run build` ok (2m26s). Sem migration.
+
+### Causa
+No modal `RastreamentoOSDialog` a idade do GPS era `Date.now() - new Date(atualizadoEm)` com `atualizadoEm = captured_at || updated_at`: o `captured_at` vem do relógio do aparelho (fora do fuso) e a comparação usava o fuso do navegador → "GPS muito antigo" falso. A bateria lia só a coluna `bateria`; com o novo payload do App (bateria/battery_level no metadata) o card exibia sempre o valor default 100%/inválido.
+
+### O que mudou (`src/components/operacao/RastreamentoOSDialog.tsx`)
+1. **Fuso (`minutosDesdeSinalSP`)** — usa `date-fns-tz` (`parseDataHoraSP` → `formatInTimeZone`/`fromZonedTime` com `FUSO_BR`) para converter o sinal para `America/Sao_Paulo` **antes** de dif em minutos vs `new Date()` (arredondado p/ baixo, nunca negativo).
+2. **Fonte do sinal** — `atualizadoEm: updated_at || captured_at` (servidor = verdade) e `.order("updated_at", desc, nullsFirst:false)` na query.
+3. **Bateria (`lerBateriaPct`)** — lê coluna `bateria` e `metadata.battery_level`/`batteryLevel`/`bateria`/`battery`; fração 0..1 → %, >1 = %, **0/ausente → null**; card **só renderiza** quando `bateriaPct != null` (nunca 100%/0% nem "Não informada").
+
+### Testes
+- `correcao2_pedagio_rotas_whatsapp_telemetria.test.ts` 4.1/4.2 reescritos: `lerBateriaPct`, `metadata.battery_level`, `bateriaPct != null &&`, ausência de `"Não informada"`, `date-fns-tz`/`formatInTimeZone`/`fromZonedTime`/`FUSO_BR`/`updated_at`.
+
+### Arquivos
+- `src/components/operacao/RastreamentoOSDialog.tsx` · `src/test/correcao2_pedagio_rotas_whatsapp_telemetria.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (QA) Abrir rastreamento de OS com App enviando `battery_level` → card com % real; sem bateria → card ausente; conferir "atualizado/X min" correto no navegador com fuso diferente de SP.
+2. (nota) Popup do `MapboxMap` continua com cálculo próprio de "há X" (usa o `updated_at` ISO passado pelo modal — consistente); se divergir, unificar.
+
+---
+
 ## MISSÃO ROTA-BAIRRO-SIGLA + BADGE-FINALIZADO-VERDE — Rota com bairro no WhatsApp/Rede e badge finalizado verde (2026-11-12)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` em `osTypes.ts`) · testes alvo **151/151** (10 ficheiros, inclui novo `rota_bairro_sigla`) · `npm run build` ok (52,21s).
