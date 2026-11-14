@@ -50,6 +50,14 @@ export function obterInfoGlobal(status: string | null | undefined): StatusGlobal
   if (status && STATUS_GLOBAL_INFO[status as StatusGlobal]) {
     return STATUS_GLOBAL_INFO[status as StatusGlobal];
   }
+  // Status bruto de OS/escala (ex.: "finalizada") → mapeia para a chave
+  // global antes de cair no fallback pendente (âmbar). Sem isso, o badge
+  // "Finalizado" da lista de OS exibia a cor errada enquanto o label
+  // (que já mapeava) mostrava o texto certo.
+  const mapeado = mapearParaGlobal(status, "os");
+  if (mapeado && STATUS_GLOBAL_INFO[mapeado]) {
+    return STATUS_GLOBAL_INFO[mapeado];
+  }
   return STATUS_GLOBAL_INFO.pendente;
 }
 

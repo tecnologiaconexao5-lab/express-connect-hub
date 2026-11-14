@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, Bike, Car, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, Bike, Car, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,6 +121,9 @@ const OrdensServicoLista = () => {
   const [osParaExcluir, setOsParaExcluir] = useState<OrdemServico | null>(null);
   const [vinculosCount, setVinculosCount] = useState({ escalas: 0, financeiro: 0, pagamentos: 0 });
   const [excluindo, setExcluindo] = useState(false);
+  // Cancelamento (UPDATE para cancelada — sem deletar; libera o prestador)
+  const [osParaCancelar, setOsParaCancelar] = useState<OrdemServico | null>(null);
+  const [cancelando, setCancelando] = useState(false);
   const [syncStatusMap, setSyncStatusMap] = useState<Record<string, { label: string; classe: string }>>({});
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -837,6 +840,47 @@ const OrdensServicoLista = () => {
     }
   };
 
+  // Cancela a OS via UPDATE (não deleta): status → cancelada, prestador
+  // liberado e alocações em aberto encerradas. O financeiro é tratado
+  // pelos triggers (M109 / cancelamento de escala).
+  const handleCancelarOS = async () => {
+    if (!osParaCancelar) return;
+
+    try {
+      setCancelando(true);
+      const osId = osParaCancelar.id;
+
+      // 1) Alocações em aberto vinculadas → cancelada (preserva concluídas)
+      const { error: errEsc } = await supabase
+        .from("alocacoes_escala")
+        .update({ status: "cancelada", updated_at: new Date().toISOString() })
+        .eq("ordem_servico_id", osId)
+        .not("status", "in", "(concluida,cancelada)");
+      if (errEsc) throw errEsc;
+
+      // 2) OS → cancelada + liberação do prestador (sem deletar)
+      const { error: errOs } = await supabase
+        .from("ordens_servico")
+        .update({
+          status: "cancelada",
+          prestador: null,
+          prestador_id: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", osId);
+      if (errOs) throw errOs;
+
+      toast.success(`OS ${osParaCancelar.numero} cancelada. Prestador liberado.`);
+      setOsParaCancelar(null);
+      fetchOrdens();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error("Erro ao cancelar OS: " + msg);
+    } finally {
+      setCancelando(false);
+    }
+  };
+
   const clientesDisponiveis = clientesFiltro;
 
   if (modoForm) {
@@ -1277,6 +1321,11 @@ const OrdensServicoLista = () => {
                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-orange-50 hover:text-orange-600" title={os.status === "finalizada" || os.status === "cancelada" ? "OS finalizada/cancelada não pode ser editada" : "Editar"} disabled={os.status === "finalizada" || os.status === "cancelada"} onClick={() => { setOsSelecionada(os); setModoForm("editar"); }}>
                             <Edit className="w-4 h-4"/>
                           </Button>
+                          {!STATUS_ENCERRADOS.includes(String(os.status)) && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600" title="Cancelar OS" onClick={(e) => { e.stopPropagation(); setOsParaCancelar(os); }}>
+                              <X className="w-4 h-4 text-red-400"/>
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600" title="Excluir" onClick={() => setOsParaExcluir(os)}>
                             <Trash2 className="w-4 h-4 text-red-400"/>
                           </Button>
@@ -1498,6 +1547,37 @@ const OrdensServicoLista = () => {
             <Button variant="outline" onClick={() => setOsParaExcluir(null)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={excluindo}>
               {excluindo ? "Excluindo..." : "Confirmar Exclusão"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancelar OS — UPDATE para cancelada (sem deletar) + liberação do prestador */}
+      <Dialog open={!!osParaCancelar} onOpenChange={() => { if (!cancelando) setOsParaCancelar(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" /> Cancelar OS
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Você está prestes a cancelar a <strong>OS {osParaCancelar?.numero}</strong>. A OS será marcada como <strong>cancelada</strong> (sem exclusão de registro) e o prestador alocado será liberado.
+            </p>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-bold text-amber-800">O que acontece ao confirmar</p>
+              <ul className="mt-1 space-y-0.5 text-[11px] text-amber-700 list-disc list-inside">
+                <li>Status da OS → <strong>cancelada</strong> (histórico preservado)</li>
+                <li>Prestador/motorista liberado da OS</li>
+                <li>Alocações em aberto vinculadas → canceladas</li>
+                <li>Financeiro tratado automaticamente pelos triggers do sistema</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOsParaCancelar(null)} disabled={cancelando}>Voltar</Button>
+            <Button variant="destructive" onClick={handleCancelarOS} disabled={cancelando}>
+              {cancelando ? "Cancelando..." : "Confirmar Cancelamento"}
             </Button>
           </DialogFooter>
         </DialogContent>

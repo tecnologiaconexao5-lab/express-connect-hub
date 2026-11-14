@@ -1,5 +1,34 @@
 # Summary
 
+## MISSÃO OS-LISTA-BADGE-FINALIZADO-CANCELAR — Badge "Finalizado" verde e botão Cancelar OS na lista (2026-11-14)
+
+**Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (6 `no-explicit-any` baseline em `OrdensServicoLista.tsx` linhas 369–459/836 intactos) · testes: 22 ficheiros falham = baseline pré-existente (confirmado via `git stash` — os 4 extras `a31j13`/`a31j17`/`a31j18`/`rec03_eliminacao` falham também sem as alterações; nenhum referencia `statusGlobal`/`OrdensServicoLista`) · `npm run build` ok (5m41s). Sem migration.
+
+### Causa
+1. **Badge "Finalizado"**: `obterInfoGlobal` em `statusGlobal.ts` tinha fallback direto para `pendente` — o status bruto `finalizada` da OS caía no default e exibia cinza/sl. O único caller com status bruto é `OrdensServicoLista.tsx:1191` (`obterClasseBadgeGlobal(os.status, "preenchido")`).
+2. **Sem forma de cancelar OS na lista**: só existia Exclusão (deleta a linha); operação precisava de UPDATE para `status='cancelada'` liberando o prestador, sem deletar.
+
+### O que mudou
+1. **`src/components/operacao/statusGlobal.ts`** — `obterInfoGlobal` passou a chamar `mapearParaGlobal(status, "os")` antes do fallback `pendente`. Efeito: `finalizada`→verde, `cancelada`→slate, `agendada`→azul, `em_andamento`/`coletado`→laranja, `em_rota`→indigo, `entregue`→verde, `ocorrencia`→em_rota. Com `origem="os"` nunca alcança a linha 188 (`rascunho`) — linha 188 **inalterada**.
+2. **`src/components/operacao/OrdensServicoLista.tsx`** — botão **Cancelar** na coluna Ações (ícone `X` vermelho, entre Editar e Excluir), visível só quando `!STATUS_ENCERRADOS.includes(String(os.status))`; abre Dialog de confirmação (`osParaCancelar`); `handleCancelarOS` faz UPDATE `alocacoes_escala` (`status: "cancelada"`, `updated_at`, `.not("status","in","(concluida,cancelada)")`) → UPDATE `ordens_servico` (`status: "cancelada"`, `prestador: null`, `prestador_id: null`, `updated_at`) → toast + `fetchOrdens()`; financeiro NÃO mexido (triggers `M109`/`escala_e2e_03` cuidam). `catch (e: unknown)` + `instanceof Error` (sem `any` novo). Editar (lápis) já era funcional — sem alteração.
+
+### Notas
+- CHECK constraint `ordens_servico.status` AUSENTE confirmado (baseline `20260510000001_core_baseline.sql:221`) — `cancelada` válido.
+- `updated_at` + trigger em `alocacoes_escala` confirmados; `updated_at` incluído explicitamente em ambos os UPDATEs.
+- Nenhum teste unitário afetado (grep `obterInfoGlobal|obterClasseBadgeGlobal|statusGlobal` em `src/test` → 0).
+- Divergência conhecida (não alterada): `torre-controle/markerAdapter.ts:93` usa `bg-gray-500` para `finalizado`.
+- Triggers de cancelamento no banco: `20260711000006_m109_p0_cancel_trigger_os.sql` (OS→cancelada zera financeiro) e `20260922000000_escala_e2e_03_cancelamento_os_coerente.sql` (alocação→cancelada cancela OS).
+
+### Arquivos
+- `src/components/operacao/statusGlobal.ts` · `src/components/operacao/OrdensServicoLista.tsx` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (push).
+2. (QA) Lista de OS: badge "Finalizado" verde com texto branco; botão Cancelar em OS não finalizada/cancelada → confirma → OS `cancelada`, prestador liberado, sem deletar; ações de Exclusão e Editar intactas.
+3. (nota) Migrations lote3 (`20261109010000_*`) continuam untracked — fora deste commit.
+
+---
+
 ## MISSÃO RASTREIO-FUSO-BATERIA — Idade do GPS no fuso de SP e bateria ocultada quando nula (2026-11-14)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 ficheiros) · testes alvo **58/58** (correcao2 15 + refino_os_dados 11 + a25B 14 + a25D 18) · `npm run build` ok (2m26s). Sem migration.
