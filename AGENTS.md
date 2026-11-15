@@ -1,5 +1,29 @@
 # Summary
 
+## MISSÃO OS-LISTA-ACOES-SEMPRE-VISIVEIS — Coluna Ações com flex-wrap para OSs Pendente/Em Andamento (2026-11-14)
+
+**Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (baseline `no-explicit-any` 6× + `exhaustive-deps` 1× intactos) · testes: 18 specs que leem `OrdensServicoLista` **236/236** (inclui `refino_operacao_premium` 22 com a string do título do Editar, `solicitacoes_sla` 11 e `operacional_lote2` 11 com `FAROL_SLA_ROW`) · `npm run build` ok. Sem migration.
+
+### Causa
+Relato: na tabela principal (`/operacao?tab=os`) OSs **Pendente** (e Em Andamento) não exibiam os botões **Editar** (lápis) e **Cancelar/Excluir** (X/lixeira vermelha). Investigação provou que **nenhuma lógica de alocação escondia os botões**: a célula Ações (`OrdensServicoLista.tsx` ~1270–1335) sempre renderiza Editar/Excluir e Cancelar quando `!STATUS_ENCERRADOS.includes(status)` (Pendente/Em Andamento não estão na lista `["finalizada","cancelada"]`), sem `opacity-0`/`hidden`/hover. A causa era **layout**: a `div` de ações era `flex items-center justify-end gap-1` **sem `flex-wrap`** — com os botões extras "sem prestador" (Alocar/Rede/Notificar, até ~11 itens) e o `overflow-hidden` do Card, os últimos botões (Editar/Cancelar/Excluir) eram comprimidos/cortados em telas estreitas.
+
+### O que mudou
+- **`src/components/operacao/OrdensServicoLista.tsx`** — div da célula Ações passou a `className="flex flex-wrap items-center justify-end gap-1 [&>button]:shrink-0"` (era `flex items-center justify-end gap-1`), com comentário documentando o motivo. `flex-wrap` + `shrink-0` fazem os botões quebrar para uma 2ª linha em vez de comprimir/cortar. **Nenhuma ordem, condicional, título ou handler alterado**: Alocar/Rede/Notificar seguem condicionados a `semPrestador`; Histórico/Rastreamento/Visualizar/Comprovantes/Editar sempre; Cancelar só fora de `STATUS_ENCERRADOS` (UPDATE para `cancelada`, não deleta); Excluir sempre.
+
+### Notas
+- String exata do `title` do Editar (`"OS finalizada/cancelada não pode ser editada"`) preservada — exigida por `src/test/refino_operacao_premium.test.ts:119`.
+- `FAROL_SLA_ROW` e demais classes do `TableRow` intactos (`solicitacoes_sla`/`operacional_lote2`).
+- Nenhum teste referencia `flex-wrap`/`shrink-0` — mudança livre de conflito.
+
+### Arquivos
+- `src/components/operacao/OrdensServicoLista.tsx` · `AGENTS.md`
+
+### Pendências
+1. (QA) `/operacao?tab=os`: com OS Pendente/Em Andamento (com e sem prestador) conferir em desktop e tela estreita que Editar (lápis), Cancelar (X) e Excluir (lixeira) estão visíveis e clicáveis; botões extras "sem prestador" não cortam a linha.
+2. (nota) Confirmar que a coluna em telas muito estreitas quebra para 2ª linha em vez de scroll horizontal (comportamento desejado do `flex-wrap`).
+
+---
+
 ## MISSÃO OS-LISTA-BADGE-FINALIZADO-CANCELAR — Badge "Finalizado" verde e botão Cancelar OS na lista (2026-11-14)
 
 **Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (6 `no-explicit-any` baseline em `OrdensServicoLista.tsx` linhas 369–459/836 intactos) · testes: 22 ficheiros falham = baseline pré-existente (confirmado via `git stash` — os 4 extras `a31j13`/`a31j17`/`a31j18`/`rec03_eliminacao` falham também sem as alterações; nenhum referencia `statusGlobal`/`OrdensServicoLista`) · `npm run build` ok (5m41s). Sem migration.

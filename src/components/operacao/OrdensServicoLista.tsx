@@ -1269,8 +1269,11 @@ const OrdensServicoLista = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         {/* Ações sempre visíveis — o lápis de edição não pode
-                            depender de hover (regressão reportada). */}
-                        <div className="flex items-center justify-end gap-1">
+                            depender de hover (regressão reportada).
+                            flex-wrap + shrink-0: em telas estreitas (ou com os
+                            botões extras "sem prestador") os botões quebram para
+                            uma 2ª linha em vez de serem comprimidos/cortados. */}
+                        <div className="flex flex-wrap items-center justify-end gap-1 [&>button]:shrink-0">
                           {semPrestador && (
                             <>
                               <Button
