@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, ShieldCheck, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge, KeyRound, Mail, Unlock, Copy } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, ShieldCheck, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge, KeyRound, Mail, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -326,6 +326,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         if (!ativo) return;
         setEmailAcesso(resultado.email || "");
         setContaAcessoExiste(resultado.contaExiste);
+        if (resultado.status) {
+          setP((prev) => ({
+            ...prev,
+            status: normalizarStatusPrestador(resultado.status),
+            liberadoApp: resultado.liberadoApp ?? prev.liberadoApp,
+          }));
+        }
       })
       .catch((error: unknown) => {
         if (!ativo) return;
@@ -343,7 +350,12 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       toast.error("Salve o cadastro do prestador antes de gerenciar o acesso.");
       return;
     }
-    if ((acao === "gerar_credenciais" || acao === "reenviar_credenciais") && !emailAcesso.trim()) {
+    if (
+      (acao === "gerar_credenciais" ||
+        acao === "ativar_e_gerar_credenciais" ||
+        acao === "reenviar_credenciais") &&
+      !emailAcesso.trim()
+    ) {
       toast.error("Informe o e-mail de acesso do aplicativo.");
       return;
     }
@@ -357,6 +369,16 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       });
       setEmailAcesso(resultado.email || emailAcesso.trim());
       setContaAcessoExiste(resultado.contaExiste);
+      if (resultado.status) {
+        setP((prev) => ({
+          ...prev,
+          status: normalizarStatusPrestador(resultado.status),
+          liberadoApp: resultado.liberadoApp ?? prev.liberadoApp,
+          ...(resultado.status === "ativo"
+            ? { permissoes: Object.fromEntries(PERMISSOES_APP.map(({ field }) => [field, true])) }
+            : {}),
+        }));
+      }
       if (resultado.senhaTemporaria) setSenhaTemporaria(resultado.senhaTemporaria);
       toast.success(resultado.mensagem);
     } catch (error: unknown) {
@@ -365,25 +387,6 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     } finally {
       setAcaoAcessoEmCurso(null);
     }
-  };
-
-  const liberarAcessoApp = () => {
-    if (!p.id) {
-      toast.error("Salve o cadastro do prestador antes de liberar o acesso.");
-      return;
-    }
-    if (normalizarStatusPrestador(p.status) !== "ativo") {
-      toast.error("Aprove e ative o prestador antes de liberar o acesso ao aplicativo.");
-      return;
-    }
-
-    setP((prev) => ({
-      ...prev,
-      liberadoApp: true,
-      permissoes: Object.fromEntries(PERMISSOES_APP.map(({ field }) => [field, true])),
-    }));
-    setIsDirty(true);
-    toast.success("Acesso ao aplicativo habilitado. Salve o prestador para aplicar a alteração.");
   };
 
   const copiarSenhaTemporaria = async () => {
@@ -1490,6 +1493,23 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     return { label: "Completo", cls: "bg-green-100 text-green-700" };
   };
 
+  const statusAcesso = normalizarStatusPrestador(p.status);
+  const motoristaAtivo = statusAcesso === "ativo" && p.liberadoApp === true && contaAcessoExiste === true;
+  const modalidadeLabels: Record<string, string> = {
+    contrato: "Contrato",
+    esporadico: "Esporádico",
+    rota_fixa: "Rota fixa",
+  };
+  const modalidadesEscolhidas = perfilTalento.modalidadePreferencial
+    .map((modalidade) => modalidadeLabels[modalidade] || modalidade)
+    .filter(Boolean);
+  const modalidadesPreferidas =
+    perfilTalento.modalidadePreferencial.includes("contrato") &&
+    perfilTalento.modalidadePreferencial.includes("esporadico") &&
+    perfilTalento.modalidadePreferencial.length === 2
+      ? "Ambos (Contrato e Esporádico)"
+      : modalidadesEscolhidas.join(" · ");
+
   return (
     <div className="w-full px-6 space-y-4">
       {/* Header */}
@@ -2290,10 +2310,80 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Gerenciamento de Acesso</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Gerencie a conta usada pelo motorista para entrar no aplicativo. Este e-mail é independente do contato comercial.
+                  Painel de ativação e acesso do motorista ao aplicativo. O e-mail de login é independente do contato comercial.
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
+                  motoristaAtivo
+                    ? "border-emerald-200 bg-emerald-50"
+                    : statusAcesso === "bloqueado"
+                      ? "border-red-200 bg-red-50"
+                      : statusAcesso === "analise"
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-slate-200 bg-slate-50"
+                }`}>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Status do motorista</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {consultandoContaAcesso
+                        ? "Sincronizando status e conta de acesso..."
+                        : motoristaAtivo
+                          ? "Conta vinculada e acesso ao aplicativo liberado."
+                          : statusAcesso === "ativo"
+                            ? "O cadastro está ativo, mas a conta ou a liberação do aplicativo está pendente."
+                            : statusAcesso === "analise"
+                              ? "Aguardando validação antes da ativação."
+                              : statusAcesso === "bloqueado"
+                                ? "O acesso está bloqueado e o motorista não pode entrar no aplicativo."
+                                : "O cadastro não está liberado para acesso ao aplicativo."}
+                    </p>
+                  </div>
+                  <Badge className={`font-semibold ${
+                    motoristaAtivo
+                      ? "bg-emerald-600 text-white"
+                      : statusAcesso === "bloqueado"
+                        ? "bg-red-600 text-white"
+                        : statusAcesso === "analise"
+                          ? "bg-amber-400 text-amber-950"
+                          : "bg-slate-500 text-white"
+                  }`}>
+                    {consultandoContaAcesso
+                      ? "Verificando"
+                      : motoristaAtivo
+                        ? "Motorista Ativo"
+                        : statusAcesso === "ativo"
+                          ? "Ativo · acesso pendente"
+                          : STATUS_LABEL[statusAcesso] || "Não liberado"}
+                  </Badge>
+                </div>
+
+                <div className="rounded-lg border bg-background p-4">
+                  <p className="text-sm font-semibold">Preferências escolhidas no app</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Modalidade preferencial:</span>
+                    {modalidadesPreferidas ? (
+                      <Badge variant="secondary">{modalidadesPreferidas}</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {loadingTalento ? "Carregando..." : "Não informado no aplicativo"}
+                      </span>
+                    )}
+                  </div>
+                  {perfilTalento.distanciaMaxColetaKm && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Distância máxima para coleta: {perfilTalento.distanciaMaxColetaKm} km
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Disponibilidade: {perfilTalento.statusDisponibilidade === "disponivel"
+                      ? "Disponível"
+                      : perfilTalento.statusDisponibilidade === "em_operacao"
+                        ? "Em operação"
+                        : "Indisponível"}
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="prestador-email-acesso" className="text-xs">E-mail de Acesso</Label>
                   <Input
@@ -2321,51 +2411,53 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Button
-                    type="button"
-                    className="gap-2"
-                    onClick={() => void executarAcaoAcesso("gerar_credenciais")}
-                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id}
-                  >
-                    {acaoAcessoEmCurso === "gerar_credenciais" ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                    Gerar/Resetar Senha de Acesso
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    onClick={liberarAcessoApp}
-                    disabled={!p.id || !!p.liberadoApp || normalizarStatusPrestador(p.status) !== "ativo"}
-                    title={normalizarStatusPrestador(p.status) !== "ativo" ? "O prestador precisa estar ativo para liberar o acesso." : undefined}
-                  >
-                    <ShieldCheck className="h-4 w-4" />
-                    Liberar Acesso ao App
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => void executarAcaoAcesso("desbloquear")}
-                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id || !contaAcessoExiste}
-                  >
-                    {acaoAcessoEmCurso === "desbloquear" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlock className="h-4 w-4" />}
-                    Desbloquear Acesso
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => void executarAcaoAcesso("reenviar_credenciais")}
-                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id || !contaAcessoExiste}
-                  >
-                    {acaoAcessoEmCurso === "reenviar_credenciais" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                    Reenviar Credenciais
-                  </Button>
+                  {motoristaAtivo ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        className="gap-2"
+                        onClick={() => void executarAcaoAcesso("bloquear")}
+                        disabled={!!acaoAcessoEmCurso || consultandoContaAcesso}
+                      >
+                        {acaoAcessoEmCurso === "bloquear" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />}
+                        Bloquear Acesso
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => void executarAcaoAcesso("reenviar_credenciais")}
+                        disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !contaAcessoExiste || !emailAcesso.trim()}
+                      >
+                        {acaoAcessoEmCurso === "reenviar_credenciais" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                        Reenviar Senha
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="lg"
+                      className="gap-2 bg-emerald-600 px-6 text-base font-semibold hover:bg-emerald-700"
+                      onClick={() => void executarAcaoAcesso("ativar_e_gerar_credenciais")}
+                      disabled={
+                        !!acaoAcessoEmCurso ||
+                        consultandoContaAcesso ||
+                        !p.id ||
+                        !emailAcesso.trim()
+                      }
+                    >
+                      {acaoAcessoEmCurso === "ativar_e_gerar_credenciais"
+                        ? <Loader2 className="h-5 w-5 animate-spin" />
+                        : <KeyRound className="h-5 w-5" />}
+                      {acaoAcessoEmCurso === "ativar_e_gerar_credenciais"
+                        ? "Ativando e gerando credencial..."
+                        : "Ativar Motorista e Gerar Credencial"}
+                    </Button>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  A liberação habilita as permissões do aplicativo e deve ser confirmada em <strong>Salvar Prestador</strong>.
+                  A ativação atualiza o status do cadastro, libera o login e gera uma senha temporária exibida somente nesta tela.
                 </p>
                 {senhaTemporaria && (
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">

@@ -25,11 +25,13 @@ describe("Gestão de acesso de prestadores", () => {
     }).permissoes).toEqual(permissoes);
   });
 
-  it("ativa todas as permissões individuais ao ligar o acesso master", () => {
+  it("mantém as permissões individuais e atualiza o estado do painel após a ação", () => {
     const source = ler("src/components/prestadores/PrestadorDetalhe.tsx");
     expect(source).toContain("...(checked");
     expect(source).toContain("PERMISSOES_APP.map(({ field }) => [field, true])");
     expect(source).toContain("checked={p.liberadoApp ?? false}");
+    expect(source).toContain("setContaAcessoExiste(resultado.contaExiste)");
+    expect(source).toContain("liberadoApp: resultado.liberadoApp ?? prev.liberadoApp");
   });
 
   it("usa uma Edge Function autenticada para operações de Auth sem expor service role", () => {
@@ -43,15 +45,23 @@ describe("Gestão de acesso de prestadores", () => {
     expect(edge).not.toContain("console.log(senha");
   });
 
-  it("expõe ações de credencial e liberação na seção Gerenciamento de Acesso", () => {
+  it("exibe painel de ativação, preferências do App e ações sincronizadas com o status", () => {
     const source = ler("src/components/prestadores/PrestadorDetalhe.tsx");
     expect(source).toContain("Gerenciamento de Acesso");
-    expect(source).toContain("Gerar/Resetar Senha de Acesso");
-    expect(source).toContain('executarAcaoAcesso("gerar_credenciais")');
-    expect(source).toContain("Liberar Acesso ao App");
-    expect(source).toContain("onClick={liberarAcessoApp}");
-    expect(source).toContain('normalizarStatusPrestador(p.status) !== "ativo"');
-    expect(source).toContain("liberadoApp: true");
-    expect(source).toContain("Salve o prestador para aplicar a alteração.");
+    expect(source).toContain("Preferências escolhidas no app");
+    expect(source).toContain("Ambos (Contrato e Esporádico)");
+    expect(source).toContain("Ativar Motorista e Gerar Credencial");
+    expect(source).toContain('executarAcaoAcesso("ativar_e_gerar_credenciais")');
+    expect(source).toContain('executarAcaoAcesso("bloquear")');
+    expect(source).toContain('executarAcaoAcesso("reenviar_credenciais")');
+    expect(source).toContain("motoristaAtivo ? (");
+    expect(source).toContain("Motorista Ativo");
+    expect(source).not.toContain("onClick={liberarAcessoApp}");
+    const edge = ler("supabase/functions/gestao-acesso-prestador/index.ts");
+    expect(edge).toContain('status: "ativo"');
+    expect(edge).toContain("liberado_app: true");
+    expect(edge).toContain("metadata: habilitarPermissoesApp(prestador.metadata)");
+    expect(edge).toContain("podeAceitarServico: true");
+    expect(edge).toContain('status: "bloqueado", liberado_app: false');
   });
 });

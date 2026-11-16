@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase";
 export type AcaoGestaoAcessoPrestador =
   | "consultar"
   | "gerar_credenciais"
+  | "ativar_e_gerar_credenciais"
+  | "bloquear"
   | "desbloquear"
   | "reenviar_credenciais";
 
@@ -18,6 +20,8 @@ interface GestaoAcessoPrestadorResult {
   email: string | null;
   contaExiste: boolean;
   senhaTemporaria?: string;
+  status?: string;
+  liberadoApp?: boolean;
 }
 
 interface GestaoAcessoPrestadorError {

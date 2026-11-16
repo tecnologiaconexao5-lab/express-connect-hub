@@ -6,7 +6,13 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 const PAPEIS_GESTAO_ACESSO = new Set(["super_admin", "admin_tenant", "gestor", "operacional"]);
 
 interface Input {
-  acao: "consultar" | "gerar_credenciais" | "desbloquear" | "reenviar_credenciais";
+  acao:
+    | "consultar"
+    | "gerar_credenciais"
+    | "ativar_e_gerar_credenciais"
+    | "bloquear"
+    | "desbloquear"
+    | "reenviar_credenciais";
   prestador_id: string;
   email?: string;
 }
@@ -47,6 +53,33 @@ function gerarSenhaTemporaria(): string {
   return senha.join("");
 }
 
+function habilitarPermissoesApp(metadata: unknown): Record<string, unknown> {
+  const metadataAtual =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? metadata as Record<string, unknown>
+      : {};
+  const permissoesAtuais =
+    metadataAtual.permissoes_app &&
+    typeof metadataAtual.permissoes_app === "object" &&
+    !Array.isArray(metadataAtual.permissoes_app)
+      ? metadataAtual.permissoes_app as Record<string, unknown>
+      : {};
+
+  return {
+    ...metadataAtual,
+    permissoes_app: {
+      ...permissoesAtuais,
+      podeVerOS: true,
+      podeAceitarServico: true,
+      podeVerValores: true,
+      podeVerHistorico: true,
+      podeEnviarDocumentos: true,
+      podeAtualizarCadastro: true,
+      podeReceberNotificacoes: true,
+    },
+  };
+}
+
 async function obterPrestador(
   admin: SupabaseClient,
   prestadorId: string,
@@ -68,7 +101,7 @@ async function autorizarOperador(
   url: string,
   anonKey: string,
   admin: SupabaseClient,
-): Promise<{ tenantIds: string[]; papelMaisAlto: boolean }> {
+): Promise<{ tenantIds: string[]; superAdmin: boolean }> {
   const authorization = req.headers.get("Authorization");
   if (!authorization?.startsWith("Bearer ")) throw new HttpError(401, "Sessão não autenticada.");
 
@@ -108,7 +141,14 @@ function validarInput(value: unknown): Input {
     throw new HttpError(400, "Corpo da requisição inválido.");
   }
   const input = value as Record<string, unknown>;
-  const acoes = ["consultar", "gerar_credenciais", "desbloquear", "reenviar_credenciais"];
+  const acoes = [
+    "consultar",
+    "gerar_credenciais",
+    "ativar_e_gerar_credenciais",
+    "bloquear",
+    "desbloquear",
+    "reenviar_credenciais",
+  ];
   if (typeof input.prestador_id !== "string" || !UUID_REGEX.test(input.prestador_id)) {
     throw new HttpError(400, "Identificador do prestador inválido.");
   }
@@ -141,7 +181,14 @@ serve(async (req) => {
 
     if (input.acao === "consultar") {
       if (!authUserId) {
-        return json(200, { ok: true, mensagem: "Conta não vinculada.", email: null, contaExiste: false });
+        return json(200, {
+          ok: true,
+          mensagem: "Conta não vinculada.",
+          email: null,
+          contaExiste: false,
+          status: String(prestador.status || "em_analise"),
+          liberadoApp: prestador.liberado_app === true,
+        });
       }
       const { data, error } = await admin.auth.admin.getUserById(authUserId);
       if (error) throw new HttpError(500, "Não foi possível consultar a conta do aplicativo.");
@@ -150,6 +197,43 @@ serve(async (req) => {
         mensagem: "Acesso consultado.",
         email: data.user.email || null,
         contaExiste: true,
+        status: String(prestador.status || "em_analise"),
+        liberadoApp: prestador.liberado_app === true,
+      });
+    }
+
+    if (input.acao === "bloquear") {
+      const { error: blockError } = await admin.from("prestadores")
+        .update({ status: "bloqueado", liberado_app: false })
+        .eq("id", input.prestador_id);
+      if (blockError) throw new HttpError(500, "Não foi possível bloquear o acesso do prestador.");
+
+      if (authUserId) {
+        const { error: authError } = await admin.auth.admin.updateUserById(authUserId, {
+          ban_duration: "876000h",
+        });
+        if (authError) {
+          const { error: rollbackError } = await admin.from("prestadores")
+            .update({
+              status: String(prestador.status || "em_analise"),
+              liberado_app: prestador.liberado_app === true,
+              metadata: prestador.metadata ?? null,
+            })
+            .eq("id", input.prestador_id);
+          if (rollbackError) {
+            throw new HttpError(500, "O bloqueio da conta falhou e o status não pôde ser restaurado. Verifique o cadastro.");
+          }
+          throw new HttpError(500, "Não foi possível bloquear a conta. O status anterior foi restaurado.");
+        }
+      }
+
+      return json(200, {
+        ok: true,
+        mensagem: "Acesso do motorista bloqueado.",
+        email: null,
+        contaExiste: Boolean(authUserId),
+        status: "bloqueado",
+        liberadoApp: false,
       });
     }
 
@@ -167,6 +251,76 @@ serve(async (req) => {
 
     const email = normalizarEmail(input.email);
     const redirectTo = `${(Deno.env.get("TMS_SITE_URL") || "https://tms.conexaoexpress.com.br").replace(/\/+$/, "")}/reset-password`;
+
+    if (input.acao === "ativar_e_gerar_credenciais") {
+      const senha = gerarSenhaTemporaria();
+      let novoAuthUserId: string | null = null;
+
+      if (authUserId) {
+        const { error: activationError } = await admin.from("prestadores")
+          .update({
+            status: "ativo",
+            liberado_app: true,
+            metadata: habilitarPermissoesApp(prestador.metadata),
+          })
+          .eq("id", input.prestador_id);
+        if (activationError) throw new HttpError(500, "Não foi possível ativar o prestador.");
+
+        const { error: authError } = await admin.auth.admin.updateUserById(authUserId, {
+          email,
+          email_confirm: true,
+          password: senha,
+          ban_duration: "none",
+        });
+        if (authError) {
+          const { error: rollbackError } = await admin.from("prestadores")
+            .update({
+              status: String(prestador.status || "em_analise"),
+              liberado_app: prestador.liberado_app === true,
+            })
+            .eq("id", input.prestador_id);
+          if (rollbackError) {
+            throw new HttpError(500, "A credencial falhou e o status anterior não pôde ser restaurado. Verifique o cadastro.");
+          }
+          throw new HttpError(409, "Não foi possível atualizar a credencial. O status anterior foi restaurado.");
+        }
+      } else {
+        const { data, error } = await admin.auth.admin.createUser({
+          email,
+          password: senha,
+          email_confirm: true,
+          user_metadata: { prestador_id: input.prestador_id },
+        });
+        if (error || !data.user) throw new HttpError(409, "Não foi possível criar a conta. Verifique se o e-mail já está em uso.");
+        novoAuthUserId = data.user.id;
+
+        const { error: activationError } = await admin.from("prestadores")
+          .update({
+            status: "ativo",
+            liberado_app: true,
+            auth_user_id: novoAuthUserId,
+            metadata: habilitarPermissoesApp(prestador.metadata),
+          })
+          .eq("id", input.prestador_id);
+        if (activationError) {
+          const { error: cleanupError } = await admin.auth.admin.deleteUser(novoAuthUserId);
+          if (cleanupError) {
+            throw new HttpError(500, "A conta foi criada, mas a ativação falhou e a conta não pôde ser removida. A equipe técnica precisa verificar o acesso.");
+          }
+          throw new HttpError(500, "A conta foi criada, mas não foi possível ativar o prestador. A conta temporária foi removida.");
+        }
+      }
+
+      return json(200, {
+        ok: true,
+        mensagem: "Motorista ativado e credencial gerada com sucesso.",
+        email,
+        contaExiste: true,
+        senhaTemporaria: senha,
+        status: "ativo",
+        liberadoApp: true,
+      });
+    }
 
     if (input.acao === "gerar_credenciais") {
       const senha = gerarSenhaTemporaria();
