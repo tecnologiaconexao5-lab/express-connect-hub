@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { LayoutDashboard, Activity, TrendingUp, DollarSign, Bell, Network, Radio } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from "@/lib/supabase";
 import DashboardTopbar from "@/components/dashboard/DashboardTopbar";
 import AlertaOscotacaoExpress from "@/components/dashboard/AlertaOscotacaoExpress";
 import TabExecutivo from "@/components/dashboard/TabExecutivo";
@@ -10,6 +13,45 @@ import TabAlertas from "@/components/dashboard/TabAlertas";
 import TabRede from "@/components/dashboard/TabRede";
 import TabEventos from "@/components/dashboard/TabEventos";
 import { DashboardFilterProvider } from "@/contexts/DashboardFilterContext";
+
+const AlertaPrestadoresAguardandoValidacao = () => {
+  const [prestadoresAguardandoValidacao, setPrestadoresAguardandoValidacao] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    const contarPrestadoresPendentes = async () => {
+      const { count, error } = await supabase
+        .from("prestadores")
+        .select("id", { count: "exact", head: true })
+        .or(
+          "status.in.(analise,em_analise),and(origem_cadastro.eq.app_motorista,liberado_app.eq.false),and(origem_cadastro.eq.app_motorista,liberado_app.is.null)",
+        );
+
+      if (error) {
+        console.error("[Dashboard] Erro ao contar prestadores aguardando validação:", error);
+        return;
+      }
+
+      if (active) setPrestadoresAguardandoValidacao(count ?? 0);
+    };
+
+    void contarPrestadoresPendentes();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return prestadoresAguardandoValidacao > 0 ? (
+    <Link
+      to="/cadastros/prestadores"
+      role="alert"
+      className="mb-6 flex items-center rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-sm transition hover:bg-amber-100"
+    >
+      ⚠️ {prestadoresAguardandoValidacao} novo(s) cadastro(s) de prestador aguardando validação
+    </Link>
+  ) : null;
+};
 
 const Dashboard = () => (
   <DashboardFilterProvider>
@@ -23,6 +65,8 @@ const Dashboard = () => (
         <p className="text-sm text-muted-foreground mt-0.5">Visão consolidada da operação em tempo real</p>
       </div>
     </div>
+
+    <AlertaPrestadoresAguardandoValidacao />
 
     <DashboardTopbar />
 

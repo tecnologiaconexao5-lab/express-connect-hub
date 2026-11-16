@@ -416,3 +416,6 @@ verify_jwt = false
 # LOTE PUSH — protegida por service role / x-internal-token dentro da funcao
 [functions.enviar-push]
 verify_jwt = false
+
+[functions.gestao-acesso-prestador]
+verify_jwt = true

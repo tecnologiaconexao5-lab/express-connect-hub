@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, ShieldCheck, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, ShieldCheck, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge, KeyRound, Mail, Unlock, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 import {
   Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR,
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
-  VeiculoPrestador, normalizarStatusPrestador, STATUS_OPCOES_CANONICAS,
+  VeiculoPrestador, PermissoesPrestador, normalizarStatusPrestador, STATUS_OPCOES_CANONICAS,
 } from "./types";
 import { DocumentoIAReportModal } from "@/components/documentos/DocumentoIAReportModal";
 import { DocumentoAcoesDropdown } from "@/components/documentos/DocumentoAcoesDropdown";
@@ -48,22 +48,38 @@ import { ConexaoTalentAIProfile } from "./ConexaoTalentAIProfile";
 import { useAuth } from "@/contexts/AuthContext";
 import { podeVerAvaliacaoSituacional } from "@/lib/permissoes";
 import {
+  descartarRascunhoForm,
+  liberarRascunhoForm,
+  lerRascunhoForm,
+  useAutoSaveFormDraft,
+} from "@/lib/formDraft";
+import {
   enviarWhatsAppTalent,
   montarTemplateReativacao,
   notificarAppTalent,
   reativarCandidatoTalent,
 } from "@/services/recrutamento/talentComunicacaoService";
+import { gerirAcessoPrestador, type AcaoGestaoAcessoPrestador } from "@/services/prestadores/gestaoAcessoPrestadorService";
 
 const BUCKET_PRESTADORES = "documentos_prestadores";
 const DRAFT_KEY = "conexao_prestador_draft";
+const PERMISSOES_APP: Array<{ label: string; field: keyof PermissoesPrestador; icon: typeof List }> = [
+  { label: "Ver Ordens de Serviço pertinentes", field: "podeVerOS", icon: List },
+  { label: "Aceitar serviços disponíveis", field: "podeAceitarServico", icon: Sparkles },
+  { label: "Ver valores e ganhos próprios", field: "podeVerValores", icon: CreditCard },
+  { label: "Ver histórico de viagens", field: "podeVerHistorico", icon: Truck },
+  { label: "Enviar documentos via app", field: "podeEnviarDocumentos", icon: Upload },
+  { label: "Atualizar dados cadastrais", field: "podeAtualizarCadastro", icon: Users },
+  { label: "Receber notificações push", field: "podeReceberNotificacoes", icon: Star },
+];
 
 interface Props {
   prestador?: Prestador;
   onBack: () => void;
 }
 
-/** Fields saved to draft (textual only, no binaries/passwords/tokens) */
-const DRAFT_FIELDS = [
+/** Serializable form fields only; uploaded files, passwords, and tokens are excluded. */
+const DRAFT_FIELDS: readonly (keyof Prestador)[] = [
   "nomeCompleto", "nomeFantasia", "cpfCnpj", "rgIe", "dataNascimento",
   "telefone", "whatsapp", "email", "rntrc", "antt",
   "tipoParceiro", "status", "liberadoApp",
@@ -77,32 +93,21 @@ const DRAFT_FIELDS = [
   "contaContabil", "centroCusto", "retencoes", "conferenciManual",
   "observacoesFinanceiras",
   "aceitaRefrigerada", "aceitaUrbana", "aceitaDedicada", "aceitaEsporadica",
+  "veiculos", "contatosEmergencia", "permissoes",
 ] as const;
 
-function saveDraft(data: Partial<Prestador>) {
-  try {
-    const draft: Record<string, any> = {};
-    for (const f of DRAFT_FIELDS) {
-      const val = (data as any)[f];
-      if (val !== undefined && val !== null) draft[f] = val;
-    }
-    if (data.endereco) draft.endereco = data.endereco;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-  } catch { /* storage full or private mode */ }
+function toPrestadorDraft(data: Partial<Prestador>): Partial<Prestador> {
+  const draft: Partial<Prestador> = {};
+  for (const field of DRAFT_FIELDS) {
+    const value = data[field];
+    if (value !== undefined && value !== null) Object.assign(draft, { [field]: value });
+  }
+  if (data.endereco) draft.endereco = { ...data.endereco };
+  return draft;
 }
 
-function loadDraft(): Partial<Prestador> | null {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const draft = JSON.parse(raw);
-    if (typeof draft !== "object" || draft === null) return null;
-    return draft;
-  } catch { return null; }
-}
-
-function clearDraft() {
-  try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
+function loadDraft(key: string): Partial<Prestador> | null {
+  return lerRascunhoForm<Partial<Prestador>>(key);
 }
 
 const DOC_STATUS_STYLE: Record<StatusDocumento, string> = {
@@ -248,21 +253,33 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const isNew = !initial;
   const { user } = useAuth();
   const podeVerAvaliacao = podeVerAvaliacaoSituacional(user?.role);
+  const draftKey = initial?.id
+    ? `${DRAFT_KEY}:${user?.id || "session"}:${initial.id}`
+    : DRAFT_KEY;
 
-  // Restore draft for CREATE, or use initial data for EDIT
+  // Restore an unexpired draft for this prestador, or start from database data.
   const getInitialState = useCallback((): Partial<Prestador> => {
-    if (!initial) {
-      const draft = loadDraft();
-      if (draft) return { ...getDefaultPrestador(), ...draft };
-    }
-    return initial || getDefaultPrestador();
-  }, [initial]);
+    const base = initial || getDefaultPrestador();
+    const draft = loadDraft(draftKey);
+    if (!draft) return base;
+    return {
+      ...base,
+      ...draft,
+      endereco: draft.endereco ? { ...base.endereco, ...draft.endereco } : base.endereco,
+    };
+  }, [initial, draftKey]);
 
   const [p, setP] = useState<Partial<Prestador>>(getInitialState);
   const [isLoading, setIsLoading] = useState(false);
+  const [emailAcesso, setEmailAcesso] = useState("");
+  const [contaAcessoExiste, setContaAcessoExiste] = useState<boolean | null>(null);
+  const [consultandoContaAcesso, setConsultandoContaAcesso] = useState(false);
+  const [acaoAcessoEmCurso, setAcaoAcessoEmCurso] = useState<AcaoGestaoAcessoPrestador | null>(null);
+  const [senhaTemporaria, setSenhaTemporaria] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   const initialStateRef = useRef<string>(JSON.stringify(initial || getDefaultPrestador()));
+  const draftData = useMemo(() => toPrestadorDraft(p), [p]);
 
   // === INDICADORES REAIS (do banco) ===
   const [qtdEntregasReais, setQtdEntregasReais] = useState<number | null>(null);
@@ -298,6 +315,68 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [fotoRef, setFotoRef] = useState<string | null>(initial?.foto || null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [documentosPendentes, setDocumentosPendentes] = useState<Array<{tipo: string, file: File}>>([]);
+
+  useEffect(() => {
+    if (!p.id) return;
+    let ativo = true;
+    setConsultandoContaAcesso(true);
+    setContaAcessoExiste(null);
+    void gerirAcessoPrestador({ acao: "consultar", prestadorId: p.id })
+      .then((resultado) => {
+        if (!ativo) return;
+        setEmailAcesso(resultado.email || "");
+        setContaAcessoExiste(resultado.contaExiste);
+      })
+      .catch((error: unknown) => {
+        if (!ativo) return;
+        console.error("Erro ao consultar acesso do prestador:", error);
+        toast.error(error instanceof Error ? error.message : "Não foi possível consultar o acesso do aplicativo.");
+      })
+      .finally(() => {
+        if (ativo) setConsultandoContaAcesso(false);
+      });
+    return () => { ativo = false; };
+  }, [p.id]);
+
+  const executarAcaoAcesso = async (acao: Exclude<AcaoGestaoAcessoPrestador, "consultar">) => {
+    if (!p.id) {
+      toast.error("Salve o cadastro do prestador antes de gerenciar o acesso.");
+      return;
+    }
+    if ((acao === "gerar_credenciais" || acao === "reenviar_credenciais") && !emailAcesso.trim()) {
+      toast.error("Informe o e-mail de acesso do aplicativo.");
+      return;
+    }
+    setAcaoAcessoEmCurso(acao);
+    setSenhaTemporaria(null);
+    try {
+      const resultado = await gerirAcessoPrestador({
+        acao,
+        prestadorId: p.id,
+        email: emailAcesso.trim(),
+      });
+      setEmailAcesso(resultado.email || emailAcesso.trim());
+      setContaAcessoExiste(resultado.contaExiste);
+      if (resultado.senhaTemporaria) setSenhaTemporaria(resultado.senhaTemporaria);
+      toast.success(resultado.mensagem);
+    } catch (error: unknown) {
+      console.error(`Erro na ação ${acao} do acesso do prestador:`, error);
+      toast.error(error instanceof Error ? error.message : "Não foi possível concluir a ação de acesso.");
+    } finally {
+      setAcaoAcessoEmCurso(null);
+    }
+  };
+
+  const copiarSenhaTemporaria = async () => {
+    if (!senhaTemporaria) return;
+    try {
+      await navigator.clipboard.writeText(senhaTemporaria);
+      toast.success("Senha temporária copiada.");
+    } catch (error: unknown) {
+      console.error("Erro ao copiar senha temporária:", error);
+      toast.error("Não foi possível copiar a senha. Selecione e copie manualmente.");
+    }
+  };
 
   // === TALENT INTELLIGENCE (perfil, disponibilidade e avaliação situacional) ===
   const [perfilTalento, setPerfilTalento] = useState<PerfilTalentoForm>(perfilTalentoVazio);
@@ -533,10 +612,11 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     setIsDirty(current !== initialStateRef.current);
   }, [p]);
 
-  // Save draft on change (CREATE only)
   useEffect(() => {
-    if (isNew && isDirty) saveDraft(p);
-  }, [p, isNew, isDirty]);
+    liberarRascunhoForm(draftKey);
+  }, [draftKey]);
+
+  useAutoSaveFormDraft(draftKey, draftData, isDirty);
 
   // === BROWSER EXIT GUARD (beforeunload) ===
   useEffect(() => {
@@ -549,15 +629,23 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // === LOCAL NAV GUARD (Voltar/Cancelar button only) ===
+  // === LOCAL NAV GUARD (Voltar/Cancelar) ===
   const handleDiscardClick = useCallback(() => {
-    clearDraft();
+    descartarRascunhoForm(draftKey);
     onBack();
-  }, [onBack]);
+  }, [draftKey, onBack]);
 
   const handleCancelClick = useCallback(() => {
     setShowDiscardDialog(false);
   }, []);
+
+  const handleRequestBack = useCallback(() => {
+    if (isDirty) {
+      setShowDiscardDialog(true);
+      return;
+    }
+    onBack();
+  }, [isDirty, onBack]);
 
   // Helper to handle input changes
   const handleChange = (field: keyof Prestador, value: any) => {
@@ -1146,7 +1234,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         }
 
         toast.success("Prestador cadastrado com sucesso!");
-        clearDraft();
+        descartarRascunhoForm(draftKey);
         onBack();
         return;
       }
@@ -1174,6 +1262,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
 
       console.log("[UPDATE REREAD] Registro confirmado:", rereadData);
       toast.success("Prestador atualizado com sucesso!");
+      descartarRascunhoForm(draftKey);
       onBack();
     } catch (error: any) {
       console.error("Erro ao salvar prestador:", error);
@@ -1387,7 +1476,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={handleRequestBack}><ArrowLeft className="w-5 h-5" /></Button>
           <h2 className="truncate text-lg font-bold sm:text-xl">{isNew ? "Cadastrar Prestador" : (p.nomeFantasia || p.nomeCompleto)}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1592,7 +1681,16 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                   <Switch
                     id="liberado_app"
                     checked={p.liberadoApp ?? false}
-                    onCheckedChange={(checked) => handleChange('liberadoApp', checked)}
+                    onCheckedChange={(checked) => {
+                      setP((prev) => ({
+                        ...prev,
+                        liberadoApp: checked,
+                        ...(checked
+                          ? { permissoes: Object.fromEntries(PERMISSOES_APP.map(({ field }) => [field, true])) }
+                          : {}),
+                      }));
+                      setIsDirty(true);
+                    }}
                   />
                   <Label htmlFor="liberado_app" className="text-sm cursor-pointer">
                     {p.liberadoApp ? "Librado para receber operações via aplicativo" : "Sem acesso ao aplicativo (somente rede interna)"}
@@ -2144,15 +2242,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 <p className="text-xs text-muted-foreground mt-1">Estas permissões controlam o que o prestador pode visualizar e fazer no aplicativo mobile.</p>
               </CardHeader>
               <CardContent className="space-y-4">
-                {[
-                  { label: "Ver Ordens de Serviço pertinentes", field: "podeVerOS", icon: List },
-                  { label: "Aceitar serviços disponíveis", field: "podeAceitarServico", icon: Sparkles },
-                  { label: "Ver valores e ganhos próprios", field: "podeVerValores", icon: CreditCard },
-                  { label: "Ver histórico de viagens", field: "podeVerHistorico", icon: Truck },
-                  { label: "Enviar documentos via app", field: "podeEnviarDocumentos", icon: Upload },
-                  { label: "Atualizar dados cadastrais", field: "podeAtualizarCadastro", icon: Users },
-                  { label: "Receber notificações push", field: "podeReceberNotificacoes", icon: Star },
-                ].map((item) => (
+                {PERMISSOES_APP.map((item) => (
                   <div key={item.field} className="flex items-center justify-between p-4 border rounded-xl hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-4">
                       <div className="p-2 bg-primary/10 rounded-lg">
@@ -2164,14 +2254,101 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                       </div>
                     </div>
                     <Switch 
-                      checked={!!(p.permissoes as any)?.[item.field]} 
-                      onCheckedChange={(val) => setP(prev => ({ 
-                        ...prev, 
-                        permissoes: { ...prev.permissoes, [item.field]: val } 
-                      }))} 
+                      checked={p.permissoes?.[item.field] ?? false}
+                      onCheckedChange={(val) => {
+                        setP((prev) => ({
+                          ...prev,
+                          permissoes: { ...prev.permissoes, [item.field]: val },
+                        }));
+                        setIsDirty(true);
+                      }}
                     />
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Gestão de Acesso</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Gerencie a conta usada pelo motorista para entrar no aplicativo. Este e-mail é independente do contato comercial.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="prestador-email-acesso" className="text-xs">E-mail de Acesso</Label>
+                  <Input
+                    id="prestador-email-acesso"
+                    type="email"
+                    autoComplete="email"
+                    value={emailAcesso}
+                    onChange={(event) => {
+                      setEmailAcesso(event.target.value);
+                      setSenhaTemporaria(null);
+                    }}
+                    placeholder="motorista@exemplo.com"
+                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {consultandoContaAcesso
+                      ? "Consultando a conta do aplicativo..."
+                      : contaAcessoExiste === false
+                      ? "Ainda não há uma conta do aplicativo vinculada a este prestador."
+                      : contaAcessoExiste === true
+                        ? "A alteração será aplicada ao gerar credenciais ou reenviar o link de redefinição."
+                        : p.id
+                          ? "Não foi possível carregar a conta do aplicativo."
+                          : "Salve o prestador para habilitar a gestão da conta."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => void executarAcaoAcesso("gerar_credenciais")}
+                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id}
+                  >
+                    {acaoAcessoEmCurso === "gerar_credenciais" ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                    Gerar Login e Senha
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => void executarAcaoAcesso("desbloquear")}
+                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id || !contaAcessoExiste}
+                  >
+                    {acaoAcessoEmCurso === "desbloquear" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlock className="h-4 w-4" />}
+                    Desbloquear Acesso
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => void executarAcaoAcesso("reenviar_credenciais")}
+                    disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id || !contaAcessoExiste}
+                  >
+                    {acaoAcessoEmCurso === "reenviar_credenciais" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                    Reenviar Credenciais
+                  </Button>
+                </div>
+                {senhaTemporaria && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-amber-900">Senha temporária — exibida somente nesta tela</p>
+                      <code className="break-all text-sm text-amber-950">{senhaTemporaria}</code>
+                      <p className="mt-1 text-xs text-amber-800">Compartilhe por canal seguro e solicite a troca no primeiro acesso.</p>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => void copiarSenhaTemporaria()}>
+                      <Copy className="h-4 w-4" />
+                      Copiar
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -2600,13 +2777,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       {/* BARRA FIXA INFERIOR */}
       <div className="fixed bottom-0 right-0 left-0 lg:left-64 bg-background/80 backdrop-blur-md border-t z-50 p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
         <div className="max-w-none flex justify-end items-center gap-3">
-          <Button variant="outline" onClick={() => {
-            if (isDirty) {
-              setShowDiscardDialog(true);
-            } else {
-              onBack();
-            }
-          }} disabled={isLoading}>
+          <Button variant="outline" onClick={handleRequestBack} disabled={isLoading}>
             Cancelar / Voltar
           </Button>
           <Button className="min-w-[120px] shadow-lg shadow-primary/20" onClick={handleSave} disabled={isLoading}>
@@ -3070,7 +3241,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             <DialogTitle>Alterações não salvas</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Você tem alterações não salvas. Deseja salvar como rascunho e sair, ou descartar as alterações?
+            Seu progresso é mantido temporariamente neste navegador. Deseja descartá-lo e sair ou continuar editando?
           </p>
           <div className="flex gap-3 justify-end pt-4">
             <Button variant="outline" onClick={handleCancelClick}>

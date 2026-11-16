@@ -14,7 +14,7 @@ import { Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { fromPrestadorRow, PrestadorRow } from "@/lib/dbMappers";
-import { formatarDataBR } from "@/lib/formatDates";
+import { formatarDataBR, formatarHoraBR } from "@/lib/formatDates";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
@@ -139,11 +139,11 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
         console.warn("Erro ao contar cadastros do APP pendentes:", contadorErro?.message || contadorErro);
       }
 
-      // 3. Sort globally A→Z (NULLs last) + paginate
+      // 3. Sort newest registrations first + paginate
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       const { data, error } = await dataQuery
-        .order("nome_completo", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
         .range(from, to);
 
       if (error) throw error;
@@ -190,6 +190,7 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
         const contatosRaw = (item as unknown as Record<string, unknown>).contatos_emergencia;
         return {
           ...mapped,
+          dataCadastro: item.created_at || mapped.dataCadastro || "",
           nomeCompleto: mapped.nomeCompleto || "Nome não informado",
           veiculos: prestadorVeiculos,
           documentos: docsRaw ? (typeof docsRaw === "string" ? JSON.parse(docsRaw) : docsRaw) : [],
@@ -522,7 +523,7 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                       {p.valorDiaria ? `R$ ${p.valorDiaria.toFixed(2)}` : "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatarDataBR(p.dataCadastro) || "—"}
+                      {[formatarDataBR(p.dataCadastro), formatarHoraBR(p.dataCadastro)].filter(Boolean).join(" ") || "—"}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col items-start gap-1">

@@ -144,6 +144,7 @@ export interface PrestadorForm {
     podeAtualizarCadastro?: boolean;
     podeReceberNotificacoes?: boolean;
   };
+  metadata?: Record<string, unknown>;
 }
 
 export interface PrestadorRow {
@@ -215,6 +216,7 @@ export interface PrestadorRow {
   observacoes_torre?: string;
   created_at?: string;
   updated_at?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // Colunas reais da tabela prestadores no banco:
@@ -258,7 +260,7 @@ const PRESTADOR_ALLOWLIST: string[] = [
   // Datas
   'data_cadastro', 'data_aprovacao', 'ultima_atualizacao', 'ultimo_usuario',
   // Timestamps
-  'created_at', 'updated_at',
+  'created_at', 'updated_at', 'metadata',
   // Foto
   'foto'
 ];
@@ -344,6 +346,12 @@ export const toPrestadorInsert = (form: Partial<PrestadorForm>): Record<string, 
   
   // Foto
   if (has(form.foto)) raw.foto = String(form.foto);
+  if (form.metadata || form.permissoes) {
+    raw.metadata = {
+      ...(form.metadata || {}),
+      ...(form.permissoes ? { permissoes_app: form.permissoes } : {}),
+    };
+  }
   
   // Data de cadastro
   raw.data_cadastro = new Date().toISOString().split('T')[0];
@@ -423,6 +431,12 @@ export const toPrestadorUpdate = (form: Partial<PrestadorForm>): Record<string, 
   
   // Foto
   if (has(form.foto)) raw.foto = String(form.foto);
+  if (form.metadata || form.permissoes) {
+    raw.metadata = {
+      ...(form.metadata || {}),
+      ...(form.permissoes ? { permissoes_app: form.permissoes } : {}),
+    };
+  }
   
   raw.updated_at = new Date().toISOString();
   
@@ -445,6 +459,9 @@ export const fromPrestadorRow = (item: PrestadorRow): PrestadorForm => {
     }
   }
 
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const permissoesApp = metadata.permissoes_app;
+
   return {
     id: item.id,
     foto: item.foto,
@@ -459,6 +476,11 @@ export const fromPrestadorRow = (item: PrestadorRow): PrestadorForm => {
     tipoParceiro: item.tipo_parceiro || "autonomo",
     status: item.status || "analise",
     liberadoApp: item.liberado_app ?? false,
+    metadata,
+    permissoes:
+      permissoesApp && typeof permissoesApp === "object"
+        ? (permissoesApp as PrestadorForm["permissoes"])
+        : {},
     endereco: enderecoParsed,
     regiaoPrincipal: item.regiao_principal || "",
     regioesSecundarias: item.regioes_secundarias || [],

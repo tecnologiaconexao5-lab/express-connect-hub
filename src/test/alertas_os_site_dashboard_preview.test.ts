@@ -153,6 +153,19 @@ describe("C) Dashboard — Solicitações de Clientes Site", () => {
   it("service consulta o marcador carga->>origem_cotacao", () => {
     expect(service).toContain('"carga->>origem_cotacao"');
   });
+
+  it("conta somente prestadores que aguardam validação", () => {
+    expect(dashboardPage).toContain('.select("id", { count: "exact", head: true })');
+    expect(dashboardPage).toContain("status.in.(analise,em_analise)");
+    expect(dashboardPage).toContain("origem_cadastro.eq.app_motorista,liberado_app.eq.false");
+    expect(dashboardPage).toContain("origem_cadastro.eq.app_motorista,liberado_app.is.null");
+  });
+
+  it("exibe alerta clicável para a listagem de prestadores apenas quando há pendências", () => {
+    expect(dashboardPage).toContain("prestadoresAguardandoValidacao > 0");
+    expect(dashboardPage).toContain('to="/cadastros/prestadores"');
+    expect(dashboardPage).toContain("novo(s) cadastro(s) de prestador aguardando validação");
+  });
 });
 
 describe("D) Preview da OS em painel de alta densidade", () => {
