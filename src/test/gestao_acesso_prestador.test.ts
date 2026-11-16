@@ -42,4 +42,16 @@ describe("Gestão de acesso de prestadores", () => {
     expect(edge).toContain("resetPasswordForEmail");
     expect(edge).not.toContain("console.log(senha");
   });
+
+  it("expõe ações de credencial e liberação na seção Gerenciamento de Acesso", () => {
+    const source = ler("src/components/prestadores/PrestadorDetalhe.tsx");
+    expect(source).toContain("Gerenciamento de Acesso");
+    expect(source).toContain("Gerar/Resetar Senha de Acesso");
+    expect(source).toContain('executarAcaoAcesso("gerar_credenciais")');
+    expect(source).toContain("Liberar Acesso ao App");
+    expect(source).toContain("onClick={liberarAcessoApp}");
+    expect(source).toContain('normalizarStatusPrestador(p.status) !== "ativo"');
+    expect(source).toContain("liberadoApp: true");
+    expect(source).toContain("Salve o prestador para aplicar a alteração.");
+  });
 });

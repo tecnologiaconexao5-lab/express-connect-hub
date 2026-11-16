@@ -367,6 +367,25 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
+  const liberarAcessoApp = () => {
+    if (!p.id) {
+      toast.error("Salve o cadastro do prestador antes de liberar o acesso.");
+      return;
+    }
+    if (normalizarStatusPrestador(p.status) !== "ativo") {
+      toast.error("Aprove e ative o prestador antes de liberar o acesso ao aplicativo.");
+      return;
+    }
+
+    setP((prev) => ({
+      ...prev,
+      liberadoApp: true,
+      permissoes: Object.fromEntries(PERMISSOES_APP.map(({ field }) => [field, true])),
+    }));
+    setIsDirty(true);
+    toast.success("Acesso ao aplicativo habilitado. Salve o prestador para aplicar a alteração.");
+  };
+
   const copiarSenhaTemporaria = async () => {
     if (!senhaTemporaria) return;
     try {
@@ -2269,7 +2288,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             </Card>
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Gestão de Acesso</CardTitle>
+                <CardTitle className="text-sm">Gerenciamento de Acesso</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
                   Gerencie a conta usada pelo motorista para entrar no aplicativo. Este e-mail é independente do contato comercial.
                 </p>
@@ -2301,17 +2320,26 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                           : "Salve o prestador para habilitar a gestão da conta."}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-3">
                   <Button
                     type="button"
-                    variant="outline"
-                    size="sm"
                     className="gap-2"
                     onClick={() => void executarAcaoAcesso("gerar_credenciais")}
                     disabled={!!acaoAcessoEmCurso || consultandoContaAcesso || !p.id}
                   >
                     {acaoAcessoEmCurso === "gerar_credenciais" ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                    Gerar Login e Senha
+                    Gerar/Resetar Senha de Acesso
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={liberarAcessoApp}
+                    disabled={!p.id || !!p.liberadoApp || normalizarStatusPrestador(p.status) !== "ativo"}
+                    title={normalizarStatusPrestador(p.status) !== "ativo" ? "O prestador precisa estar ativo para liberar o acesso." : undefined}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Liberar Acesso ao App
                   </Button>
                   <Button
                     type="button"
@@ -2336,6 +2364,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     Reenviar Credenciais
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  A liberação habilita as permissões do aplicativo e deve ser confirmada em <strong>Salvar Prestador</strong>.
+                </p>
                 {senhaTemporaria && (
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
                     <div className="min-w-0">
