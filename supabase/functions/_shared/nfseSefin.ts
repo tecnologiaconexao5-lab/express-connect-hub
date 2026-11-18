@@ -4,11 +4,16 @@
 // Transmissao mTLS do XML assinado para a API do Emissor Nacional
 // (Sefin/ADN) e normalizacao da resposta (sucesso/rejeicao).
 //
-// O endpoint e configurado por secret:
+// Endpoint por secret:
 //   NFSE_SEFIN_URL            (override geral)
 //   NFSE_SEFIN_URL_PRODUCAO
 //   NFSE_SEFIN_URL_HOMOLOGACAO
+//   NFSE_SEFIN_CA_PEM         (opcional: CA do servidor Sefin, PEM)
+//
+// mTLS: tenta `Deno.createHttpClient` + fetch e, se indisponivel/falhar,
+// usa `node:https` com cert/key e rejectUnauthorized: true.
 // ===================================================================
+import * as https from "node:https";
 
 export interface MaterialTls {
   keyPem: string;
@@ -178,19 +183,89 @@ function analisarResposta(
   };
 }
 
-/**
- * Envia o XML assinado com o certificado A1 como agente TLS (mTLS).
- * Lanca erro de rede (sem detalhes sensiveis) se a conexao falhar.
- */
-export async function transmitirParaSefin(
+interface RespostaHttp {
+  status: number;
+  corpo: string;
+}
+
+/** Erro de transporte sanitizado (sem chave/certificado/senha). */
+export class SefinComunicacaoError extends Error {
+  readonly detalhe: string;
+
+  constructor(detalhe: string) {
+    super(`Falha de comunicacao mTLS com a Sefin (${detalhe}).`);
+    this.name = "SefinComunicacaoError";
+    this.detalhe = detalhe;
+  }
+}
+
+function resumoSeguro(erro: unknown): string {
+  const bruto = erro instanceof Error
+    ? `${erro.name}: ${erro.message}`
+    : String(erro);
+  return bruto.replace(/\s+/g, " ").slice(0, 280);
+}
+
+function validarEndpointSefin(endpoint: string): URL {
+  let url: URL;
+  try {
+    url = new URL(String(endpoint || "").trim());
+  } catch {
+    throw new SefinComunicacaoError(
+      "endpoint Sefin invalido (URL malformada em NFSE_SEFIN_URL_HOMOLOGACAO/PRODUCAO)",
+    );
+  }
+  if (url.protocol !== "https:") {
+    throw new SefinComunicacaoError(
+      `endpoint Sefin invalido (protocolo ${url.protocol}; esperado https:)`,
+    );
+  }
+  if (!url.hostname) {
+    throw new SefinComunicacaoError("endpoint Sefin invalido (hostname ausente)");
+  }
+  return url;
+}
+
+function lerCaSefin(): string | undefined {
+  const ca = Deno.env.get("NFSE_SEFIN_CA_PEM")?.trim();
+  return ca || undefined;
+}
+
+function respostaComJson(status: number, corpo: string): RespostaSefin {
+  let json: unknown = null;
+  try {
+    json = JSON.parse(corpo);
+  } catch {
+    json = null;
+  }
+  return analisarResposta(status, corpo, json);
+}
+
+/** Caminho principal: Deno.createHttpClient + fetch. */
+async function postComDenoFetch(
+  endpoint: string,
   xmlAssinado: string,
   material: MaterialTls,
-  endpoint: string,
-): Promise<RespostaSefin> {
-  const cliente = Deno.createHttpClient({
+): Promise<RespostaHttp> {
+  const createHttpClient = (Deno as unknown as {
+    createHttpClient?: (opcoes: Record<string, unknown>) => {
+      close: () => void;
+    };
+  }).createHttpClient;
+
+  if (typeof createHttpClient !== "function") {
+    throw new Error("Deno.createHttpClient indisponivel no runtime");
+  }
+
+  const ca = lerCaSefin();
+  const cliente = createHttpClient({
     cert: material.chainPem,
     key: material.keyPem,
+    ...(ca ? { caCerts: [ca] } : {}),
   });
+
+  const controller = new AbortController();
+  const timer = setTimeout(function() { controller.abort(); }, 30000);
 
   try {
     const init = {
@@ -201,24 +276,95 @@ export async function transmitirParaSefin(
       },
       body: xmlAssinado,
       client: cliente,
-    } as RequestInit & { client: Deno.HttpClient };
+      signal: controller.signal,
+    } as unknown as RequestInit;
 
     const resposta = await fetch(endpoint, init);
-    const corpo = await resposta.text();
-
-    let json: unknown = null;
-    try {
-      json = JSON.parse(corpo);
-    } catch {
-      json = null;
-    }
-
-    return analisarResposta(resposta.status, corpo, json);
-  } catch (erro) {
-    // Nao incluir corpo/XML/senha — apenas um motivo tecnico curto.
-    const motivo = erro instanceof Error ? erro.name : "erro desconhecido";
-    throw new Error(`Falha de comunicacao mTLS com a Sefin (${motivo}).`);
+    return { status: resposta.status, corpo: await resposta.text() };
   } finally {
-    cliente.close();
+    clearTimeout(timer);
+    try {
+      cliente.close();
+    } catch {
+      // Ignora falha ao fechar o cliente.
+    }
   }
+}
+
+/** Fallback: node:https com mTLS (cert/key PEM e CA valida). */
+function postComNodeHttps(
+  url: URL,
+  xmlAssinado: string,
+  material: MaterialTls,
+): Promise<RespostaHttp> {
+  return new Promise((resolve, reject) => {
+    const corpoBytes = new TextEncoder().encode(xmlAssinado);
+    const ca = lerCaSefin();
+
+    const opcoes = {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port ? Number(url.port) : 443,
+      path: `${url.pathname || "/"}${url.search}`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
+        "Content-Length": String(corpoBytes.byteLength),
+      },
+      cert: material.chainPem,
+      key: material.keyPem,
+      rejectUnauthorized: true,
+      servername: url.hostname,
+      ...(ca ? { ca } : {}),
+    };
+
+    const requisicao = https.request(opcoes, (resposta) => {
+      const status = resposta.statusCode ?? 0;
+      let corpo = "";
+      resposta.setEncoding("utf8");
+      resposta.on("data", (parte) => {
+        corpo += parte;
+      });
+      resposta.on("end", () => resolve({ status, corpo }));
+      resposta.on("error", reject);
+    });
+
+    requisicao.setTimeout(30000, function() {
+      requisicao.destroy(new Error("timeout na conexao com a Sefin (30s)"));
+    });
+    requisicao.on("error", reject);
+    requisicao.write(xmlAssinado);
+    requisicao.end();
+  });
+}
+
+/**
+ * Envia o XML assinado com o certificado A1 como agente TLS (mTLS).
+ * Tenta Deno.fetch e cai automaticamente para node:https.
+ * Erros sao sanitizados (sem senha/PFX/chave).
+ */
+export async function transmitirParaSefin(
+  xmlAssinado: string,
+  material: MaterialTls,
+  endpoint: string,
+): Promise<RespostaSefin> {
+  const url = validarEndpointSefin(endpoint);
+  const detalhes: string[] = [];
+
+  try {
+    const resposta = await postComDenoFetch(url.toString(), xmlAssinado, material);
+    return respostaComJson(resposta.status, resposta.corpo);
+  } catch (erro) {
+    detalhes.push(`deno-fetch ${resumoSeguro(erro)}`);
+  }
+
+  try {
+    const resposta = await postComNodeHttps(url, xmlAssinado, material);
+    return respostaComJson(resposta.status, resposta.corpo);
+  } catch (erro) {
+    detalhes.push(`node-https ${resumoSeguro(erro)}`);
+  }
+
+  throw new SefinComunicacaoError(detalhes.join(" | ").slice(0, 500));
 }

@@ -557,6 +557,11 @@ serve(async (req: Request) => {
         ? erro.message
         : "Falha de comunicacao com a Sefin.";
 
+      console.error(
+        "[nfse-assinar-transmitir] Falha de comunicacao Sefin:",
+        motivo,
+      );
+
       try {
         await atualizarRascunho(
           admin,
