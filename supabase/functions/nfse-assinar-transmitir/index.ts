@@ -372,15 +372,39 @@ serve(async (req: Request) => {
     const pfxBytes = new Uint8Array(await pfxBlob.arrayBuffer());
 
     // Senha: decifra e usa apenas para abrir o PFX (nunca logar).
-    let material: MaterialCertificado;
+    let senha: string;
     try {
       const chaveCripto = await obterChaveCriptografia();
-      const senha = await descriptografarSenha(
+      senha = await descriptografarSenha(
         String(certificado.senha_hash),
         chaveCripto,
       );
+    } catch (erro) {
+      console.error(
+        "[nfse-assinar-transmitir] Senha do certificado: codigo=senha_ilegivel detalhe=" +
+          (erro instanceof Error
+            ? `${erro.name}: ${erro.message.slice(0, 300)}`
+            : "erro desconhecido"),
+      );
+      return respostaJson(
+        {
+          success: false,
+          codigo: "senha_ilegivel",
+          error:
+            "Nao foi possivel abrir o certificado A1 (codigo: senha_ilegivel). Reenvie o certificado e a senha.",
+        },
+        422,
+      );
+    }
+
+    let material: MaterialCertificado;
+    try {
       material = await abrirPfx(pfxBytes, senha);
     } catch (erro) {
+      const codigo = erro instanceof CertificadoError
+        ? erro.codigo
+        : "erro_desconhecido_certificado";
+
       if (erro instanceof CertificadoError) {
         // Log tecnico sanitizado (sem senha/PFX/chave) para diagnostico.
         console.error(
@@ -394,11 +418,13 @@ serve(async (req: Request) => {
             : "erro desconhecido",
         );
       }
+
       return respostaJson(
         {
           success: false,
+          codigo,
           error:
-            "Nao foi possivel abrir o certificado A1. Reenvie o certificado e a senha.",
+            `Nao foi possivel abrir o certificado A1 (codigo: ${codigo}). Reenvie o certificado e a senha.`,
         },
         422,
       );
