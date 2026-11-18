@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -537,7 +536,19 @@ export default function NfseTab() {
     setRascunhoAtualId(null);
   };
 
-  const openDetails = function(nfse: any) { setSelectedNfse(nfse); setShowDetails(true); fetchHistorico(nfse.id); };
+  const openDetails = function(nfse: any) {
+    setSelectedNfse(nfse);
+    setShowDetails(true);
+    setShowSimulacao(false);
+    setShowPreEmissao(false);
+    fetchHistorico(nfse.id);
+  };
+
+  const fecharDetalhes = function() {
+    setShowDetails(false);
+    setShowSimulacao(false);
+    setShowPreEmissao(false);
+  };
 
   const fetchHistorico = async function(nfseId: string) {
     const data = await listarHistoricoStatus("NFSE", nfseId);
@@ -1143,6 +1154,295 @@ export default function NfseTab() {
     );
   }
 
+  // ===================================================================
+  // DETALHES — pagina cheia (sem Dialog)
+  // ===================================================================
+  if (showDetails && selectedNfse) {
+    const metaDetalhe = selectedNfse.metadata || {};
+    const validacoesDetalhe: Array<{ severidade?: string; mensagem?: string }> =
+      Array.isArray(metaDetalhe.validacoes_pendentes)
+        ? metaDetalhe.validacoes_pendentes
+        : [];
+    const errosDetalhe = validacoesDetalhe.filter(function(item) {
+      return item.severidade === "erro";
+    });
+    const avisosDetalhe = validacoesDetalhe.filter(function(item) {
+      return item.severidade === "aviso";
+    });
+    const temErros = errosDetalhe.length > 0;
+    const pronto = metaDetalhe.pronto_para_emissao === true;
+    const statusDetalhe = String(selectedNfse.status || "");
+    const statusLower = statusDetalhe.toLowerCase();
+    const podeTransmitirDetalhe =
+      statusLower === "rascunho" || statusLower === "erro_emissao";
+
+    return (
+      <div className="space-y-4">
+        {/* HEADER */}
+        <div className="flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fecharDetalhes}
+              title="Voltar para a lista"
+              aria-label="Voltar para a lista"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">
+                NFS-e {selectedNfse.numero || "—"}
+              </h1>
+              <p className="text-xs text-muted-foreground">Detalhes do documento fiscal</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-xs">
+              {statusDetalhe || "—"}
+            </Badge>
+            {podeTransmitirDetalhe && (
+              <Button
+                size="sm"
+                className="bg-orange-600 text-white hover:bg-orange-700"
+                onClick={function() {
+                  setShowDetails(false);
+                  void handleTransmitir(selectedNfse.id);
+                }}
+                disabled={transmitindoId !== null}
+              >
+                {transmitindoId === selectedNfse.id
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <Send className="w-4 h-4 mr-2" />}
+                Transmitir
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={fecharDetalhes}>Fechar</Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            {/* STATUS FISCAL */}
+            <div
+              className={
+                "rounded-xl border-2 p-4 " +
+                (temErros ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50")
+              }
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className={"h-4 w-4 " + (temErros ? "text-red-600" : "text-emerald-600")} />
+                  <span className="text-sm font-semibold">STATUS FISCAL</span>
+                </div>
+                <Badge
+                  className={
+                    temErros
+                      ? "border-red-200 bg-red-100 text-red-700"
+                      : "border-emerald-200 bg-emerald-100 text-emerald-700"
+                  }
+                >
+                  {temErros ? "COM PENDÊNCIA" : "PRONTO INTERNO"}
+                </Badge>
+              </div>
+            </div>
+
+            {selectedNfse.motivo_rejeicao && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="flex items-center gap-2 font-semibold">
+                  <XCircle className="h-4 w-4" /> Rejeição da Sefin
+                </p>
+                <p className="mt-1 text-xs">{selectedNfse.motivo_rejeicao}</p>
+              </div>
+            )}
+
+            {errosDetalhe.length > 0 && (
+              <div className="rounded-xl border bg-white">
+                <div className="border-b bg-red-50/50 p-3">
+                  <span className="text-xs font-semibold text-red-800">
+                    PENDÊNCIAS ({errosDetalhe.length})
+                  </span>
+                </div>
+                <div className="space-y-1 p-3">
+                  {errosDetalhe.map(function(item, indice) {
+                    return (
+                      <div key={indice} className="flex items-start gap-2 text-xs">
+                        <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-red-500" />
+                        <span className="text-red-700">{item.mensagem}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {avisosDetalhe.length > 0 && (
+              <div className="rounded-xl border bg-white">
+                <div className="border-b bg-amber-50/50 p-3">
+                  <span className="text-xs font-semibold text-amber-800">
+                    AVISOS ({avisosDetalhe.length})
+                  </span>
+                </div>
+                <div className="space-y-1 p-3">
+                  {avisosDetalhe.map(function(item, indice) {
+                    return (
+                      <div key={indice} className="flex items-start gap-2 text-xs">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                        <span className="text-amber-700">{item.mensagem}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* DADOS */}
+            <div className="space-y-2 rounded-xl border bg-white p-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Emitente</span>
+                <span className="font-medium">{metaDetalhe.emitente?.nome || "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tomador</span>
+                <span className="font-medium">{metaDetalhe.tomador?.nome || "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Serviço</span>
+                <span>{metaDetalhe.servico || "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Código</span>
+                <span className="font-mono">{metaDetalhe.codigo_servico || "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ISS%</span>
+                <span>{metaDetalhe.aliquota_iss != null ? metaDetalhe.aliquota_iss + "%" : "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ISS Retido</span>
+                <span>{metaDetalhe.iss_retido === true ? "Sim" : metaDetalhe.iss_retido === false ? "Não" : "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Valor</span>
+                <span className="font-semibold">
+                  {fmtFin(Number(metaDetalhe.valor_servico ?? selectedNfse.valor ?? 0))}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Município</span>
+                <span>{metaDetalhe.municipio_prestacao || "—"}</span>
+              </div>
+            </div>
+
+            {/* CICLO DE VIDA */}
+            <div className="rounded-xl border bg-white">
+              <div className="flex items-center justify-between border-b bg-slate-50/50 p-3">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-slate-600" />
+                  <span className="text-xs font-semibold text-slate-800">CICLO DE VIDA INTERNO</span>
+                </div>
+                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-xs">
+                  {selectedNfse.status}
+                </Badge>
+              </div>
+              <div className="space-y-2 p-3">
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="text-xs" onClick={function() { openSimulacao("cancelar"); }}>
+                    <XCircle className="mr-1 h-3 w-3" /> Simular Cancelamento
+                  </Button>
+                  <Button variant="outline" size="sm" className="text-xs" onClick={function() { openSimulacao("rejeitar"); }}>
+                    <AlertTriangle className="mr-1 h-3 w-3" /> Simular Rejeição
+                  </Button>
+                </div>
+                <p className="text-[10px] italic text-muted-foreground">
+                  Simulações internas. Não comunicam com prefeitura ou Focus.
+                </p>
+
+                {showSimulacao && (
+                  <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs font-semibold text-amber-800">
+                      Simular {simulacaoAcao === "cancelar" ? "cancelamento" : "rejeição"}
+                    </p>
+                    <Input
+                      value={motivoSimulacao}
+                      onChange={function(e) { setMotivoSimulacao(e.target.value); }}
+                      placeholder="Motivo da simulação..."
+                    />
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={function() { setShowSimulacao(false); }}>
+                        Cancelar
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleSimular}
+                        disabled={!motivoSimulacao.trim()}
+                      >
+                        Confirmar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {historico.length > 0 && (
+                  <div className="mt-2 border-t pt-2">
+                    <span className="text-xs font-semibold text-muted-foreground">Histórico</span>
+                    <div className="mt-1 space-y-1">
+                      {historico.slice(0, 5).map(function(h, indice) {
+                        return (
+                          <div key={indice} className="flex items-center gap-1 text-[10px]">
+                            <span className="text-muted-foreground">{new Date(h.created_at).toLocaleString()}</span>
+                            <span className="font-mono">{h.status_anterior}→{h.status_novo}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* COLUNA LATERAL */}
+          <div className="space-y-4">
+            <div className="space-y-3 rounded-xl border bg-white p-4">
+              <p className="text-sm font-semibold">Pré-emissão</p>
+              <Button
+                className="w-full"
+                variant={temErros || !pronto ? "outline" : "default"}
+                disabled={temErros || !pronto}
+                onClick={pronto && !temErros ? handlePreEmissao : undefined}
+              >
+                <Stamp className="mr-2 h-4 w-4" /> Pré-emissão NFS-e
+              </Button>
+              {!pronto && !temErros && (
+                <p className="text-[11px] text-muted-foreground">
+                  Finalize as pendências para habilitar.
+                </p>
+              )}
+
+              {showPreEmissao && (
+                <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4" /> Dados internos prontos
+                  </p>
+                  <p className="text-xs text-blue-800">
+                    A emissão desta NFS-e segue o fluxo próprio do Padrão Nacional
+                    (SEFIN), sem dependência de configuração, token ou certificado
+                    da Focus NFe.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={function() { setShowPreEmissao(false); }}>
+                    Entendi
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 pt-4">
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -1220,66 +1520,6 @@ export default function NfseTab() {
         </CardContent>
       </Card>
 
-      {/* Modal Detalhes */}
-      <Dialog open={showDetails} onOpenChange={setShowDetails}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          {selectedNfse && (function() {
-            const m = selectedNfse.metadata || {};
-            const v = Array.isArray(m.validacoes_pendentes) ? m.validacoes_pendentes : [];
-            const pronto = m.pronto_para_emissao;
-            const erros = v.filter(function(x:any){return x.severidade==="erro";});
-            const avisos = v.filter(function(x:any){return x.severidade==="aviso";});
-            const temErros = erros.length > 0;
-            return (
-              <>
-                <DialogHeader><DialogTitle className="flex items-center gap-2"><Stamp className="w-5 h-5 text-green-600" />NFS-e {selectedNfse.numero}</DialogTitle><DialogDescription>{selectedNfse.status}</DialogDescription></DialogHeader>
-                <div className="space-y-3 py-2">
-                  <div className={"p-3 rounded-lg border-2 "+(temErros?"bg-red-50 border-red-200":"bg-green-50 border-green-200")}>
-                    <div className="flex items-center justify-between"><div className="flex items-center gap-2"><ShieldAlert className={"w-4 h-4 "+(temErros?"text-red-600":"text-green-600")}/><span className="font-semibold text-sm">STATUS FISCAL</span></div><Badge className={temErros?"bg-red-100 text-red-700 border-red-200":"bg-green-100 text-green-700 border-green-200"}>{temErros?"COM PENDENCIA":"PRONTO INTERNO"}</Badge></div>
-                  </div>
-                  {erros.length>0&&<div className="border rounded-lg"><div className="p-3 border-b bg-red-50/50"><span className="font-semibold text-xs text-red-800">PENDENCIAS ({erros.length})</span></div><div className="p-3 space-y-1">{erros.map(function(e:any,i:number){return<div key={i} className="flex items-start gap-2 text-xs"><XCircle className="w-3 h-3 text-red-500 mt-0.5 shrink-0"/><span className="text-red-700">{e.mensagem}</span></div>;})}</div></div>}
-                  {avisos.length>0&&<div className="border rounded-lg"><div className="p-3 border-b bg-amber-50/50"><span className="font-semibold text-xs text-amber-800">AVISOS ({avisos.length})</span></div><div className="p-3 space-y-1">{avisos.map(function(a:any,i:number){return<div key={i} className="flex items-start gap-2 text-xs"><AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 shrink-0"/><span className="text-amber-700">{a.mensagem}</span></div>;})}</div></div>}
-                  <div className="border rounded-lg p-3 bg-slate-50 space-y-1 text-sm">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Emitente</span><span className="font-medium">{m.emitente?.nome||"-"}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Tomador</span><span className="font-medium">{m.tomador?.nome||"-"}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Servico</span><span>{m.servico||"-"}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Codigo</span><span className="font-mono">{m.codigo_servico||"-"}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">ISS%</span><span>{m.aliquota_iss!=null?m.aliquota_iss+"%":"-"}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">ISS Retido</span><span>{m.iss_retido===true?"Sim":m.iss_retido===false?"Nao":"-"}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Valor</span><span className="font-semibold">{fmtFin(m.valor_servico)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Municipio</span><span>{m.municipio_prestacao||"-"}</span></div>
-                  </div>
-
-                  {/* CICLO DE VIDA */}
-                  <div className="border rounded-lg mt-3">
-                    <div className="p-3 border-b bg-slate-50/50 flex items-center justify-between"><div className="flex items-center gap-2"><GitBranch className="w-4 h-4 text-slate-600" /><span className="font-semibold text-xs text-slate-800">CICLO DE VIDA INTERNO</span></div><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">{selectedNfse.status}</Badge></div>
-                    <div className="p-3 space-y-2"><div className="flex gap-2"><Button variant="outline" size="sm" className="text-xs" onClick={function(){openSimulacao("cancelar");}}><XCircle className="w-3 h-3 mr-1" />Simular Cancelamento</Button><Button variant="outline" size="sm" className="text-xs" onClick={function(){openSimulacao("rejeitar");}}><AlertTriangle className="w-3 h-3 mr-1" />Simular Rejeicao</Button></div><p className="text-[10px] text-muted-foreground italic">Simulacoes internas. Nao comunicam com prefeitura ou Focus.</p>{historico.length>0&&<div className="mt-2 pt-2 border-t"><span className="text-xs font-semibold text-muted-foreground">Historico</span><div className="space-y-1 mt-1">{historico.slice(0,3).map(function(h:any,i:number){return <div key={i} className="text-[10px] flex items-center gap-1"><span className="text-muted-foreground">{new Date(h.created_at).toLocaleString()}</span><span className="font-mono">{h.status_anterior}→{h.status_novo}</span></div>;})}</div></div>}</div>
-                  </div>
-
-                  <Tooltip><TooltipTrigger asChild><span className="w-full inline-block"><Button className="w-full" disabled={temErros} variant={temErros?"outline":"default"} onClick={pronto&&!temErros?handlePreEmissao:undefined}><Stamp className="w-4 h-4 mr-2"/>Pre-emissao NFS-e</Button></span></TooltipTrigger>{temErros&&<TooltipContent><p>Corrija as pendencias antes da emissao.</p></TooltipContent>}</Tooltip>
-                </div>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal Simulacao */}
-      <Dialog open={showSimulacao} onOpenChange={setShowSimulacao}>
-        <DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Simular {simulacaoAcao==="cancelar"?"Cancelamento":"Rejeicao"} — NFS-e</DialogTitle><DialogDescription>Esta acao e uma simulacao interna.</DialogDescription></DialogHeader>
-          <div className="space-y-3 py-2"><div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">Nao comunica com prefeitura ou Focus NFe.</div><div><Label>Motivo *</Label><Input value={motivoSimulacao} onChange={function(e){setMotivoSimulacao(e.target.value);}} placeholder="Teste de homologacao..." /></div></div>
-          <DialogFooter><Button variant="outline" onClick={function(){setShowSimulacao(false);}}>Cancelar</Button><Button variant="destructive" onClick={handleSimular} disabled={!motivoSimulacao.trim()}>Confirmar Simulacao</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal Pre-emissao */}
-      <Dialog open={showPreEmissao} onOpenChange={setShowPreEmissao}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Send className="w-5 h-5 text-primary"/>Pre-emissao NFS-e</DialogTitle><DialogDescription>Dados internos prontos</DialogDescription></DialogHeader>
-          <div className="space-y-3 py-2"><div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-green-600"/><span className="text-sm font-medium text-green-800">Dados internos prontos</span></div><div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"><div className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0"/><p className="text-xs text-blue-800">A emissao desta NFS-e seguira o fluxo proprio do Padrao Nacional (SEFIN), sem dependencia de configuracao, token ou certificado da Focus NFe. O envio sera habilitado pelo motor neutro de NFS-e.</p></div></div></div>
-          <DialogFooter><Button variant="outline" onClick={function(){setShowPreEmissao(false);}}>Fechar</Button><Button onClick={function(){setShowPreEmissao(false);}}>Entendi</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
