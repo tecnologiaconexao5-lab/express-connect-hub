@@ -38,6 +38,30 @@ type OrigemOpcao = {
   valor: number | null;
 };
 
+type RespostaTransmissao = {
+  success?: boolean;
+  status?: string;
+  numero?: string | number | null;
+  error?: string;
+  rejeicao?: {
+    codigo?: string | null;
+    mensagem?: string | null;
+    http_status?: number | null;
+  } | null;
+};
+
+function mensagemTransmissao(
+  payload: RespostaTransmissao | null,
+  fallback: string,
+): string {
+  const rejeicao = payload?.rejeicao;
+  const partes = [rejeicao?.codigo, rejeicao?.mensagem]
+    .filter(function(parte): parte is string { return Boolean(parte); });
+  if (partes.length > 0) return partes.join(" - ");
+  if (payload?.error) return payload.error;
+  return fallback;
+}
+
 export default function NfseTab() {
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +77,7 @@ export default function NfseTab() {
   const [simulacaoAcao, setSimulacaoAcao] = useState("");
   const [motivoSimulacao, setMotivoSimulacao] = useState("");
   const [historico, setHistorico] = useState<any[]>([]);
+  const [transmitindoId, setTransmitindoId] = useState<string | null>(null);
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -102,6 +127,59 @@ export default function NfseTab() {
       setErro(e.message || "Erro ao carregar NFS-e");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTransmitir = async function(nfseId: string) {
+    if (!nfseId || transmitindoId) return;
+
+    setTransmitindoId(nfseId);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "nfse-assinar-transmitir",
+        { body: { nfse_id: nfseId } },
+      );
+
+      let payload = (data ?? null) as RespostaTransmissao | null;
+
+      if (error) {
+        // functions.invoke devolve FunctionsHttpError em status != 2xx;
+        // o corpo JSON (rejeicao/erro) fica em `context`.
+        const contexto = (error as { context?: unknown }).context;
+        if (contexto instanceof Response) {
+          const corpo = await contexto.json().catch(function() { return null; });
+          payload = (corpo ?? payload) as RespostaTransmissao | null;
+        }
+        toast.error(
+          mensagemTransmissao(
+            payload,
+            error.message || "Falha ao transmitir a NFS-e.",
+          ),
+        );
+        return;
+      }
+
+      if (!payload?.success) {
+        toast.error(
+          mensagemTransmissao(payload, "A Sefin rejeitou a NFS-e."),
+        );
+        return;
+      }
+
+      toast.success(
+        payload.numero
+          ? "NFS-e " + String(payload.numero) + " transmitida com sucesso!"
+          : "NFS-e transmitida com sucesso!",
+      );
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Erro inesperado ao transmitir a NFS-e.",
+      );
+    } finally {
+      setTransmitindoId(null);
+      await fetchNfses();
     }
   };
 
@@ -415,24 +493,60 @@ export default function NfseTab() {
               {erro ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-red-500"><AlertCircle className="w-5 h-5 mx-auto mb-1" /><p className="text-sm">{erro}</p><Button variant="link" size="sm" onClick={fetchNfses}>Tentar novamente</Button></TableCell></TableRow>
                : loading ? <TableRow><TableCell colSpan={7} className="h-24 text-center"><ProgressiveBlocksLoader size="normal" /></TableCell></TableRow>
                : nfses.length === 0 ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Nenhuma NFS-e encontrada.</TableCell></TableRow>
-               : nfses.map(function(n) {
-                   const m = n.metadata || {};
-                   const v = m.validacoes_pendentes || [];
-                   return (
-                     <TableRow key={n.id}>
-                       <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
-                       <TableCell className="text-sm">{m.tomador?.nome || "-"}</TableCell>
-                       <TableCell className="text-xs">{m.servico || "-"}</TableCell>
-                       <TableCell className="font-medium">{fmtFin(n.valor)}</TableCell>
-                       <TableCell><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{n.status}</Badge></TableCell>
-                       <TableCell>
-                         {v.length === 0 ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />0</Badge>
-                          : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><AlertTriangle className="w-3 h-3 mr-1" />{v.length}</Badge>}
-                       </TableCell>
-                       <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={function(){openDetails(n);}}><Eye className="w-4 h-4" /></Button></TableCell>
-                     </TableRow>
-                   );
-                 })}
+                : nfses.map(function(n) {
+                    const m = n.metadata || {};
+                    const v = m.validacoes_pendentes || [];
+                    const statusNfse = String(n.status || "").toLowerCase();
+                    const podeTransmitir =
+                      statusNfse === "rascunho" || statusNfse === "erro_emissao";
+                    return (
+                      <TableRow key={n.id}>
+                        <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
+                        <TableCell className="text-sm">{m.tomador?.nome || "-"}</TableCell>
+                        <TableCell className="text-xs">{m.servico || "-"}</TableCell>
+                        <TableCell className="font-medium">{fmtFin(n.valor)}</TableCell>
+                        <TableCell><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{n.status}</Badge></TableCell>
+                        <TableCell>
+                          {v.length === 0 ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />0</Badge>
+                           : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><AlertTriangle className="w-3 h-3 mr-1" />{v.length}</Badge>}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {podeTransmitir && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 gap-1 px-2 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                onClick={function() { void handleTransmitir(n.id); }}
+                                disabled={transmitindoId !== null}
+                                title="Transmitir NFS-e para a Sefin"
+                                aria-label="Transmitir NFS-e"
+                              >
+                                {transmitindoId === n.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Send className="w-4 h-4" />
+                                )}
+                                <span className="text-xs font-medium">
+                                  {transmitindoId === n.id ? "Enviando..." : "Transmitir"}
+                                </span>
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={function(){openDetails(n);}}
+                              title="Ver detalhes"
+                              aria-label="Ver detalhes"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
             </TableBody>
           </Table>
         </CardContent>
