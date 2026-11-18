@@ -72,7 +72,7 @@ const LEI_12741 =
   "Valor aproximado dos tributos incidentes conforme a Lei nº 12.741/2012.";
 
 export const TEXTO_RODAPE_DANFSE =
-  "Conexão Express — Rua Antonio Macedo, 45 - Parque São Jorge - São Paulo/SP — Representação gráfica do XML da NFS-e";
+  "Conexão Express • Financeiro: financeiro@conexaoexpress.com.br • www.conexaoexpress.com.br • Representação gráfica do XML da NFS-e";
 
 function moeda(valor: number): string {
   return (Number.isFinite(valor) ? valor : 0).toLocaleString("pt-BR", {
@@ -128,7 +128,13 @@ const CSS_DANFSE = `
     position: relative;
     background: #fff;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
+  .danfse-content { flex: 0 0 auto; }
+  .danfse-footer { flex: 0 0 auto; }
+
   .danfse-watermark {
     position: absolute;
     top: 48%;
@@ -147,16 +153,16 @@ const CSS_DANFSE = `
   .danfse-header {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     border: 1px solid #CBD5E1;
     border-radius: 4px;
-    padding: 8px 10px;
+    padding: 6px 10px;
   }
-  .danfse-logo-wrap { flex: 0 0 auto; padding-right: 8px; }
+  .danfse-logo-wrap { flex: 0 0 auto; }
   .danfse-logo {
-    height: 48px;
-    max-width: 170px;
-    width: auto;
+    width: 195px;
+    max-height: 68px;
+    height: auto;
     object-fit: contain;
     display: block;
   }
@@ -164,9 +170,28 @@ const CSS_DANFSE = `
   .danfse-title { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; }
   .danfse-subtitle { font-size: 9px; font-weight: 600; margin-top: 2px; }
   .danfse-municipio { font-size: 8px; margin-top: 2px; color: #475569; }
-  .danfse-qr { width: 37mm; display: flex; flex-direction: column; align-items: center; }
-  .danfse-qr svg { width: 24mm; height: 24mm; }
-  .danfse-qr-text { font-size: 5.8px; line-height: 1.2; text-align: center; margin-top: 2px; color: #475569; }
+  .danfse-qr {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+  }
+  .danfse-qr svg { width: 68px; height: 68px; flex: 0 0 auto; }
+  .danfse-qr-text {
+    font-size: 7.5px;
+    line-height: 1.3;
+    text-align: right;
+    max-width: 135px;
+    color: #475569;
+  }
+
+  .danfse-divider {
+    height: 3px;
+    background: #F97316;
+    margin: 5px 0;
+    border-radius: 1px;
+  }
 
   .danfse-chave {
     display: flex;
@@ -343,12 +368,16 @@ const CSS_DANFSE = `
   .danfse-info-body { padding: 4px 8px; font-size: 8.5px; color: #334155; }
   .danfse-info-body p { margin: 0 0 2px; }
   .danfse-footer {
-    margin-top: 5px;
-    border-top: 1px solid #CBD5E1;
-    padding-top: 3px;
+    background: #F97316;
+    color: #FFFFFF;
+    padding: 6px 12mm;
+    font-size: 8px;
     text-align: center;
-    font-size: 7px;
-    color: #64748B;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 0 -12mm -12mm;
+    width: calc(100% + 24mm);
+    page-break-inside: avoid;
   }
   @media print {
     html, body { width: 210mm; height: 297mm; }
@@ -397,7 +426,8 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
     <div className="danfse-page">
       {rascunho && <div className="danfse-watermark">RASCUNHO — SEM VALOR FISCAL</div>}
 
-      {/* CABEÇALHO */}
+      <div className="danfse-content">
+        {/* CABEÇALHO */}
       <div className="danfse-header">
         <div className="danfse-logo-wrap">
           <img className="danfse-logo" src={dados.logoUrl} alt="Logo do emitente" />
@@ -410,14 +440,16 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
           </div>
         </div>
         <div className="danfse-qr">
-          <QRCodeSVG value={qrValor} size={92} level="M" />
           <div className="danfse-qr-text">
             A autenticidade desta NFS-e pode ser verificada pela leitura deste
             código QR ou pela consulta da chave de acesso no portal nacional da
             NFS-e.
           </div>
+          <QRCodeSVG value={qrValor} size={68} level="M" />
         </div>
       </div>
+
+      <div className="danfse-divider" />
 
       {/* CHAVE */}
       <div className="danfse-chave">
@@ -523,6 +555,8 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
           <p>{LEI_12741}</p>
           {dados.observacoes ? <p>{dados.observacoes}</p> : null}
         </div>
+      </div>
+
       </div>
 
       <footer className="danfse-footer">{TEXTO_RODAPE_DANFSE}</footer>
