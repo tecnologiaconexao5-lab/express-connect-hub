@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search } from "lucide-react";
+﻿import { useEffect, useRef, useState } from "react";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search, Printer, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,11 @@ import { toast } from "sonner";
 import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
 import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
+import { abrirImpressaoDanfse } from "@/components/fiscal/DanfsePrintTemplate";
+import type { DanfsePrintDados } from "@/components/fiscal/DanfsePrintTemplate";
+import { gerarXmlDpsNacional } from "@/services/fiscal/nfseEmissaoService";
+import type { DpsPayload, FiscalCompanySettings } from "@/services/fiscal/nfseEmissaoService";
+import type { FiscalNfse } from "@/types/fiscal";
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
@@ -79,6 +84,67 @@ type BrasilApiCnpj = {
   uf?: string | null;
   cep?: string | null;
 };
+
+const EMITENTE_DANFSE: DanfsePrintDados["emitente"] = {
+  nome: "CONEXAO TRANSPORTES LTDA",
+  cnpj: "31.227.975/0001-80",
+  inscricaoMunicipal: "000000060458216",
+  endereco: "RUA ANTONIO MACEDO, 45, PARQUE SAO JORGE",
+  municipio: "São Paulo",
+  uf: "SP",
+  cep: "03087-010",
+  regime: "Simples Nacional (Optante - Microempresa ou EPP)",
+};
+
+function formatarDataHoraDanfse(valor: unknown): string {
+  if (!valor) return "—";
+  const data = new Date(String(valor));
+  if (Number.isNaN(data.getTime())) return String(valor);
+  return data.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatarCompetenciaDanfse(valor: unknown, fallback: unknown): string {
+  const texto = String(valor || "");
+  if (/^\d{4}-\d{2}$/.test(texto)) {
+    return texto.slice(5, 7) + "/" + texto.slice(0, 4);
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(texto)) {
+    return texto.slice(5, 7) + "/" + texto.slice(0, 4);
+  }
+  if (fallback) {
+    const data = new Date(String(fallback));
+    if (!Number.isNaN(data.getTime())) {
+      return String(data.getMonth() + 1).padStart(2, "0") + "/" + data.getFullYear();
+    }
+  }
+  return "—";
+}
+
+function situacaoDanfse(status: unknown): string {
+  const valor = String(status || "").toLowerCase();
+  if (valor === "emitida") return "NFS-e Gerada";
+  if (valor === "rascunho") return "Rascunho";
+  if (valor === "erro_emissao") return "Erro de Emissão";
+  if (valor === "cancelada") return "Cancelada";
+  return valor ? String(status) : "—";
+}
+
+function baixarArquivo(blob: Blob, nomeArquivo: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nomeArquivo;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+}
 const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
 type OrigemOpcao = {
@@ -132,6 +198,7 @@ export default function NfseTab() {
   const [motivoSimulacao, setMotivoSimulacao] = useState("");
   const [historico, setHistorico] = useState<any[]>([]);
   const [transmitindoId, setTransmitindoId] = useState<string | null>(null);
+  const [baixandoXmlId, setBaixandoXmlId] = useState<string | null>(null);
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -729,7 +796,7 @@ export default function NfseTab() {
     setRascunhoAtualId(null);
   };
 
-  const openDetails = function(nfse: any) {
+  const openDetails = function(nfse: FiscalNfse) {
     setSelectedNfse(nfse);
     setShowDetails(true);
     setShowSimulacao(false);
@@ -741,6 +808,220 @@ export default function NfseTab() {
     setShowDetails(false);
     setShowSimulacao(false);
     setShowPreEmissao(false);
+  };
+
+  // ------------------------------------------------------------------
+  // DANFSe / XML — dados derivados da nota + metadata
+  // ------------------------------------------------------------------
+  const montarDadosDanfse = function(nfse: FiscalNfse): DanfsePrintDados {
+    const meta = nfse.metadata || {};
+    const tomador = meta.tomador || {};
+    const enderecoTomador = tomador.endereco || {
+      logradouro: tomador.logradouro ?? null,
+      numero: tomador.numero ?? null,
+      complemento: tomador.complemento ?? null,
+      bairro: tomador.bairro ?? null,
+      municipio: tomador.municipio ?? null,
+      uf: tomador.uf ?? null,
+      cep: tomador.cep ?? null,
+    };
+
+    const valorServico = Number(meta.valor_servico ?? nfse.valor ?? 0);
+    const desconto = Number(meta.valor_desconto ?? 0);
+    const liquido = Number(meta.valor_liquido ?? Math.max(0, valorServico - desconto));
+    const aliquota = Number(meta.aliquota_iss ?? 0);
+    const base = Number(meta.base_calculo_iss ?? valorServico);
+    const issRetido = meta.iss_retido === true;
+    const issqn = Number(meta.issqn ?? (base * aliquota) / 100);
+    const retencoes = Number(meta.total_retencoes ?? (issRetido ? issqn : 0));
+
+    const codigo = String(meta.codigo_servico || "16.02.01.002");
+    const digitos = codigo.replace(/\D/g, "");
+    const codigoFormatado = digitos.length >= 9
+      ? `${digitos.slice(0, 2)}.${digitos.slice(2, 4)}.${digitos.slice(4, 6)}/${digitos.slice(6, 9)}`
+      : codigo;
+
+    const municipio = String(meta.municipio_prestacao || EMITENTE_DANFSE.municipio);
+    const uf = String(meta.uf || EMITENTE_DANFSE.uf);
+
+    return {
+      logoUrl: `${window.location.origin}/logos/logo-conexao-colorido.png`,
+      numero: String(nfse.numero || "—"),
+      chaveAcesso: String(nfse.chave_acesso || meta.emissao?.chave_acesso || ""),
+      competencia: formatarCompetenciaDanfse(meta.competencia, nfse.created_at),
+      emissao: formatarDataHoraDanfse(nfse.data_emissao || nfse.created_at),
+      numeroDps: String(meta.numero_dps || "—"),
+      serieDps: String(meta.serie || "—"),
+      situacao: situacaoDanfse(nfse.status),
+      statusCodigo: String(nfse.status || ""),
+      emitente: EMITENTE_DANFSE,
+      tomador: {
+        nome: String(tomador.nome || "—"),
+        cnpj: String(tomador.cnpj || "—"),
+        email: tomador.email ? String(tomador.email) : null,
+        telefone: tomador.telefone ? String(tomador.telefone) : null,
+        endereco: enderecoTomador,
+      },
+      servico: {
+        descricao: String(meta.servico || "Transporte de bens ou valores"),
+        codigoTributacao: codigoFormatado,
+        codigoNbs: String(meta.codigo_nbs || "—"),
+        localPrestacao: `${municipio}/${uf}`,
+      },
+      tributacao: {
+        municipioIncidencia: `${municipio}/${uf}`,
+        issRetido,
+        baseCalculo: base,
+        aliquota,
+        issqn,
+        pisCofinsCsll: Number(meta.pis_cofins_csll ?? 0),
+        irrf: Number(meta.irrf ?? 0),
+        ibsCbs: Number(meta.ibs_cbs ?? 0),
+        totalRetencoes: retencoes,
+      },
+      valores: {
+        servico: valorServico,
+        desconto,
+        liquido,
+      },
+      observacoes: String(meta.observacoes || meta.informacoes_complementares || ""),
+    };
+  };
+
+  const imprimirDanfse = function(nfse: FiscalNfse) {
+    try {
+      if (!abrirImpressaoDanfse(montarDadosDanfse(nfse))) {
+        toast.error("Permita pop-ups no navegador para abrir a DANFSe.");
+      }
+    } catch (erro: unknown) {
+      console.error(
+        "[NfseTab] Erro ao gerar DANFSe:",
+        erro instanceof Error ? erro.message : String(erro),
+      );
+      toast.error(erro instanceof Error ? erro.message : "Falha ao gerar a DANFSe.");
+    }
+  };
+
+  const gerarXmlDoRascunho = function(nfse: FiscalNfse): string {
+    const meta = nfse.metadata || {};
+    const tomador = meta.tomador || {};
+    const competencia = /^\d{4}-\d{2}$/.test(String(meta.competencia || ""))
+      ? String(meta.competencia)
+      : new Date(nfse.created_at || Date.now()).toISOString().slice(0, 7);
+
+    const dps: DpsPayload = {
+      competencia,
+      prestador: {
+        cnpj: "31227975000180",
+        inscricaoMunicipal: "60458216",
+        razaoSocial: EMITENTE_DANFSE.nome,
+        municipioIbge: "3550308",
+      },
+      tomador: {
+        nome: String(tomador.nome || ""),
+        cnpj: tomador.cnpj ? String(tomador.cnpj) : null,
+        cpf: tomador.cpf ? String(tomador.cpf) : null,
+        email: tomador.email ? String(tomador.email) : null,
+      },
+      servico: {
+        codigoTributacaoNacional: String(meta.codigo_servico || "16.02.01.002"),
+        descricao: String(meta.servico || "Transporte de bens ou valores"),
+        valorServico: Number(meta.valor_servico ?? nfse.valor ?? 0),
+        aliquotaIss: Number(meta.aliquota_iss ?? 0),
+        issRetido: meta.iss_retido === true,
+        codigoMunicipioPrestacao: String(meta.codigo_municipio_prestacao || "3550308"),
+      },
+      serie: String(meta.serie || "1"),
+      numero: meta.numero_dps ? String(meta.numero_dps) : null,
+      nfseId: nfse.id,
+    };
+
+    const empresa: FiscalCompanySettings = {
+      cnpj: "31.227.975/0001-80",
+      razaoSocial: EMITENTE_DANFSE.nome,
+      inscricaoMunicipal: "60458216",
+      codigoIbge: "3550308",
+      cep: "03087010",
+      logradouro: "RUA ANTONIO MACEDO",
+      numero: "45",
+      bairro: "PARQUE SAO JORGE",
+      cidade: "São Paulo",
+      uf: "SP",
+      email: "fiscal@conexaoexpress.com.br",
+      regimeTributario: "Simples Nacional (ME)",
+      crt: "1",
+      ambienteFiscal: String(meta.emissao?.ambiente || "homologacao"),
+    };
+
+    return gerarXmlDpsNacional(dps, empresa);
+  };
+
+  const baixarXmlNfse = async function(nfse: FiscalNfse) {
+    if (baixandoXmlId) return;
+    setBaixandoXmlId(nfse.id);
+
+    try {
+      const meta = nfse.metadata || {};
+      const documentos = meta.documentos_storage || {};
+      const candidatos: string[] = [
+        documentos.nfse_retorno,
+        documentos.nfse_dps,
+        nfse.xml_url,
+      ].filter(function(item): item is string { return Boolean(item); });
+
+      const urlExterna = candidatos.find(function(item) {
+        return /^https?:\/\//i.test(item);
+      });
+      if (urlExterna) {
+        window.open(urlExterna, "_blank", "noopener,noreferrer");
+        toast.success("Abrindo XML autorizado...");
+        return;
+      }
+
+      const caminhoBruto = candidatos.find(function(item) {
+        return !/^https?:\/\//i.test(item);
+      });
+      if (caminhoBruto) {
+        const caminho = caminhoBruto.replace(/^fiscal-documentos\//, "");
+        const { data, error } = await supabase.storage
+          .from("fiscal-documentos")
+          .createSignedUrl(caminho, 60);
+
+        if (error || !data?.signedUrl) {
+          throw new Error("Nao foi possivel acessar o XML no Storage.");
+        }
+
+        const resposta = await fetch(data.signedUrl);
+        if (!resposta.ok) {
+          throw new Error("Falha ao baixar o XML do Storage.");
+        }
+
+        baixarArquivo(await resposta.blob(), `NFS-e-${nfse.numero || nfse.id}.xml`);
+        toast.success("XML baixado.");
+        return;
+      }
+
+      const status = String(nfse.status || "").toLowerCase();
+      if (status === "rascunho" || status === "erro_emissao" || status === "") {
+        const xml = gerarXmlDoRascunho(nfse);
+        baixarArquivo(
+          new Blob([xml], { type: "application/xml" }),
+          `DPS-${nfse.numero || nfse.id}.xml`,
+        );
+        toast.success("XML da DPS (rascunho) gerado.");
+        return;
+      }
+
+      toast.error("XML autorizado nao encontrado no Storage.");
+    } catch (erro: unknown) {
+      console.error(
+        "[NfseTab] Erro ao baixar XML:",
+        erro instanceof Error ? erro.message : String(erro),
+      );
+      toast.error(erro instanceof Error ? erro.message : "Falha ao obter o XML.");
+    } finally {
+      setBaixandoXmlId(null);
+    }
   };
 
   const fetchHistorico = async function(nfseId: string) {
@@ -1760,6 +2041,31 @@ export default function NfseTab() {
 
           {/* COLUNA LATERAL */}
           <div className="space-y-4">
+            <div className="space-y-2 rounded-xl border bg-white p-4">
+              <p className="text-sm font-semibold">Documentos</p>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={function() { imprimirDanfse(selectedNfse); }}
+              >
+                <Printer className="w-4 h-4 mr-2" /> Imprimir / PDF (DANFSe)
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={function() { void baixarXmlNfse(selectedNfse); }}
+                disabled={baixandoXmlId === selectedNfse.id}
+              >
+                {baixandoXmlId === selectedNfse.id
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <Download className="w-4 h-4 mr-2" />}
+                Baixar XML
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                XML autorizado do Storage ou DPS gerada localmente para rascunho.
+              </p>
+            </div>
+
             <div className="space-y-3 rounded-xl border bg-white p-4">
               <p className="text-sm font-semibold">Pré-emissão</p>
               <Button
