@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch } from "lucide-react";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
@@ -19,6 +21,14 @@ import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader
 
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 const fmtFin = function(v: number) { return v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) || "R$ 0,00"; };
+
+/** Matriz oficial da NFS-e Nacional (nao usar o emitente padrao do CT-e). */
+const CNPJ_MATRIZ_NFSE = "31227975000180";
+const MATRIZ_NFSE_RAZAO_SOCIAL = "CONEXAO TRANSPORTES LTDA";
+const MATRIZ_NFSE_CNPJ_FORMATADO = "31.227.975/0001-80";
+const CODIGO_SERVICO_NACIONAL_PADRAO = "16.02.01.002";
+const CAMPOS_BUSCA_MUNICIPIO = ["nome", "codigo"];
+const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
 export default function NfseTab() {
   const [nfses, setNfses] = useState<any[]>([]);
@@ -39,17 +49,20 @@ export default function NfseTab() {
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte",
     origem_id: "",
+    emitente_id: "",
+    emitente_nome: "",
+    emitente_cnpj: "",
     municipio: "SAO PAULO",
+    municipio_ibge: "3550308",
     uf: "SP",
-    codigo_servico: "",
+    codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
     descricao_servico: "",
     aliquota_iss: "" as string,
     iss_retido: false,
     tomador_nome: "",
     tomador_cnpj: "",
-    emitente_nome: "",
-    emitente_cnpj: "",
     valor_servico: 0 as number,
+    valor_desconto: 0 as number,
   });
   const [origens, setOrigens] = useState<any[]>([]);
 
@@ -73,16 +86,65 @@ export default function NfseTab() {
     setRegraSugerida(null);
     setAvisoRegra("");
     setGerarForm({
-      origem: "os", origem_id: "", municipio: "SAO PAULO", uf: "SP",
-      codigo_servico: "", descricao_servico: "", aliquota_iss: "",
-      iss_retido: false, tomador_nome: "", tomador_cnpj: "",
-      emitente_nome: "", emitente_cnpj: "", valor_servico: 0,
+      origem: "os", origem_id: "",
+      emitente_id: "", emitente_nome: "", emitente_cnpj: "",
+      municipio: "SAO PAULO", municipio_ibge: "3550308", uf: "SP",
+      codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
+      descricao_servico: "", aliquota_iss: "", iss_retido: false,
+      tomador_nome: "", tomador_cnpj: "",
+      valor_servico: 0, valor_desconto: 0,
     });
 
-    // Pre-carregar emitente padrao
-    const { data: emit } = await supabase.from("configuracoes_fiscais").select("*").eq("ativo",true).eq("padrao",true).limit(1).maybeSingle();
-    if (emit) {
-      setGerarForm(function(p) { return { ...p, emitente_nome: emit.razao_social||emit.nome_fantasia||"", emitente_cnpj: emit.cnpj||"", municipio: emit.cidade||"SAO PAULO", uf: emit.uf||"SP" }; });
+    // Emitente: MATRIZ da NFS-e Nacional (CNPJ 31.227.975/0001-80),
+    // nunca o emitente padrao do CT-e.
+    const { data: emitentes } = await supabase
+      .from("configuracoes_fiscais")
+      .select("id, razao_social, nome_fantasia, cnpj, cidade, uf, codigo_ibge")
+      .eq("ativo", true);
+
+    const listaEmitentes = (emitentes || []) as Array<{
+      id: string;
+      razao_social: string | null;
+      nome_fantasia: string | null;
+      cnpj: string | null;
+      cidade: string | null;
+      uf: string | null;
+      codigo_ibge: string | null;
+    }>;
+
+    const matriz = listaEmitentes.find(function(e) {
+      return somenteDigitos(e.cnpj) === CNPJ_MATRIZ_NFSE;
+    }) || null;
+
+    if (matriz) {
+      const ibgeMatriz = somenteDigitos(matriz.codigo_ibge) || "3550308";
+      const rule = await buscarRegraNfse({
+        emitente_id: matriz.id,
+        cliente_id: null,
+        municipio_prestacao: ibgeMatriz,
+      });
+
+      if (rule) setRegraSugerida(rule);
+      else setAvisoRegra("Nao ha regra NFS-e para o municipio da matriz (3550308). Configure na aba Regras NFS-e.");
+
+      setGerarForm(function(p) {
+        return {
+          ...p,
+          emitente_id: matriz.id,
+          // Exibicao fixa da matriz oficial (rastreabilidade visual)
+          emitente_nome: MATRIZ_NFSE_RAZAO_SOCIAL,
+          emitente_cnpj: MATRIZ_NFSE_CNPJ_FORMATADO,
+          municipio: matriz.cidade || "SAO PAULO",
+          municipio_ibge: ibgeMatriz,
+          uf: matriz.uf || "SP",
+          codigo_servico: rule?.codigo_servico || CODIGO_SERVICO_NACIONAL_PADRAO,
+          descricao_servico: rule?.descricao_servico || "",
+          aliquota_iss: rule?.aliquota_iss != null ? String(rule.aliquota_iss) : "",
+          iss_retido: rule?.iss_retido ?? false,
+        };
+      });
+    } else {
+      setAvisoRegra("Matriz CONEXAO TRANSPORTES LTDA (31.227.975/0001-80) nao encontrada em configuracoes_fiscais.");
     }
 
     fetchOrigens("os");
@@ -124,35 +186,74 @@ export default function NfseTab() {
     }
   };
 
-  const handleMunicipioBlur = async function() {
-    if (!gerarForm.municipio) return;
-    const { data: emit } = await supabase.from("configuracoes_fiscais").select("*").eq("ativo",true).eq("padrao",true).limit(1).maybeSingle();
-    const rule = await buscarRegraNfse({
-      emitente_id: emit?.id||null,
-      cliente_id: null,
-      municipio_prestacao: gerarForm.municipio,
-    });
+  const aplicarRegraMunicipal = async function(codigoIbge: string, nomeMunicipio: string) {
+    let rule = null;
+
+    if (codigoIbge) {
+      rule = await buscarRegraNfse({
+        emitente_id: gerarForm.emitente_id || null,
+        cliente_id: null,
+        municipio_prestacao: codigoIbge,
+      });
+    }
+    if (!rule && nomeMunicipio) {
+      rule = await buscarRegraNfse({
+        emitente_id: gerarForm.emitente_id || null,
+        cliente_id: null,
+        municipio_prestacao: nomeMunicipio,
+      });
+    }
+
     if (rule) {
       setRegraSugerida(rule);
       setAvisoRegra("");
-      setGerarForm(function(p) { return { ...p, codigo_servico: rule.codigo_servico, descricao_servico: rule.descricao_servico||p.descricao_servico, aliquota_iss: rule.aliquota_iss != null ? String(rule.aliquota_iss) : p.aliquota_iss, iss_retido: rule.iss_retido ?? p.iss_retido }; });
+      setGerarForm(function(p) {
+        return {
+          ...p,
+          codigo_servico: rule?.codigo_servico || p.codigo_servico || CODIGO_SERVICO_NACIONAL_PADRAO,
+          descricao_servico: rule?.descricao_servico || p.descricao_servico,
+          aliquota_iss: rule?.aliquota_iss != null ? String(rule.aliquota_iss) : p.aliquota_iss,
+          iss_retido: rule?.iss_retido ?? p.iss_retido,
+        };
+      });
     } else {
       setRegraSugerida(null);
-      setAvisoRegra("Nao ha regra NFS-e para este municipio. Configure na aba Regras NFS-e.");
+      setAvisoRegra("Nao ha regra NFS-e para " + (nomeMunicipio || codigoIbge) + ". Ajuste manualmente ou configure na aba Regras NFS-e.");
     }
   };
 
   const handleGerar = async function() {
-    if (!gerarForm.origem_id) { toast.error("Selecione a origem."); return; }
+    if (!gerarForm.origem_id) { toast.error("Selecione a origem (OS ou CT-e)."); return; }
+    if (!gerarForm.emitente_id) { toast.error("Matriz da NFS-e Nacional nao encontrada em configuracoes_fiscais."); return; }
+    if (!(gerarForm.valor_servico > 0)) { toast.error("Informe o valor do servico."); return; }
+    if (gerarForm.valor_desconto < 0) { toast.error("O desconto nao pode ser negativo."); return; }
+    if (gerarForm.valor_desconto > gerarForm.valor_servico) { toast.error("O desconto nao pode ser maior que o valor do servico."); return; }
+
     setGerando(true);
+    const aliquotaNumerica = gerarForm.aliquota_iss !== "" ? Number(gerarForm.aliquota_iss) : null;
+
     const result = await gerarRascunhoNfse({
       origem: gerarForm.origem,
       origem_id: gerarForm.origem_id,
-      municipio_prestacao: gerarForm.municipio,
+      municipio_prestacao: gerarForm.municipio || "SAO PAULO",
+      codigo_municipio_prestacao: gerarForm.municipio_ibge || null,
       descricao_servico: gerarForm.descricao_servico || "Prestacao de servico de transporte",
+      tomador_nome: gerarForm.tomador_nome || undefined,
+      tomador_cnpj: gerarForm.tomador_cnpj || undefined,
+      valor_servico: gerarForm.valor_servico,
+      valor_desconto: gerarForm.valor_desconto,
+      codigo_servico: gerarForm.codigo_servico || undefined,
+      aliquota_iss: aliquotaNumerica != null && !Number.isNaN(aliquotaNumerica) ? aliquotaNumerica : null,
+      iss_retido: gerarForm.iss_retido,
     });
-    if (result.success) { toast.success("NFS-e rascunho gerada!"); setShowGerar(false); fetchNfses(); }
-    else toast.error("Erro: " + (result.error || ""));
+
+    if (result.success) {
+      toast.success("Rascunho NFS-e salvo com sucesso!");
+      setShowGerar(false);
+      fetchNfses();
+    } else {
+      toast.error("Erro: " + (result.error || "Nao foi possivel salvar o rascunho."));
+    }
     setGerando(false);
   };
 
@@ -184,7 +285,7 @@ export default function NfseTab() {
         <div><h2 className="text-2xl font-bold tracking-tight">NFS-e</h2><p className="text-muted-foreground text-sm">Nota Fiscal de Servico Eletronica.</p></div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={fetchNfses} disabled={loading}><RefreshCw className="w-4 h-4 mr-2" /> Atualizar</Button>
-          <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleOpenGerar}><PlusCircle className="w-4 h-4 mr-2" /> Novo Rascunho NFS-e</Button>
+          <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleOpenGerar}><PlusCircle className="w-4 h-4 mr-2" /> Nova NFS-e</Button>
         </div>
       </div>
 
@@ -219,73 +320,269 @@ export default function NfseTab() {
         </CardContent>
       </Card>
 
-      {/* Modal Gerar NFS-e */}
+      {/* Modal Nova NFS-e (rascunho) */}
       <Dialog open={showGerar} onOpenChange={setShowGerar}>
-        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Gerar NFS-e Rascunho</DialogTitle><DialogDescription>Selecione a origem e confirme os dados</DialogDescription></DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Origem</Label>
-                <Select value={gerarForm.origem} onValueChange={function(v:any){setGerarForm(function(p){return{...p,origem:v,origem_id:""}});fetchOrigens(v);}}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="os">Ordem de Servico</SelectItem><SelectItem value="cte">CT-e Pronto</SelectItem></SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{gerarForm.origem==="os"?"Ordem de Servico":"CT-e"}</Label>
-                <Select value={gerarForm.origem_id} onValueChange={handleOrigemChange}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>
-                    {origens.map(function(o:any){return <SelectItem key={o.id} value={o.id}>{o.numero||o.id?.substring(0,8)}</SelectItem>;})}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Stamp className="w-5 h-5 text-emerald-600" /> Nova NFS-e — Rascunho
+            </DialogTitle>
+            <DialogDescription>
+              Preencha os dados fiscais. O rascunho e salvo em fiscal_nfse com os
+              valores e a tributacao no metadata (JSONB).
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="border-t pt-3">
-              <Label className="text-xs text-muted-foreground mb-2 block">Dados do Documento</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <div><Label>Emitente</Label><Input value={gerarForm.emitente_nome} disabled className="bg-muted text-xs" /></div>
-                <div><Label>CNPJ Emitente</Label><Input value={gerarForm.emitente_cnpj} disabled className="bg-muted text-xs" /></div>
-                <div><Label>Tomador</Label><Input value={gerarForm.tomador_nome} onChange={function(e){setGerarForm(function(p){return{...p,tomador_nome:e.target.value}});}} /></div>
-                <div><Label>CNPJ Tomador</Label><Input value={gerarForm.tomador_cnpj} onChange={function(e){setGerarForm(function(p){return{...p,tomador_cnpj:e.target.value}});}} /></div>
-                <div><Label>Valor Servico</Label><Input type="number" value={gerarForm.valor_servico||""} onChange={function(e){setGerarForm(function(p){return{...p,valor_servico:parseFloat(e.target.value)||0}});}} /></div>
-              </div>
-            </div>
+          <Tabs defaultValue="tomador" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="tomador">Dados do Tomador</TabsTrigger>
+              <TabsTrigger value="valores">Servico e Valores</TabsTrigger>
+              <TabsTrigger value="tributacao">Tributacao</TabsTrigger>
+            </TabsList>
 
-            <div className="border-t pt-3">
-              <Label className="text-xs text-muted-foreground mb-2 block">Dados Municipais</Label>
+            {/* ---------- ABA 1: TOMADOR ---------- */}
+            <TabsContent value="tomador" className="space-y-3 pt-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Emitente (matriz NFS-e Nacional)
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">
+                      {gerarForm.emitente_nome || "Matriz nao carregada"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {gerarForm.emitente_cnpj || "—"}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
+                    Matriz
+                  </Badge>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Municipio Prestacao</Label><Input value={gerarForm.municipio} onChange={function(e){setGerarForm(function(p){return{...p,municipio:e.target.value}});}} onBlur={handleMunicipioBlur} /></div>
                 <div>
-                  <Label>UF</Label>
-                  <Select value={gerarForm.uf||undefined} onValueChange={function(v){setGerarForm(function(p){return{...p,uf:v}});handleMunicipioBlur();}}>
+                  <Label>Origem</Label>
+                  <Select
+                    value={gerarForm.origem}
+                    onValueChange={function(v: string) {
+                      setGerarForm(function(p) { return { ...p, origem: v as "os" | "cte", origem_id: "" }; });
+                      fetchOrigens(v as "os" | "cte");
+                    }}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{UFS.map(function(u){return<SelectItem key={u} value={u}>{u}</SelectItem>;})}</SelectContent>
+                    <SelectContent>
+                      <SelectItem value="os">Ordem de Servico</SelectItem>
+                      <SelectItem value="cte">CT-e Pronto</SelectItem>
+                    </SelectContent>
                   </Select>
                 </div>
-                <div><Label>Codigo Servico</Label><Input value={gerarForm.codigo_servico} onChange={function(e){setGerarForm(function(p){return{...p,codigo_servico:e.target.value}});}} /></div>
-                <div><Label>Descricao Servico</Label><Input value={gerarForm.descricao_servico} onChange={function(e){setGerarForm(function(p){return{...p,descricao_servico:e.target.value}});}} /></div>
-                <div><Label>Aliquota ISS (%)</Label><Input value={gerarForm.aliquota_iss} onChange={function(e){setGerarForm(function(p){return{...p,aliquota_iss:e.target.value}});}} /></div>
-                <div className="flex items-end pb-1"><div className="flex items-center gap-2"><Switch checked={gerarForm.iss_retido} onCheckedChange={function(v){setGerarForm(function(p){return{...p,iss_retido:v}});}} /><Label>ISS Retido</Label></div></div>
+                <div>
+                  <Label>{gerarForm.origem === "os" ? "Ordem de Servico" : "CT-e"}</Label>
+                  <Select value={gerarForm.origem_id} onValueChange={handleOrigemChange}>
+                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>
+                      {origens.map(function(o: { id: string; numero?: string | null }) {
+                        return (
+                          <SelectItem key={o.id} value={o.id}>
+                            {o.numero || o.id.substring(0, 8)}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Tomador / Razao Social</Label>
+                  <Input
+                    value={gerarForm.tomador_nome}
+                    onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_nome: e.target.value }; }); }}
+                    placeholder="Razao social do tomador"
+                  />
+                </div>
+                <div>
+                  <Label>CNPJ do Tomador</Label>
+                  <Input
+                    value={gerarForm.tomador_cnpj}
+                    onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cnpj: e.target.value }; }); }}
+                    placeholder="00.000.000/0000-00"
+                  />
+                </div>
               </div>
-            </div>
+            </TabsContent>
 
-            {regraSugerida && (
-              <div className="p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
-                Regra municipal encontrada: {regraSugerida.municipio_prestacao}/{regraSugerida.uf} | Cod: {regraSugerida.codigo_servico} | ISS: {regraSugerida.aliquota_iss}% | Retido: {regraSugerida.iss_retido?"Sim":"Nao"}
+            {/* ---------- ABA 2: SERVICO E VALORES ---------- */}
+            <TabsContent value="valores" className="space-y-3 pt-3">
+              <div>
+                <Label>Descricao do Servico</Label>
+                <Input
+                  value={gerarForm.descricao_servico}
+                  onChange={function(e) { setGerarForm(function(p) { return { ...p, descricao_servico: e.target.value }; }); }}
+                  placeholder="Transporte de bens ou valores"
+                />
               </div>
-            )}
-            {avisoRegra && (
-              <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" /> {avisoRegra}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Valor do Servico (R$) *</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={gerarForm.valor_servico || ""}
+                    onChange={function(e) { setGerarForm(function(p) { return { ...p, valor_servico: parseFloat(e.target.value) || 0 }; }); }}
+                  />
+                </div>
+                <div>
+                  <Label>Valor do Desconto (R$)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={gerarForm.valor_desconto || ""}
+                    onChange={function(e) { setGerarForm(function(p) { return { ...p, valor_desconto: parseFloat(e.target.value) || 0 }; }); }}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Opcional. Nao pode exceder o valor do servico.
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                <span className="text-sm text-emerald-800">Valor liquido do servico</span>
+                <span className="text-lg font-bold text-emerald-700">
+                  {fmtFin(Math.max(0, (gerarForm.valor_servico || 0) - (gerarForm.valor_desconto || 0)))}
+                </span>
+              </div>
+            </TabsContent>
+
+            {/* ---------- ABA 3: TRIBUTACAO ---------- */}
+            <TabsContent value="tributacao" className="space-y-3 pt-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <Label>Municipio de Prestacao</Label>
+                  <SearchableSelect
+                    table="municipios_ibge"
+                    labelField="nome"
+                    valueField="codigo"
+                    returnField="codigo"
+                    searchFields={CAMPOS_BUSCA_MUNICIPIO}
+                    secondaryField="uf"
+                    placeholder="Buscar cidade (ex.: Sao Paulo)"
+                    value={gerarForm.municipio_ibge || null}
+                    onChange={function(codigo: string | null, record: Record<string, unknown> | null) {
+                      const reg = record as { nome?: string; uf?: string } | null;
+                      const cod = codigo || "";
+                      setGerarForm(function(p) {
+                        return { ...p, municipio_ibge: cod, municipio: reg?.nome || p.municipio, uf: reg?.uf || p.uf };
+                      });
+                      void aplicarRegraMunicipal(cod, reg?.nome || "");
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>UF</Label>
+                  <Select value={gerarForm.uf || undefined} onValueChange={function(v: string) { setGerarForm(function(p) { return { ...p, uf: v }; }); }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {UFS.map(function(u) { return <SelectItem key={u} value={u}>{u}</SelectItem>; })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="nfse-codigo-servico">Codigo de Servico Nacional</Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Ajuda sobre o codigo de servico" className="rounded p-0.5 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
+                          <HelpCircle className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Codigo de tributacao nacional do ISSQN (LC 116/2003). O padrao da
+                        operacao e 16.02.01.002 (transporte de bens ou valores). Ajuste
+                        apenas se a negociacao exigir outro desdobro.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    id="nfse-codigo-servico"
+                    className="mt-1 font-mono"
+                    value={gerarForm.codigo_servico}
+                    onChange={function(e) { setGerarForm(function(p) { return { ...p, codigo_servico: e.target.value }; }); }}
+                  />
+                </div>
+                <div>
+                  <Label>Aliquota do ISS (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={gerarForm.aliquota_iss}
+                    onChange={function(e) { setGerarForm(function(p) { return { ...p, aliquota_iss: e.target.value }; }); }}
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-start gap-1.5">
+                  <div>
+                    <p className="text-sm font-medium">ISS Retido pelo Tomador</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Retencao do ISSQN na fonte pelo tomador do servico.
+                    </p>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" aria-label="Ajuda sobre ISS retido" className="rounded p-0.5 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
+                        <HelpCircle className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-xs">
+                      Marque "Sim" quando o tomador retiver o ISS e recolher em seu nome.
+                      Se o prestador (Conexao) recolhe o imposto, mantenha "Nao".
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{gerarForm.iss_retido ? "Sim" : "Nao"}</span>
+                  <Switch
+                    checked={gerarForm.iss_retido}
+                    onCheckedChange={function(v: boolean) { setGerarForm(function(p) { return { ...p, iss_retido: v }; }); }}
+                  />
+                </div>
+              </div>
+
+              {regraSugerida && (
+                <div className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-700">
+                  Regra municipal encontrada: {regraSugerida.municipio_prestacao}/{regraSugerida.uf}
+                  {" | "}Cod: {regraSugerida.codigo_servico}
+                  {" | "}ISS: {regraSugerida.aliquota_iss}%
+                  {" | "}Retido: {regraSugerida.iss_retido ? "Sim" : "Nao"}
+                </div>
+              )}
+              {avisoRegra && (
+                <div className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                  <AlertCircle className="w-3 h-3" /> {avisoRegra}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
           <DialogFooter>
-            <Button variant="outline" onClick={function(){setShowGerar(false);}}>Cancelar</Button>
-            <Button onClick={handleGerar} disabled={gerando||!gerarForm.origem_id}>{gerando?<Loader2 className="w-4 h-4 animate-spin mr-2"/>:<Stamp className="w-4 h-4 mr-2"/>}Gerar Rascunho</Button>
+            <Button variant="outline" onClick={function() { setShowGerar(false); }}>Cancelar</Button>
+            <Button
+              onClick={handleGerar}
+              disabled={gerando || !gerarForm.origem_id || !(gerarForm.valor_servico > 0)}
+            >
+              {gerando ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Stamp className="w-4 h-4 mr-2" />}
+              {gerando ? "Salvando..." : "Salvar Rascunho"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

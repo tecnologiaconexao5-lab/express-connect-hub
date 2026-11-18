@@ -2,11 +2,39 @@ import { supabase } from "@/lib/supabase";
 import { buscarRegraNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { buscarCodigoIbge } from "@/services/fiscal/ibgeService";
 
+/** Matriz oficial da NFS-e Nacional (CONEXAO TRANSPORTES LTDA). */
+const CNPJ_MATRIZ_NFSE = "31227975000180";
+
+function somenteDigitosCnpj(valor: string | null | undefined): string {
+  return (valor || "").replace(/\D/g, "");
+}
+
+type EmitenteRow = {
+  id: string;
+  padrao: boolean | null;
+  razao_social: string | null;
+  nome_fantasia: string | null;
+  cnpj: string | null;
+  ie: string | null;
+  cidade: string | null;
+  uf: string | null;
+};
+
 export interface GerarNfseParams {
   origem: "os" | "cte";
   origem_id: string;
   descricao_servico?: string;
   municipio_prestacao?: string;
+  /** Codigo IBGE do municipio de prestacao (evita lookup por nome). */
+  codigo_municipio_prestacao?: string | null;
+  /** Overrides do modal (vencem os dados derivados da origem). */
+  tomador_nome?: string;
+  tomador_cnpj?: string;
+  valor_servico?: number;
+  valor_desconto?: number;
+  codigo_servico?: string;
+  aliquota_iss?: number | null;
+  iss_retido?: boolean;
 }
 
 export async function gerarRascunhoNfse(params: GerarNfseParams) {
@@ -25,14 +53,20 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       return { success: false, error: "Já existe NFS-e para esta OS." };
     }
 
-    // Buscar emitente padrao
-    const { data: emitente } = await supabase
+    // Emitente: prioriza a MATRIZ da NFS-e Nacional (CNPJ 31.227.975/0001-80).
+    // Fallback para o emitente padrao (CT-e) apenas se a matriz nao existir.
+    const { data: emitentesAtivos } = await supabase
       .from("configuracoes_fiscais")
       .select("*")
-      .eq("ativo", true)
-      .eq("padrao", true)
-      .limit(1)
-      .maybeSingle();
+      .eq("ativo", true);
+
+    const listaEmitentes = (emitentesAtivos || []) as EmitenteRow[];
+    const emitente =
+      listaEmitentes.find(
+        (e) => somenteDigitosCnpj(e.cnpj) === CNPJ_MATRIZ_NFSE,
+      ) ||
+      listaEmitentes.find((e) => e.padrao === true) ||
+      null;
 
     // Buscar dados de origem (OS ou CT-e)
     let tomador: any = null;
@@ -90,6 +124,19 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       }
     }
 
+    // Overrides do modal (vencem os dados derivados da origem)
+    if (params.tomador_nome || params.tomador_cnpj) {
+      tomador = {
+        ...(tomador || {}),
+        nome: params.tomador_nome || tomador?.nome || null,
+        cnpj: params.tomador_cnpj || tomador?.cnpj || null,
+      };
+    }
+    if (typeof params.valor_servico === "number" && params.valor_servico > 0) {
+      valorServico = params.valor_servico;
+    }
+    const valorDesconto = Number(params.valor_desconto ?? 0) || 0;
+
     // Validacoes
     if (!emitente || !emitente.razao_social)
       validacoes.push({ campo: "emitente", mensagem: "Emitente padrao nao configurado", severidade: "erro" });
@@ -97,21 +144,42 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       validacoes.push({ campo: "tomador", mensagem: "Tomador/cliente nao identificado", severidade: "erro" });
     if (!tomador || !tomador.cnpj)
       validacoes.push({ campo: "tomador.cnpj", mensagem: "CNPJ do tomador ausente", severidade: "erro" });
-    if (!params.municipio_prestacao)
+    if (!params.municipio_prestacao && !params.codigo_municipio_prestacao)
       validacoes.push({ campo: "municipio_prestacao", mensagem: "Municipio de prestacao ausente", severidade: "erro" });
     if (!valorServico || valorServico <= 0)
       validacoes.push({ campo: "valor_servico", mensagem: "Valor do servico ausente ou zerado", severidade: "erro" });
+    if (valorDesconto < 0)
+      validacoes.push({ campo: "valor_desconto", mensagem: "Desconto nao pode ser negativo", severidade: "erro" });
+    if (valorDesconto > (valorServico || 0))
+      validacoes.push({ campo: "valor_desconto", mensagem: "Desconto nao pode ser maior que o valor do servico", severidade: "erro" });
 
-    // Buscar regra municipal
-    const regraMunicipal = await buscarRegraNfse({
-      emitente_id: emitente?.id || null,
-      cliente_id: clienteId,
-      municipio_prestacao: params.municipio_prestacao || null,
-    });
+    // Buscar regra municipal: primeiro pela chave IBGE (padrao nacional),
+    // depois pelo nome do municipio (compatibilidade com regras legadas).
+    const chaveRegraIbge = params.codigo_municipio_prestacao || null;
+    let regraMunicipal = chaveRegraIbge
+      ? await buscarRegraNfse({
+        emitente_id: emitente?.id || null,
+        cliente_id: clienteId,
+        municipio_prestacao: chaveRegraIbge,
+      })
+      : null;
 
-    const codigoServico = regraMunicipal?.codigo_servico || null;
-    const aliquotaIss = regraMunicipal?.aliquota_iss ?? null;
-    const issRetido = regraMunicipal?.iss_retido ?? null;
+    if (!regraMunicipal) {
+      regraMunicipal = await buscarRegraNfse({
+        emitente_id: emitente?.id || null,
+        cliente_id: clienteId,
+        municipio_prestacao: params.municipio_prestacao || null,
+      });
+    }
+
+    // Overrides do modal vencem a regra municipal
+    const codigoServico = params.codigo_servico?.trim() || regraMunicipal?.codigo_servico || null;
+    const aliquotaIss = params.aliquota_iss != null
+      ? Number(params.aliquota_iss)
+      : (regraMunicipal?.aliquota_iss ?? null);
+    const issRetido = params.iss_retido != null
+      ? params.iss_retido
+      : (regraMunicipal?.iss_retido ?? null);
 
     if (!codigoServico)
       validacoes.push({ campo: "codigo_servico", mensagem: "Codigo do servico municipal nao configurado", severidade: "aviso" });
@@ -120,14 +188,20 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     if (issRetido == null)
       validacoes.push({ campo: "iss_retido", mensagem: "Definicao de ISS retido nao configurada", severidade: "aviso" });
 
-    // Buscar codigo IBGE do municipio de prestacao
-    const codigoMunicipioPrestacao = params.municipio_prestacao
-      ? await buscarCodigoIbge(params.municipio_prestacao, emitente?.uf || "")
-      : null;
+    // Codigo IBGE do municipio de prestacao (usa o informado pelo modal)
+    const codigoMunicipioPrestacao = params.codigo_municipio_prestacao
+      || (params.municipio_prestacao
+        ? await buscarCodigoIbge(params.municipio_prestacao, emitente?.uf || "")
+        : null);
 
-    if (params.municipio_prestacao && !codigoMunicipioPrestacao) {
-      validacoes.push({ campo: "codigo_municipio_prestacao", mensagem: `Municipio "${params.municipio_prestacao}" nao encontrado na tabela municipios_ibge`, severidade: "erro" });
+    if (!codigoMunicipioPrestacao) {
+      validacoes.push({ campo: "codigo_municipio_prestacao", mensagem: `Municipio "${params.municipio_prestacao || "?"}" nao encontrado na tabela municipios_ibge`, severidade: "erro" });
     }
+
+    const valorLiquido = Math.max(
+      0,
+      Number(((valorServico || 0) - valorDesconto).toFixed(2)),
+    );
 
     const metadata = {
       emitente: emitente ? {
@@ -140,6 +214,8 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       tomador,
       servico: regraMunicipal?.descricao_servico || params.descricao_servico || "Prestacao de servico de transporte",
       valor_servico: valorServico,
+      valor_desconto: valorDesconto,
+      valor_liquido: valorLiquido,
       municipio_prestacao: params.municipio_prestacao || null,
       codigo_servico: codigoServico,
       aliquota_iss: aliquotaIss,
@@ -157,7 +233,7 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
         numero,
         cliente_id: clienteId,
         ordem_servico_id: ordemServicoId || params.origem_id,
-        valor: valorServico || 0,
+        valor: valorLiquido,
         status: "rascunho",
         data_emissao: null,
         metadata,
