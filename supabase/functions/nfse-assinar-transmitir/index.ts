@@ -24,7 +24,7 @@ import type {
   DpsPayload,
   FiscalCompanySettings,
 } from "../_shared/nfseDps.ts";
-import { abrirPfx } from "../_shared/nfsePfx.ts";
+import { abrirPfx, CertificadoError } from "../_shared/nfsePfx.ts";
 import type { MaterialCertificado } from "../_shared/nfsePfx.ts";
 import { assinarDpsXml } from "../_shared/nfseXmlSign.ts";
 import { transmitirParaSefin } from "../_shared/nfseSefin.ts";
@@ -379,12 +379,21 @@ serve(async (req: Request) => {
         String(certificado.senha_hash),
         chaveCripto,
       );
-      material = abrirPfx(pfxBytes, senha);
+      material = await abrirPfx(pfxBytes, senha);
     } catch (erro) {
-      console.error(
-        "[nfse-assinar-transmitir] Falha ao abrir certificado:",
-        erro instanceof Error ? erro.message : "erro",
-      );
+      if (erro instanceof CertificadoError) {
+        // Log tecnico sanitizado (sem senha/PFX/chave) para diagnostico.
+        console.error(
+          `[nfse-assinar-transmitir] Certificado A1: codigo=${erro.codigo} detalhe=${erro.detalhe}`,
+        );
+      } else {
+        console.error(
+          "[nfse-assinar-transmitir] Falha ao abrir certificado:",
+          erro instanceof Error
+            ? `${erro.name}: ${erro.message.slice(0, 300)}`
+            : "erro desconhecido",
+        );
+      }
       return respostaJson(
         {
           success: false,
