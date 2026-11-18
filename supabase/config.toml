@@ -419,3 +419,7 @@ verify_jwt = false
 
 [functions.gestao-acesso-prestador]
 verify_jwt = true
+
+# NFS-e Nacional — upload do certificado A1 (valida o Bearer JWT na função)
+[functions.nfse-upload-certificado]
+verify_jwt = true

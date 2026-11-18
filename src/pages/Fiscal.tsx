@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FileText, FileSpreadsheet, UploadCloud, Link as LinkIcon, Plus, Stamp, Search, Download, Truck, Printer, Send, CreditCard, FileCheck, AlertCircle, Settings, Eye, Trash2, RefreshCw, Building2, Radio, LayoutDashboard, ShieldAlert } from "lucide-react";
+import { FileText, FileSpreadsheet, UploadCloud, Link as LinkIcon, Plus, Stamp, Search, Download, Truck, Printer, Send, CreditCard, FileCheck, AlertCircle, Settings, Eye, Trash2, RefreshCw, Building2, Radio, LayoutDashboard, ShieldAlert, Loader2, Lock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { toast } from "sonner";
 import CteTab from "@/components/fiscal/cte/CteTab";
 import MdfeTab from "@/components/fiscal/mdfe/MdfeTab";
@@ -35,6 +35,23 @@ const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", cur
 
 const MSG_FOCUS_SECRETS = "O token Focus deve ser configurado nos Supabase Secrets da Edge Function focus-emissao, nunca no frontend. Consulte o guia de configuração Focus NFe.";
 
+// --- NFS-e Nacional / Certificado A1 ---
+const CNPJ_MATRIZ_DIGITOS = "31227975000180";
+const TAMANHO_MAX_CERTIFICADO = 10 * 1024 * 1024; // 10 MB (mesmo limite do bucket)
+const somenteDigitosCnpj = (valor?: string | null) => (valor || "").replace(/\D/g, "");
+
+type EmitenteMatriz = {
+  id: string;
+  razao_social: string | null;
+  cnpj: string | null;
+};
+
+type RespostaUploadCertificado = {
+  success?: boolean;
+  message?: string;
+  error?: string;
+};
+
 export default function Fiscal() {
   useEffect(() => {
     if (MOCK_MODE) {
@@ -55,6 +72,14 @@ export default function Fiscal() {
   const [showEmitirModal, setShowEmitirModal] = useState(false);
   const [tipoEmitir, setTipoEmitir] = useState<"cte" | "mdfe" | "nfse" | "boleto">("nfse");
   const [osSelecionada, setOsSelecionada] = useState("");
+
+  // Certificado A1 (NFS-e Nacional)
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPassword, setCertPassword] = useState("");
+  const [certEmitente, setCertEmitente] = useState<EmitenteMatriz | null>(null);
+  const [certCarregandoEmitente, setCertCarregandoEmitente] = useState(false);
+  const [certEnviando, setCertEnviando] = useState(false);
+  const certInputRef = useRef<HTMLInputElement>(null);
 
   const [ctes, setCtes] = useState<any[]>([]);
   const [mdfes, setMdfes] = useState<any[]>([]);
@@ -107,6 +132,139 @@ export default function Fiscal() {
 
   const handleEmitirDocumento = (tipo: "cte" | "mdfe" | "nfse" | "boleto") => {
     toast.info(MSG_FOCUS_SECRETS);
+  };
+
+  // ------------------------------------------------------------------
+  // Certificado A1 — carrega a matriz Conexão Express (CNPJ 31.227.975/0001-80)
+  // Ao abrir o modal, resolve o emitente_fiscal usado no upload.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (!showConfigModal) return;
+    let cancelado = false;
+
+    (async () => {
+      setCertEmitente(null);
+      setCertCarregandoEmitente(true);
+      try {
+        const { data, error } = await supabase
+          .from("configuracoes_fiscais")
+          .select("id, razao_social, cnpj")
+          .eq("ativo", true);
+        if (error) throw error;
+
+        const lista = (data || []) as EmitenteMatriz[];
+        let matriz =
+          lista.find((e) => somenteDigitosCnpj(e.cnpj) === CNPJ_MATRIZ_DIGITOS) || null;
+
+        if (!matriz) {
+          const { data: padrao } = await supabase
+            .from("configuracoes_fiscais")
+            .select("id, razao_social, cnpj")
+            .eq("padrao", true)
+            .maybeSingle();
+          matriz = (padrao as EmitenteMatriz | null) || null;
+        }
+
+        if (!cancelado) setCertEmitente(matriz);
+      } catch (err: unknown) {
+        console.error(
+          "[Fiscal] Erro ao carregar emitente matriz:",
+          err instanceof Error ? err.message : String(err),
+        );
+        if (!cancelado) setCertEmitente(null);
+      } finally {
+        if (!cancelado) setCertCarregandoEmitente(false);
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [showConfigModal]);
+
+  const resetFormCertificado = () => {
+    setCertFile(null);
+    setCertPassword("");
+    if (certInputRef.current) certInputRef.current.value = "";
+  };
+
+  const fecharConfigModal = () => {
+    if (certEnviando) return;
+    setShowConfigModal(false);
+    resetFormCertificado();
+  };
+
+  const handleUploadCertificado = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!certEmitente?.id) {
+      toast.error("Emitente matriz não encontrado. Cadastre o emitente na aba Emitente.");
+      return;
+    }
+    if (!certFile) {
+      toast.error("Selecione o arquivo do certificado (.pfx ou .p12).");
+      return;
+    }
+    const nome = certFile.name.toLowerCase();
+    if (!nome.endsWith(".pfx") && !nome.endsWith(".p12")) {
+      toast.error("Formato inválido. Envie um arquivo .pfx ou .p12.");
+      return;
+    }
+    if (certFile.size > TAMANHO_MAX_CERTIFICADO) {
+      toast.error("O arquivo excede o limite de 10 MB.");
+      return;
+    }
+    if (!certPassword) {
+      toast.error("Informe a senha do certificado.");
+      return;
+    }
+
+    setCertEnviando(true);
+    try {
+      const { data: sessao, error: sessaoError } = await supabase.auth.getSession();
+      const token = sessao?.session?.access_token;
+      if (sessaoError || !token) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", certFile);
+      formData.append("password", certPassword);
+      formData.append("emitente_id", certEmitente.id);
+
+      const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || supabaseUrl;
+      const anonKey =
+        (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || supabaseAnonKey;
+
+      const resposta = await fetch(`${baseUrl}/functions/v1/nfse-upload-certificado`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: anonKey,
+        },
+        body: formData,
+      });
+
+      const json = (await resposta.json().catch(() => ({}))) as RespostaUploadCertificado;
+
+      if (!resposta.ok || !json.success) {
+        toast.error(json.error || "Não foi possível enviar o certificado.");
+        return;
+      }
+
+      toast.success(json.message || "Certificado A1 enviado com sucesso!");
+      resetFormCertificado();
+      setShowConfigModal(false);
+    } catch (err: unknown) {
+      console.error(
+        "[Fiscal] Erro ao enviar certificado:",
+        err instanceof Error ? err.message : String(err),
+      );
+      toast.error("Erro de rede ao enviar o certificado. Tente novamente.");
+    } finally {
+      setCertEnviando(false);
+    }
   };
 
   const handleConfirmarEmissao = () => {
@@ -252,53 +410,116 @@ export default function Fiscal() {
 
       </Tabs>
 
-      {/* Modal Configuração Focus NFe */}
-      <Dialog open={showConfigModal} onOpenChange={setShowConfigModal}>
+      {/* Modal Configuração Fiscal — Certificado A1 (NFS-e Nacional) */}
+      <Dialog
+        open={showConfigModal}
+        onOpenChange={(open) => {
+          if (open) setShowConfigModal(true);
+          else fecharConfigModal();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Settings className="w-5 h-5"/> Configuração Fiscal</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" /> Configuração Fiscal — Certificado A1
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm font-medium text-amber-800">Focus NFe / Efí</p>
-              <p className="text-xs text-amber-600 mt-1">O token Focus e gerenciado exclusivamente nos Supabase Secrets da Edge Function:</p>
-              <ul className="text-xs text-amber-600 mt-2 space-y-1">
-                <li>• O token Focus e configurado nos Supabase Secrets da Edge Function focus-emissao</li>
-                <li>• Nunca insira token no frontend ou em arquivos .env com prefixo VITE_</li>
-              </ul>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Token Focus</Label>
-                <Input type="password" placeholder="••••••••••••" disabled />
+
+          <form onSubmit={handleUploadCertificado}>
+            <div className="space-y-4 py-4">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <p className="text-xs text-muted-foreground">Emitente (matriz)</p>
+                {certCarregandoEmitente ? (
+                  <p className="text-sm flex items-center gap-2 mt-1">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Carregando emitente...
+                  </p>
+                ) : certEmitente ? (
+                  <>
+                    <p className="text-sm font-semibold mt-1">{certEmitente.razao_social}</p>
+                    <p className="text-xs text-muted-foreground">{certEmitente.cnpj}</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-red-600 mt-1">
+                    Matriz Conexão Express não encontrada. Cadastre o emitente na aba Emitente.
+                  </p>
+                )}
               </div>
+
               <div>
-                <Label>Ambiente</Label>
-                <Select disabled>
-                  <SelectTrigger><SelectValue placeholder="Homologação" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="homologacao">Homologação</SelectItem>
-                    <SelectItem value="producao">Produção</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="cert-arquivo">Arquivo do certificado A1 (.pfx / .p12) *</Label>
+                <Input
+                  id="cert-arquivo"
+                  ref={certInputRef}
+                  type="file"
+                  accept=".pfx,.p12"
+                  disabled={certEnviando}
+                  className="mt-1 cursor-pointer"
+                  onChange={(e) => {
+                    const arquivo = e.target.files?.[0] || null;
+                    setCertFile(arquivo);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {certFile
+                    ? `${certFile.name} — ${(certFile.size / 1024).toFixed(1)} KB`
+                    : "Máximo 10 MB. O arquivo é enviado ao cofre privado."}
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="cert-senha">Senha do certificado *</Label>
+                <div className="relative mt-1">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="cert-senha"
+                    type="password"
+                    className="pl-9"
+                    placeholder="Senha do arquivo .pfx"
+                    autoComplete="new-password"
+                    value={certPassword}
+                    disabled={certEnviando}
+                    onChange={(e) => setCertPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                A senha é criptografada (AES-GCM) antes de ser gravada e nunca é
+                retornada pela API. O certificado fica no bucket privado.
               </div>
             </div>
-            <div>
-              <Label>Prefeitura (NFS-e)</Label>
-              <Select disabled>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sp">São Paulo</SelectItem>
-                  <SelectItem value="campinas">Campinas</SelectItem>
-                  <SelectItem value="guarulhos">Guarulhos</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConfigModal(false)}>Fechar</Button>
-            <Button disabled>Salvar Configuração</Button>
-          </DialogFooter>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={fecharConfigModal}
+                disabled={certEnviando}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  certEnviando ||
+                  certCarregandoEmitente ||
+                  !certEmitente ||
+                  !certFile ||
+                  !certPassword
+                }
+              >
+                {certEnviando ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4 mr-2" /> Enviar Certificado
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

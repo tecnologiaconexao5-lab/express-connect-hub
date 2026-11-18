@@ -59,7 +59,7 @@ export default function NfseTab() {
     try {
       setLoading(true);
       setErro("");
-      const { data, error } = await sup.from("fiscal_nfse").select("*").order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("fiscal_nfse").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       setNfses(data || []);
     } catch (e: any) {
@@ -80,7 +80,7 @@ export default function NfseTab() {
     });
 
     // Pre-carregar emitente padrao
-    const { data: emit } = await sup.from("configuracoes_fiscais").select("*").eq("ativo",true).eq("padrao",true).limit(1).maybeSingle();
+    const { data: emit } = await supabase.from("configuracoes_fiscais").select("*").eq("ativo",true).eq("padrao",true).limit(1).maybeSingle();
     if (emit) {
       setGerarForm(function(p) { return { ...p, emitente_nome: emit.razao_social||emit.nome_fantasia||"", emitente_cnpj: emit.cnpj||"", municipio: emit.cidade||"SAO PAULO", uf: emit.uf||"SP" }; });
     }
@@ -91,10 +91,10 @@ export default function NfseTab() {
 
   const fetchOrigens = async function(tipo: "os" | "cte") {
     if (tipo === "os") {
-      const { data } = await sup.from("ordens_servico").select("id, numero, cliente_id, valor_cliente").not("cliente_id","is",null).limit(20).order("created_at",{ascending:false});
+      const { data } = await supabase.from("ordens_servico").select("id, numero, cliente_id, valor_cliente").not("cliente_id","is",null).limit(20).order("created_at",{ascending:false});
       setOrigens(data || []);
     } else {
-      const { data } = await sup.from("fiscal_ctes").select("id, numero, cliente_id, valor").eq("status","rascunho").limit(20).order("created_at",{ascending:false});
+      const { data } = await supabase.from("fiscal_ctes").select("id, numero, cliente_id, valor").eq("status","rascunho").limit(20).order("created_at",{ascending:false});
       setOrigens(data || []);
     }
   };
@@ -105,18 +105,18 @@ export default function NfseTab() {
 
     // Buscar dados da origem
     if (gerarForm.origem === "os") {
-      const { data: os } = await sup.from("ordens_servico").select("*").eq("id", origemId).maybeSingle();
+      const { data: os } = await supabase.from("ordens_servico").select("*").eq("id", origemId).maybeSingle();
       if (os) {
         setGerarForm(function(p) { return { ...p, valor_servico: os.valor_cliente||0 }; });
         if (os.cliente_id) {
-          const { data: cli } = await sup.from("clientes").select("*").eq("id", os.cliente_id).maybeSingle();
+          const { data: cli } = await supabase.from("clientes").select("*").eq("id", os.cliente_id).maybeSingle();
           if (cli) {
             setGerarForm(function(p) { return { ...p, tomador_nome: cli.razao_social||cli.nome_fantasia||"", tomador_cnpj: cli.cnpj||"" }; });
           }
         }
       }
     } else {
-      const { data: cte } = await sup.from("fiscal_ctes").select("*").eq("id", origemId).maybeSingle();
+      const { data: cte } = await supabase.from("fiscal_ctes").select("*").eq("id", origemId).maybeSingle();
       if (cte) {
         const pf = cte.metadata?.payload_focus||{};
         setGerarForm(function(p) { return { ...p, valor_servico: cte.valor||0, tomador_nome: pf.tomador?.nome||"", tomador_cnpj: pf.tomador?.cnpj||"" }; });
@@ -126,7 +126,7 @@ export default function NfseTab() {
 
   const handleMunicipioBlur = async function() {
     if (!gerarForm.municipio) return;
-    const { data: emit } = await sup.from("configuracoes_fiscais").select("*").eq("ativo",true).eq("padrao",true).limit(1).maybeSingle();
+    const { data: emit } = await supabase.from("configuracoes_fiscais").select("*").eq("ativo",true).eq("padrao",true).limit(1).maybeSingle();
     const rule = await buscarRegraNfse({
       emitente_id: emit?.id||null,
       cliente_id: null,
@@ -175,7 +175,7 @@ export default function NfseTab() {
 
   const handlePreEmissao = async function() {
     setShowPreEmissao(true);
-    try { await sup.from("fiscal_logs").insert([{ entidade_tipo:"NFSE",entidade_id:selectedNfse?.id,acao:"PRE_EMISSAO_NFSE_VISUALIZADA",request:{nfse_id:selectedNfse?.id},response:{status:"dados_internos_prontos"}}]); } catch{}
+    try { await supabase.from("fiscal_logs").insert([{ entidade_tipo:"NFSE",entidade_id:selectedNfse?.id,acao:"PRE_EMISSAO_NFSE_VISUALIZADA",request:{nfse_id:selectedNfse?.id},response:{status:"dados_internos_prontos"}}]); } catch{}
   };
 
   return (
@@ -346,7 +346,7 @@ export default function NfseTab() {
       <Dialog open={showPreEmissao} onOpenChange={setShowPreEmissao}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Send className="w-5 h-5 text-primary"/>Pre-emissao NFS-e</DialogTitle><DialogDescription>Dados internos prontos</DialogDescription></DialogHeader>
-          <div className="space-y-3 py-2"><div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-green-600"/><span className="text-sm font-medium text-green-800">Dados internos prontos</span></div><div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg"><div className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0"/><p className="text-xs text-amber-800">Esta NFS-e esta pronta em dados internos, mas a emissao real ainda depende de configuracao Focus NFe, token, certificado digital A1 e ambiente fiscal.</p></div></div></div>
+          <div className="space-y-3 py-2"><div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-green-600"/><span className="text-sm font-medium text-green-800">Dados internos prontos</span></div><div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"><div className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0"/><p className="text-xs text-blue-800">A emissao desta NFS-e seguira o fluxo proprio do Padrao Nacional (SEFIN), sem dependencia de configuracao, token ou certificado da Focus NFe. O envio sera habilitado pelo motor neutro de NFS-e.</p></div></div></div>
           <DialogFooter><Button variant="outline" onClick={function(){setShowPreEmissao(false);}}>Fechar</Button><Button onClick={function(){setShowPreEmissao(false);}}>Entendi</Button></DialogFooter>
         </DialogContent>
       </Dialog>
