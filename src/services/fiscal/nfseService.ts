@@ -32,6 +32,15 @@ export interface GerarNfseParams {
   /** Overrides do modal (vencem os dados derivados da origem). */
   tomador_nome?: string;
   tomador_cnpj?: string;
+  tomador_email?: string;
+  tomador_telefone?: string;
+  tomador_logradouro?: string;
+  tomador_numero?: string;
+  tomador_complemento?: string;
+  tomador_bairro?: string;
+  tomador_municipio?: string;
+  tomador_uf?: string;
+  tomador_cep?: string;
   valor_servico?: number;
   valor_desconto?: number;
   codigo_servico?: string;
@@ -142,11 +151,30 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     }
 
     // Overrides do modal (vencem os dados derivados da origem)
-    if (params.tomador_nome || params.tomador_cnpj) {
+    const enderecoTomador = {
+      logradouro: params.tomador_logradouro || null,
+      numero: params.tomador_numero || null,
+      complemento: params.tomador_complemento || null,
+      bairro: params.tomador_bairro || null,
+      municipio: params.tomador_municipio || null,
+      uf: params.tomador_uf || null,
+      cep: params.tomador_cep || null,
+    };
+    const temEnderecoTomador = Object.values(enderecoTomador).some(Boolean);
+
+    if (
+      params.tomador_nome || params.tomador_cnpj || params.tomador_email ||
+      params.tomador_telefone || temEnderecoTomador
+    ) {
       tomador = {
         ...(tomador || {}),
         nome: params.tomador_nome || tomador?.nome || null,
         cnpj: params.tomador_cnpj || tomador?.cnpj || null,
+        email: params.tomador_email || tomador?.email || null,
+        telefone: params.tomador_telefone || tomador?.telefone || null,
+        endereco: temEnderecoTomador
+          ? enderecoTomador
+          : (tomador?.endereco || null),
       };
     }
     if (typeof params.valor_servico === "number" && params.valor_servico > 0) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft } from "lucide-react";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
-import { buscarRegraNfse } from "@/services/fiscal/regrasFiscaisNfseService";
+import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
@@ -33,6 +33,52 @@ const PASSOS_NFSE = [
   { chave: "tributacao", titulo: "Tributação" },
   { chave: "revisao", titulo: "Revisão" },
 ];
+
+type CodigoServicoOpcao = { codigo: string; descricao: string };
+
+const CODIGOS_SERVICO_NACIONAIS: CodigoServicoOpcao[] = [
+  { codigo: "16.02.01.002", descricao: "Transporte de bens ou valores" },
+  { codigo: "16.01.01", descricao: "Transporte coletivo" },
+  { codigo: "16.01.02", descricao: "Transporte escolar" },
+  { codigo: "16.02.01", descricao: "Outros serviços de transporte de natureza municipal" },
+  { codigo: "11.04.01", descricao: "Armazenamento, carga e descarga" },
+  { codigo: "26.01.01", descricao: "Coleta, remessa ou entrega de correspondências/documentos/objetos/bens" },
+];
+
+function montarCodigosServico(
+  regras: Array<{ codigo_servico: string; descricao_servico?: string | null }>,
+): CodigoServicoOpcao[] {
+  const mapa = new Map<string, CodigoServicoOpcao>();
+  CODIGOS_SERVICO_NACIONAIS.forEach(function(item) { mapa.set(item.codigo, item); });
+
+  regras.forEach(function(regra) {
+    const codigo = (regra.codigo_servico || "").trim();
+    if (!codigo) return;
+    const existente = mapa.get(codigo);
+    mapa.set(codigo, {
+      codigo,
+      descricao: regra.descricao_servico?.trim() || existente?.descricao || "Regra municipal",
+    });
+  });
+
+  return Array.from(mapa.values());
+}
+
+type BrasilApiCnpj = {
+  razao_social?: string | null;
+  nome_fantasia?: string | null;
+  email?: string | null;
+  ddd_telefone_1?: string | null;
+  ddd_telefone_2?: string | null;
+  telefone?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  municipio?: string | null;
+  uf?: string | null;
+  cep?: string | null;
+};
 const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
 type OrigemOpcao = {
@@ -103,6 +149,15 @@ export default function NfseTab() {
     iss_retido: false,
     tomador_nome: "",
     tomador_cnpj: "",
+    tomador_email: "",
+    tomador_telefone: "",
+    tomador_logradouro: "",
+    tomador_numero: "",
+    tomador_complemento: "",
+    tomador_bairro: "",
+    tomador_municipio: "",
+    tomador_uf: "",
+    tomador_cep: "",
     valor_servico: 0 as number,
     valor_desconto: 0 as number,
   });
@@ -110,12 +165,27 @@ export default function NfseTab() {
   const [buscaOrigem, setBuscaOrigem] = useState("");
   const [origemAberto, setOrigemAberto] = useState(false);
   const origemComboRef = useRef<HTMLDivElement>(null);
+  const [consultandoCnpj, setConsultandoCnpj] = useState(false);
+  const [codigosServico, setCodigosServico] = useState<CodigoServicoOpcao[]>(CODIGOS_SERVICO_NACIONAIS);
+  const [codigoAberto, setCodigoAberto] = useState(false);
+  const codigoComboRef = useRef<HTMLDivElement>(null);
 
   // Fecha o combobox de OS ao clicar fora.
   useEffect(function() {
     function aoClicarFora(event: MouseEvent) {
       if (origemComboRef.current && !origemComboRef.current.contains(event.target as Node)) {
         setOrigemAberto(false);
+      }
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return function() { document.removeEventListener("mousedown", aoClicarFora); };
+  }, []);
+
+  // Fecha o combobox de código de serviço ao clicar fora.
+  useEffect(function() {
+    function aoClicarFora(event: MouseEvent) {
+      if (codigoComboRef.current && !codigoComboRef.current.contains(event.target as Node)) {
+        setCodigoAberto(false);
       }
     }
     document.addEventListener("mousedown", aoClicarFora);
@@ -221,6 +291,9 @@ export default function NfseTab() {
       codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
       descricao_servico: "", aliquota_iss: "", iss_retido: false,
       tomador_nome: "", tomador_cnpj: "",
+      tomador_email: "", tomador_telefone: "",
+      tomador_logradouro: "", tomador_numero: "", tomador_complemento: "",
+      tomador_bairro: "", tomador_municipio: "", tomador_uf: "", tomador_cep: "",
       valor_servico: 0, valor_desconto: 0,
     });
 
@@ -275,6 +348,14 @@ export default function NfseTab() {
     } else {
       setAvisoRegra("Matriz CONEXAO TRANSPORTES LTDA (31.227.975/0001-80) nao encontrada em configuracoes_fiscais.");
     }
+
+    try {
+      const regras = await listarRegrasNfse();
+      setCodigosServico(montarCodigosServico(regras));
+    } catch {
+      setCodigosServico(CODIGOS_SERVICO_NACIONAIS);
+    }
+    setCodigoAberto(false);
 
     fetchOrigens("os");
     setPassoAtual(1);
@@ -362,10 +443,38 @@ export default function NfseTab() {
         cliente_id: "",
         tomador_nome: "",
         tomador_cnpj: "",
+        tomador_email: "",
+        tomador_telefone: "",
+        tomador_logradouro: "",
+        tomador_numero: "",
+        tomador_complemento: "",
+        tomador_bairro: "",
+        tomador_municipio: "",
+        tomador_uf: "",
+        tomador_cep: "",
         valor_servico: 0,
       };
     });
     if (novo !== "avulso") void fetchOrigens(novo);
+  };
+
+  const preencherTomadorComCliente = function(cli: Record<string, unknown>) {
+    setGerarForm(function(p) {
+      return {
+        ...p,
+        tomador_nome: String(cli.razao_social || cli.nome_fantasia || p.tomador_nome || ""),
+        tomador_cnpj: String(cli.cnpj || p.tomador_cnpj || ""),
+        tomador_email: String(cli.email || p.tomador_email || ""),
+        tomador_telefone: String(cli.telefone || cli.whatsapp || p.tomador_telefone || ""),
+        tomador_cep: somenteDigitos(cli.cep) || p.tomador_cep,
+        tomador_logradouro: String(cli.logradouro || p.tomador_logradouro || ""),
+        tomador_numero: String(cli.numero || p.tomador_numero || ""),
+        tomador_complemento: String(cli.complemento || p.tomador_complemento || ""),
+        tomador_bairro: String(cli.bairro || p.tomador_bairro || ""),
+        tomador_municipio: String(cli.cidade || p.tomador_municipio || ""),
+        tomador_uf: String(cli.uf || p.tomador_uf || ""),
+      };
+    });
   };
 
   const handleOrigemChange = async function(origemId: string) {
@@ -379,18 +488,93 @@ export default function NfseTab() {
         setGerarForm(function(p) { return { ...p, valor_servico: os.valor_cliente||0 }; });
         if (os.cliente_id) {
           const { data: cli } = await supabase.from("clientes").select("*").eq("id", os.cliente_id).maybeSingle();
-          if (cli) {
-            setGerarForm(function(p) { return { ...p, tomador_nome: cli.razao_social||cli.nome_fantasia||"", tomador_cnpj: cli.cnpj||"" }; });
-          }
+          if (cli) preencherTomadorComCliente(cli as Record<string, unknown>);
         }
       }
     } else {
       const { data: cte } = await supabase.from("fiscal_ctes").select("*").eq("id", origemId).maybeSingle();
       if (cte) {
-        const pf = cte.metadata?.payload_focus||{};
-        setGerarForm(function(p) { return { ...p, valor_servico: cte.valor||0, tomador_nome: pf.tomador?.nome||"", tomador_cnpj: pf.tomador?.cnpj||"" }; });
+        setGerarForm(function(p) { return { ...p, valor_servico: cte.valor||0 }; });
+        if (cte.cliente_id) {
+          const { data: cli } = await supabase.from("clientes").select("*").eq("id", cte.cliente_id).maybeSingle();
+          if (cli) preencherTomadorComCliente(cli as Record<string, unknown>);
+        } else {
+          const pf = cte.metadata?.payload_focus||{};
+          setGerarForm(function(p) {
+            return {
+              ...p,
+              tomador_nome: pf.tomador?.nome||p.tomador_nome,
+              tomador_cnpj: pf.tomador?.cnpj||p.tomador_cnpj,
+              tomador_email: pf.tomador?.email||p.tomador_email,
+            };
+          });
+        }
       }
     }
+  };
+
+  const consultarCnpjTomador = async function() {
+    const cnpj = somenteDigitos(gerarForm.tomador_cnpj);
+    if (cnpj.length !== 14) {
+      toast.error("Informe um CNPJ valido (14 digitos).");
+      return;
+    }
+
+    setConsultandoCnpj(true);
+    try {
+      const resposta = await fetch(
+        `https://brasilapi.com.br/api/cnpj/v1/${cnpj}`,
+        { headers: { Accept: "application/json" } },
+      );
+
+      if (!resposta.ok) {
+        toast.error(
+          resposta.status === 404
+            ? "CNPJ nao encontrado na Receita."
+            : "Falha ao consultar o CNPJ.",
+        );
+        return;
+      }
+
+      const dados = await resposta.json() as BrasilApiCnpj;
+
+      setGerarForm(function(p) {
+        return {
+          ...p,
+          tomador_nome: dados.razao_social || dados.nome_fantasia || p.tomador_nome,
+          tomador_email: dados.email || p.tomador_email,
+          tomador_telefone: dados.ddd_telefone_1 || dados.telefone || p.tomador_telefone,
+          tomador_cep: somenteDigitos(dados.cep) || p.tomador_cep,
+          tomador_logradouro: dados.logradouro || p.tomador_logradouro,
+          tomador_numero: dados.numero || p.tomador_numero,
+          tomador_complemento: dados.complemento || p.tomador_complemento,
+          tomador_bairro: dados.bairro || p.tomador_bairro,
+          tomador_municipio: dados.municipio || p.tomador_municipio,
+          tomador_uf: dados.uf || p.tomador_uf,
+        };
+      });
+
+      toast.success("Dados do CNPJ carregados.");
+    } catch (erro: unknown) {
+      console.error(
+        "[NfseTab] Erro ao consultar CNPJ:",
+        erro instanceof Error ? erro.message : String(erro),
+      );
+      toast.error("Erro de rede ao consultar o CNPJ.");
+    } finally {
+      setConsultandoCnpj(false);
+    }
+  };
+
+  const selecionarCodigoServico = function(opcao: CodigoServicoOpcao) {
+    setGerarForm(function(p) {
+      return {
+        ...p,
+        codigo_servico: opcao.codigo,
+        descricao_servico: p.descricao_servico || opcao.descricao,
+      };
+    });
+    setCodigoAberto(false);
   };
 
   const aplicarRegraMunicipal = async function(codigoIbge: string, nomeMunicipio: string) {
@@ -460,6 +644,15 @@ export default function NfseTab() {
       descricao_servico: gerarForm.descricao_servico || "Prestacao de servico de transporte",
       tomador_nome: gerarForm.tomador_nome || undefined,
       tomador_cnpj: gerarForm.tomador_cnpj || undefined,
+      tomador_email: gerarForm.tomador_email || undefined,
+      tomador_telefone: gerarForm.tomador_telefone || undefined,
+      tomador_logradouro: gerarForm.tomador_logradouro || undefined,
+      tomador_numero: gerarForm.tomador_numero || undefined,
+      tomador_complemento: gerarForm.tomador_complemento || undefined,
+      tomador_bairro: gerarForm.tomador_bairro || undefined,
+      tomador_municipio: gerarForm.tomador_municipio || undefined,
+      tomador_uf: gerarForm.tomador_uf || undefined,
+      tomador_cep: gerarForm.tomador_cep || undefined,
       valor_servico: gerarForm.valor_servico,
       valor_desconto: gerarForm.valor_desconto,
       codigo_servico: gerarForm.codigo_servico || undefined,
@@ -578,6 +771,14 @@ export default function NfseTab() {
       return ((o.numero || "") + " " + o.cliente_nome).toLowerCase().includes(termoBuscaOrigem);
     })
     : origens;
+
+  const termoCodigoServico = (gerarForm.codigo_servico || "").trim().toLowerCase();
+  const codigosFiltrados = termoCodigoServico
+    ? codigosServico.filter(function(opcao) {
+      return opcao.codigo.toLowerCase().includes(termoCodigoServico) ||
+        opcao.descricao.toLowerCase().includes(termoCodigoServico);
+    })
+    : codigosServico;
 
   // ===================================================================
   // WIZARD FULL PAGE — Emissao de NFS-e Nacional (5 passos)
@@ -832,6 +1033,16 @@ export default function NfseTab() {
                           razao_social?: string | null;
                           nome_fantasia?: string | null;
                           cnpj?: string | null;
+                          email?: string | null;
+                          telefone?: string | null;
+                          whatsapp?: string | null;
+                          cep?: string | null;
+                          logradouro?: string | null;
+                          numero?: string | null;
+                          complemento?: string | null;
+                          bairro?: string | null;
+                          cidade?: string | null;
+                          uf?: string | null;
                         } | null;
                         setGerarForm(function(p) {
                           return {
@@ -839,6 +1050,15 @@ export default function NfseTab() {
                             cliente_id: id || "",
                             tomador_nome: cli?.razao_social || cli?.nome_fantasia || "",
                             tomador_cnpj: cli?.cnpj || "",
+                            tomador_email: cli?.email || "",
+                            tomador_telefone: cli?.telefone || cli?.whatsapp || "",
+                            tomador_cep: somenteDigitos(cli?.cep) || "",
+                            tomador_logradouro: cli?.logradouro || "",
+                            tomador_numero: cli?.numero || "",
+                            tomador_complemento: cli?.complemento || "",
+                            tomador_bairro: cli?.bairro || "",
+                            tomador_municipio: cli?.cidade || "",
+                            tomador_uf: cli?.uf || "",
                           };
                         });
                       }}
@@ -854,14 +1074,108 @@ export default function NfseTab() {
                 </div>
                 <div>
                   <Label>CNPJ do Tomador</Label>
-                  <Input
-                    value={gerarForm.tomador_cnpj}
-                    readOnly={camposTravados}
-                    className={camposTravados ? "bg-slate-50" : ""}
-                    onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cnpj: e.target.value }; }); }}
-                    placeholder="00.000.000/0000-00"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={gerarForm.tomador_cnpj}
+                      readOnly={camposTravados}
+                      className={camposTravados ? "bg-slate-50" : ""}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cnpj: e.target.value }; }); }}
+                      placeholder="00.000.000/0000-00"
+                    />
+                    {gerarForm.origem === "avulso" && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1"
+                        onClick={function() { void consultarCnpjTomador(); }}
+                        disabled={consultandoCnpj}
+                        title="Consultar CNPJ na BrasilAPI"
+                      >
+                        {consultandoCnpj ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                        <span className="hidden sm:inline">Consultar</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Contato e endereço do tomador
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>E-mail</Label>
+                    <Input
+                      type="email"
+                      value={gerarForm.tomador_email}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_email: e.target.value }; }); }}
+                      placeholder="fiscal@cliente.com.br"
+                    />
+                  </div>
+                  <div>
+                    <Label>Telefone</Label>
+                    <Input
+                      value={gerarForm.tomador_telefone}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_telefone: e.target.value }; }); }}
+                      placeholder="(11) 99999-9999"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label>Logradouro</Label>
+                    <Input
+                      value={gerarForm.tomador_logradouro}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_logradouro: e.target.value }; }); }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Número</Label>
+                    <Input
+                      value={gerarForm.tomador_numero}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_numero: e.target.value }; }); }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Complemento</Label>
+                    <Input
+                      value={gerarForm.tomador_complemento}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_complemento: e.target.value }; }); }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Bairro</Label>
+                    <Input
+                      value={gerarForm.tomador_bairro}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_bairro: e.target.value }; }); }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Município</Label>
+                    <Input
+                      value={gerarForm.tomador_municipio}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_municipio: e.target.value }; }); }}
+                    />
+                  </div>
+                  <div>
+                    <Label>UF</Label>
+                    <Input
+                      maxLength={2}
+                      value={gerarForm.tomador_uf}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_uf: e.target.value.toUpperCase() }; }); }}
+                    />
+                  </div>
+                  <div>
+                    <Label>CEP</Label>
+                    <Input
+                      value={gerarForm.tomador_cep}
+                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cep: e.target.value }; }); }}
+                    />
+                  </div>
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Campos editáveis. A consulta de CNPJ preenche automaticamente.
+                </p>
               </div>
             </div>
           )}
@@ -982,12 +1296,46 @@ export default function NfseTab() {
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  <Input
-                    id="nfse-codigo-servico"
-                    className="mt-1 font-mono"
-                    value={gerarForm.codigo_servico}
-                    onChange={function(e) { setGerarForm(function(p) { return { ...p, codigo_servico: e.target.value }; }); }}
-                  />
+                  <div className="relative" ref={codigoComboRef}>
+                    <Input
+                      id="nfse-codigo-servico"
+                      className="mt-1 font-mono"
+                      value={gerarForm.codigo_servico}
+                      onChange={function(e) {
+                        setGerarForm(function(p) { return { ...p, codigo_servico: e.target.value }; });
+                        setCodigoAberto(true);
+                      }}
+                      onFocus={function() { setCodigoAberto(true); }}
+                      onKeyDown={function(e) { if (e.key === "Escape") setCodigoAberto(false); }}
+                      placeholder="Ex.: 16.02.01.002"
+                    />
+                    {codigoAberto && (
+                      <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                        {codigosFiltrados.length === 0 ? (
+                          <p className="p-3 text-xs text-muted-foreground">
+                            Nenhum código na lista. Você pode digitar o código manualmente.
+                          </p>
+                        ) : codigosFiltrados.slice(0, 30).map(function(opcao) {
+                          return (
+                            <button
+                              type="button"
+                              key={opcao.codigo}
+                              onClick={function() { selecionarCodigoServico(opcao); }}
+                              className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-slate-50"
+                            >
+                              <span className="font-mono text-xs font-semibold text-slate-800">
+                                {opcao.codigo}
+                              </span>
+                              <span className="text-xs text-slate-500">{opcao.descricao}</span>
+                            </button>
+                          );
+                        })}
+                        <p className="border-t px-3 py-2 text-[10px] text-muted-foreground">
+                          Selecione ou digite um código customizado.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Label>Aliquota do ISS (%)</Label>
@@ -1062,6 +1410,13 @@ export default function NfseTab() {
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Tomador</p>
                   <p className="text-sm font-semibold">{gerarForm.tomador_nome || "—"}</p>
                   <p className="text-xs text-muted-foreground">{gerarForm.tomador_cnpj || "—"}</p>
+                  <p className="text-xs text-muted-foreground">{gerarForm.tomador_email || "—"}</p>
+                  <p className="text-xs text-muted-foreground">{gerarForm.tomador_telefone || "—"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {[gerarForm.tomador_logradouro, gerarForm.tomador_numero, gerarForm.tomador_bairro, gerarForm.tomador_municipio, gerarForm.tomador_uf]
+                      .filter(Boolean)
+                      .join(", ") || "Endereço não informado"}
+                  </p>
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Serviço</p>
