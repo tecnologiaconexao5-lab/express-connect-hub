@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search, Printer, Download } from "lucide-react";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search, Printer, Download, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import type { DanfsePrintDados } from "@/components/fiscal/DanfsePrintTemplate";
 import { gerarXmlDpsNacional } from "@/services/fiscal/nfseEmissaoService";
 import type { DpsPayload, FiscalCompanySettings } from "@/services/fiscal/nfseEmissaoService";
 import type { FiscalNfse } from "@/types/fiscal";
+import { carregarConfiguracaoSistema } from "@/services/configuracoesService";
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
@@ -145,6 +146,14 @@ function baixarArquivo(blob: Blob, nomeArquivo: string): void {
   link.remove();
   setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 }
+
+function urlLogoAbsoluta(valor: string): string {
+  const url = (valor || "").trim();
+  if (!url) return `${window.location.origin}/logos/logo-conexao-colorido.png`;
+  if (url.startsWith("data:") || /^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("/")) return `${window.location.origin}${url}`;
+  return `${window.location.origin}/${url}`;
+}
 const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
 type OrigemOpcao = {
@@ -199,6 +208,8 @@ export default function NfseTab() {
   const [historico, setHistorico] = useState<any[]>([]);
   const [transmitindoId, setTransmitindoId] = useState<string | null>(null);
   const [baixandoXmlId, setBaixandoXmlId] = useState<string | null>(null);
+  const [logoEmitenteUrl, setLogoEmitenteUrl] = useState("/logos/logo-conexao-colorido.png");
+  const [abrindoPdfOficialId, setAbrindoPdfOficialId] = useState<string | null>(null);
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -260,6 +271,55 @@ export default function NfseTab() {
   }, []);
 
   useEffect(function() { fetchNfses(); }, []);
+
+  // Logo do emitente: configuracoes_fiscais (logo_url/metadata) e,
+  // como fallback, a identidade visual (configuracoes_sistema).
+  useEffect(function() {
+    let cancelado = false;
+
+    (async function() {
+      const candidatos: string[] = [];
+
+      try {
+        const { data } = await supabase
+          .from("configuracoes_fiscais")
+          .select("*")
+          .eq("ativo", true);
+
+        const lista = (data || []) as Array<Record<string, unknown>>;
+        const matriz = lista.find(function(e) {
+          return somenteDigitos(e.cnpj) === CNPJ_MATRIZ_NFSE;
+        }) || lista.find(function(e) { return e.padrao === true; }) || lista[0];
+
+        const metadata = matriz?.metadata as Record<string, unknown> | undefined;
+        const url = matriz?.logo_url ?? metadata?.logo_url ?? metadata?.logoUrl ?? matriz?.logo;
+        if (typeof url === "string" && url.trim()) candidatos.push(url.trim());
+      } catch {
+        // Segue para a identidade visual/fallback.
+      }
+
+      if (candidatos.length === 0) {
+        try {
+          const identidade = await carregarConfiguracaoSistema("identidade_visual");
+          if (identidade && typeof identidade === "object") {
+            const config = identidade as Record<string, unknown>;
+            const url = config.logoUrl ?? config.logo_url;
+            if (typeof url === "string" && url.trim()) candidatos.push(url.trim());
+          }
+        } catch {
+          // Fallback silencioso.
+        }
+      }
+
+      if (!cancelado) {
+        setLogoEmitenteUrl(
+          urlLogoAbsoluta(candidatos[0] || "/logos/logo-conexao-colorido.png"),
+        );
+      }
+    })();
+
+    return function() { cancelado = true; };
+  }, []);
 
   const fetchNfses = async function() {
     try {
@@ -845,7 +905,7 @@ export default function NfseTab() {
     const uf = String(meta.uf || EMITENTE_DANFSE.uf);
 
     return {
-      logoUrl: `${window.location.origin}/logos/logo-conexao-colorido.png`,
+      logoUrl: urlLogoAbsoluta(logoEmitenteUrl),
       numero: String(nfse.numero || "—"),
       chaveAcesso: String(nfse.chave_acesso || meta.emissao?.chave_acesso || ""),
       competencia: formatarCompetenciaDanfse(meta.competencia, nfse.created_at),
@@ -1024,6 +1084,72 @@ export default function NfseTab() {
     }
   };
 
+  const abrirPdfOficial = async function(nfse: FiscalNfse) {
+    if (abrindoPdfOficialId) return;
+
+    const meta = nfse.metadata || {};
+    const documentos = meta.documentos_storage || {};
+    const referencia = String(
+      nfse.pdf_url || documentos.danfse_pdf || documentos.nfse_pdf || "",
+    );
+    const status = String(nfse.status || "").toLowerCase();
+
+    if (referencia) {
+      if (/^https?:\/\//i.test(referencia)) {
+        window.open(referencia, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      // Abre a aba antes do await para nao ser bloqueada como pop-up.
+      const janela = window.open("", "_blank");
+      setAbrindoPdfOficialId(nfse.id);
+
+      try {
+        const caminho = referencia.replace(/^fiscal-documentos\//, "");
+        const { data, error } = await supabase.storage
+          .from("fiscal-documentos")
+          .createSignedUrl(caminho, 60);
+
+        if (error || !data?.signedUrl) {
+          throw new Error("PDF oficial nao encontrado no Storage.");
+        }
+
+        if (janela) janela.location.replace(data.signedUrl);
+        else {
+          const aberta = window.open(
+            data.signedUrl,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          if (!aberta) toast.error("Permita pop-ups para abrir o PDF oficial.");
+        }
+      } catch (erro: unknown) {
+        if (janela) janela.close();
+        console.error(
+          "[NfseTab] Erro ao abrir PDF oficial:",
+          erro instanceof Error ? erro.message : String(erro),
+        );
+        toast.error(
+          erro instanceof Error ? erro.message : "Falha ao abrir o PDF oficial.",
+        );
+      } finally {
+        setAbrindoPdfOficialId(null);
+      }
+      return;
+    }
+
+    if (status === "emitida" && nfse.chave_acesso) {
+      window.open(
+        `https://www.nfse.gov.br/consultapublica?chave=${encodeURIComponent(String(nfse.chave_acesso))}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
+    }
+
+    toast.error("PDF oficial disponivel apos a emissao na Sefin.");
+  };
+
   const fetchHistorico = async function(nfseId: string) {
     const data = await listarHistoricoStatus("NFSE", nfseId);
     setHistorico(data);
@@ -1180,7 +1306,7 @@ export default function NfseTab() {
 
               <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
                 <img
-                  src="/logos/logo-conexao-colorido.png"
+                  src={logoEmitenteUrl}
                   alt="Conexão Express"
                   className="h-12 w-auto object-contain"
                   onError={function(e) { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
@@ -1812,6 +1938,22 @@ export default function NfseTab() {
     const podeTransmitirDetalhe =
       statusLower === "rascunho" || statusLower === "erro_emissao";
 
+    const documentosStorage = metaDetalhe.documentos_storage || {};
+    const pdfRef = String(
+      selectedNfse.pdf_url || documentosStorage.danfse_pdf ||
+        documentosStorage.nfse_pdf || "",
+    );
+    const pdfBloqueado =
+      statusLower === "rascunho" || statusLower === "erro_emissao";
+    const temPdfOficial = Boolean(pdfRef) ||
+      (statusLower === "emitida" && Boolean(selectedNfse.chave_acesso));
+    const pdfOficialDisabled = pdfBloqueado || !temPdfOficial;
+    const pdfOficialTitle = pdfBloqueado
+      ? "Disponível após a emissão oficial na Sefin"
+      : !temPdfOficial
+      ? "PDF oficial ainda não disponível"
+      : "Abrir PDF oficial da Sefin";
+
     return (
       <div className="space-y-4">
         {/* HEADER */}
@@ -2048,7 +2190,19 @@ export default function NfseTab() {
                 className="w-full justify-start"
                 onClick={function() { imprimirDanfse(selectedNfse); }}
               >
-                <Printer className="w-4 h-4 mr-2" /> Imprimir / PDF (DANFSe)
+                <Printer className="w-4 h-4 mr-2" /> PDF / Imprimir (Modelo Conexão)
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={function() { void abrirPdfOficial(selectedNfse); }}
+                disabled={pdfOficialDisabled || abrindoPdfOficialId === selectedNfse.id}
+                title={pdfOficialTitle}
+              >
+                {abrindoPdfOficialId === selectedNfse.id
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <FileText className="w-4 h-4 mr-2" />}
+                PDF Oficial (Sefin)
               </Button>
               <Button
                 variant="outline"

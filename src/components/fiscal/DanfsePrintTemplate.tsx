@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components */
+﻿/* eslint-disable react-refresh/only-export-components */
 import { renderToStaticMarkup } from "react-dom/server";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -105,28 +105,29 @@ function enderecoLinha(endereco?: DanfseEndereco | null): string {
 
 function enderecoMunicipio(endereco?: DanfseEndereco | null): string {
   if (!endereco) return "—";
-  const mun = [endereco.municipio, endereco.uf].filter(Boolean).join("/");
-  return mun || "—";
+  return [endereco.municipio, endereco.uf].filter(Boolean).join("/") || "—";
 }
 
 const CSS_DANFSE = `
-  @page { size: A4; margin: 10mm; }
+  @page { size: A4; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; }
   body {
     font-family: Arial, Helvetica, sans-serif;
-    color: #111827;
-    font-size: 8.5px;
+    color: #0F172A;
+    font-size: 9px;
     line-height: 1.3;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .danfse-page {
-    width: 190mm;
-    min-height: 277mm;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 12mm;
     margin: 0 auto;
     position: relative;
     background: #fff;
+    box-sizing: border-box;
   }
   .danfse-watermark {
     position: absolute;
@@ -142,163 +143,235 @@ const CSS_DANFSE = `
     pointer-events: none;
   }
   .danfse-page > *:not(.danfse-watermark) { position: relative; z-index: 1; }
+
   .danfse-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    border: 1.4px solid #111827;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
     padding: 8px 10px;
   }
-  .danfse-logo-wrap { width: 48mm; display: flex; align-items: center; }
-  .danfse-logo { height: 16mm; max-width: 46mm; object-fit: contain; }
+  .danfse-logo-wrap { flex: 0 0 auto; padding-right: 8px; }
+  .danfse-logo {
+    height: 48px;
+    max-width: 170px;
+    width: auto;
+    object-fit: contain;
+    display: block;
+  }
   .danfse-title-block { flex: 1; text-align: center; }
-  .danfse-title { font-size: 19px; font-weight: 800; letter-spacing: 0.5px; }
+  .danfse-title { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; }
   .danfse-subtitle { font-size: 9px; font-weight: 600; margin-top: 2px; }
-  .danfse-municipio { font-size: 8px; margin-top: 2px; }
+  .danfse-municipio { font-size: 8px; margin-top: 2px; color: #475569; }
   .danfse-qr { width: 37mm; display: flex; flex-direction: column; align-items: center; }
   .danfse-qr svg { width: 24mm; height: 24mm; }
-  .danfse-qr-text { font-size: 5.8px; line-height: 1.2; text-align: center; margin-top: 2px; }
+  .danfse-qr-text { font-size: 5.8px; line-height: 1.2; text-align: center; margin-top: 2px; color: #475569; }
+
   .danfse-chave {
     display: flex;
     align-items: center;
     gap: 8px;
-    border: 1.4px solid #111827;
-    border-top: none;
-    padding: 4px 8px;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-top: 5px;
   }
-  .danfse-chave-label { font-size: 7px; font-weight: 800; letter-spacing: 0.3px; white-space: nowrap; }
+  .danfse-chave-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: #64748B;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
   .danfse-chave-valor {
     font-family: "Courier New", monospace;
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.6px;
     word-break: break-all;
   }
+
   .danfse-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    border-left: 1.4px solid #111827;
-    border-right: 1.4px solid #111827;
-    border-top: 1.4px solid #111827;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 5px;
   }
+  .danfse-grid-20 {
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .span-14 { grid-column: span 14; }
+  .span-11 { grid-column: span 11; }
+  .span-10 { grid-column: span 10; }
+  .span-6 { grid-column: span 6; }
+  .span-5 { grid-column: span 5; }
+  .span-4 { grid-column: span 4; }
   .danfse-cell {
-    border-bottom: 1px solid #111827;
-    border-right: 1px solid #111827;
-    padding: 3px 6px;
-    min-height: 11mm;
+    border-right: 1px solid #CBD5E1;
+    border-bottom: 1px solid #CBD5E1;
+    padding: 4px 6px;
+    min-height: 9mm;
   }
-  .danfse-cell:nth-child(3n) { border-right: none; }
+  .danfse-grid .danfse-cell:nth-child(3n) { border-right: none; }
+  .danfse-grid .danfse-cell:nth-last-child(-n+3) { border-bottom: none; }
+  .danfse-grid-20 .danfse-cell { border-right: 1px solid #CBD5E1; }
+  .danfse-grid-20 .danfse-cell.span-6,
+  .danfse-grid-20 .danfse-cell.span-4,
+  .danfse-grid-20 .danfse-cell:last-child { border-right: none; }
+  .danfse-grid-20 .danfse-cell:nth-last-child(-n+2) { border-bottom: none; }
   .danfse-cell-label {
-    font-size: 6.4px;
+    font-size: 8.5px;
     text-transform: uppercase;
-    color: #4b5563;
+    color: #64748B;
     font-weight: 700;
     letter-spacing: 0.25px;
   }
-  .danfse-cell-value { font-size: 8.6px; font-weight: 600; margin-top: 1px; word-break: break-word; }
-  .danfse-section { border: 1.4px solid #111827; border-top: none; page-break-inside: avoid; }
-  .danfse-section-title {
-    background: #f1f5f9;
-    padding: 3px 8px;
-    font-size: 7.6px;
-    font-weight: 800;
-    letter-spacing: 0.3px;
-    border-bottom: 1px solid #111827;
+  .danfse-cell-value {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #0F172A;
+    margin-top: 1px;
+    word-break: break-word;
   }
-  .danfse-section-body { padding: 4px 8px; }
-  .danfse-line { margin: 1.5px 0; font-size: 8.2px; }
-  .danfse-line b { font-weight: 700; }
-  .danfse-split { display: grid; grid-template-columns: 1fr 62mm; gap: 8px; }
-  .danfse-regime {
-    border-left: 1px solid #cbd5e1;
-    padding-left: 8px;
+
+  .danfse-section {
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 5px;
+    page-break-inside: avoid;
+  }
+  .danfse-section-title {
+    background: #3B1E6D;
+    color: #fff;
+    border-left: 4px solid #F97316;
+    padding: 3px 8px;
     font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
   }
   .danfse-servico-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    border-bottom: 1px solid #111827;
   }
   .danfse-mini {
-    padding: 3px 8px;
-    border-right: 1px solid #111827;
+    padding: 4px 6px;
+    border-right: 1px solid #CBD5E1;
+    border-bottom: 1px solid #CBD5E1;
+    min-height: 9mm;
   }
-  .danfse-mini:last-child { border-right: none; }
-  .danfse-mini-label {
-    font-size: 6.4px;
-    text-transform: uppercase;
-    color: #4b5563;
-    font-weight: 700;
-    letter-spacing: 0.25px;
-  }
-  .danfse-mini-value { font-size: 8.6px; font-weight: 600; margin-top: 1px; }
-  .danfse-descricao { padding: 4px 8px; min-height: 14mm; }
-  .danfse-descricao-label {
-    font-size: 6.4px;
-    text-transform: uppercase;
-    color: #4b5563;
-    font-weight: 700;
-    letter-spacing: 0.25px;
-  }
-  .danfse-descricao-texto { font-size: 8.4px; margin-top: 2px; }
+  .danfse-servico-grid .danfse-mini:nth-child(3n) { border-right: none; }
+  .danfse-servico-grid .danfse-mini { border-bottom: none; }
   .danfse-trib-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    border-top: none;
   }
-  .danfse-trib-grid .danfse-mini { border-bottom: 1px solid #111827; }
   .danfse-trib-grid .danfse-mini:nth-child(3n) { border-right: none; }
-  .danfse-valores {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr) 1.3fr;
-  }
-  .danfse-valor-box {
-    padding: 4px 8px;
-    border-right: 1px solid #111827;
-  }
-  .danfse-valor-box:last-child { border-right: none; }
-  .danfse-valor-label {
-    font-size: 6.4px;
+  .danfse-trib-grid .danfse-mini:nth-last-child(-n+3) { border-bottom: none; }
+  .danfse-mini-label {
+    font-size: 8.5px;
     text-transform: uppercase;
-    color: #4b5563;
+    color: #64748B;
     font-weight: 700;
     letter-spacing: 0.25px;
   }
-  .danfse-valor-num { font-size: 9.4px; font-weight: 700; margin-top: 1px; }
+  .danfse-mini-value {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #0F172A;
+    margin-top: 1px;
+  }
+  .danfse-descricao { padding: 4px 8px; min-height: 11mm; }
+  .danfse-descricao-label {
+    font-size: 8.5px;
+    text-transform: uppercase;
+    color: #64748B;
+    font-weight: 700;
+    letter-spacing: 0.25px;
+  }
+  .danfse-descricao-texto { font-size: 10.5px; font-weight: 600; margin-top: 1px; }
+
+  .danfse-valores {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) 1.35fr;
+  }
+  .danfse-valor-box {
+    padding: 5px 8px;
+    border-right: 1px solid #CBD5E1;
+  }
+  .danfse-valor-label {
+    font-size: 8.5px;
+    text-transform: uppercase;
+    color: #64748B;
+    font-weight: 700;
+    letter-spacing: 0.25px;
+  }
+  .danfse-valor-num {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #0F172A;
+    margin-top: 1px;
+  }
   .danfse-liquido {
-    padding: 4px 8px;
-    background: #ecfdf5;
+    margin: 3px;
+    padding: 5px 8px;
+    background: #FFF7ED;
+    border: 1px solid #F97316;
+    border-radius: 4px;
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
   .danfse-liquido span {
-    font-size: 6.6px;
+    font-size: 8px;
     font-weight: 800;
-    color: #065f46;
+    color: #9A3412;
     letter-spacing: 0.2px;
+    text-transform: uppercase;
   }
-  .danfse-liquido strong { font-size: 11px; color: #065f46; margin-top: 1px; }
-  .danfse-info-body { padding: 4px 8px; font-size: 7.6px; }
+  .danfse-liquido strong { font-size: 13px; color: #7C2D12; margin-top: 1px; }
+
+  .danfse-info-body { padding: 4px 8px; font-size: 8.5px; color: #334155; }
   .danfse-info-body p { margin: 0 0 2px; }
   .danfse-footer {
-    margin-top: 4px;
-    border-top: 1px solid #111827;
+    margin-top: 5px;
+    border-top: 1px solid #CBD5E1;
     padding-top: 3px;
     text-align: center;
-    font-size: 6.8px;
-    color: #4b5563;
+    font-size: 7px;
+    color: #64748B;
   }
   @media print {
     html, body { width: 210mm; height: 297mm; }
-    .danfse-page { width: auto; min-height: 0; margin: 0; page-break-after: avoid; }
+    .danfse-page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0;
+      padding: 12mm;
+      page-break-after: avoid;
+    }
     .danfse-watermark { position: fixed; }
   }
 `;
 
-function Celula({ rotulo, valor }: { rotulo: string; valor: string }) {
+function Celula(
+  { rotulo, valor, className }: {
+    rotulo: string;
+    valor: string;
+    className?: string;
+  },
+) {
   return (
-    <div className="danfse-cell">
+    <div className={"danfse-cell " + (className || "")}>
       <div className="danfse-cell-label">{rotulo}</div>
       <div className="danfse-cell-value">{valor}</div>
     </div>
@@ -327,7 +400,7 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
       {/* CABEÇALHO */}
       <div className="danfse-header">
         <div className="danfse-logo-wrap">
-          <img className="danfse-logo" src={dados.logoUrl} alt="Conexão Express" />
+          <img className="danfse-logo" src={dados.logoUrl} alt="Logo do emitente" />
         </div>
         <div className="danfse-title-block">
           <div className="danfse-title">DANFSe v2.0</div>
@@ -365,66 +438,28 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
       {/* PRESTADOR */}
       <div className="danfse-section">
         <div className="danfse-section-title">PRESTADOR / FORNECEDOR</div>
-        <div className="danfse-section-body">
-          <div className="danfse-split">
-            <div>
-              <div className="danfse-line">
-                <b>Nome/Nome Empresarial:</b> {dados.emitente.nome}
-              </div>
-              <div className="danfse-line">
-                <b>CNPJ:</b> {dados.emitente.cnpj}
-                {"  "}
-                <b>Inscrição Municipal:</b> {dados.emitente.inscricaoMunicipal}
-              </div>
-              <div className="danfse-line">
-                <b>Endereço:</b> {dados.emitente.endereco}
-              </div>
-              <div className="danfse-line">
-                <b>Município/UF:</b> {dados.emitente.municipio}/{dados.emitente.uf}
-                {"  "}
-                <b>CEP:</b> {dados.emitente.cep}
-              </div>
-            </div>
-            <div className="danfse-regime">
-              <b>Simples Nacional:</b>
-              <br />
-              {dados.emitente.regime}
-            </div>
-          </div>
+        <div className="danfse-grid-20">
+          <Celula className="span-14" rotulo="Nome/Nome Empresarial" valor={dados.emitente.nome} />
+          <Celula className="span-6" rotulo="CNPJ" valor={dados.emitente.cnpj} />
+          <Celula className="span-11" rotulo="Endereço" valor={dados.emitente.endereco} />
+          <Celula className="span-5" rotulo="Município/UF" valor={`${dados.emitente.municipio}/${dados.emitente.uf}`} />
+          <Celula className="span-4" rotulo="CEP" valor={dados.emitente.cep} />
+          <Celula className="span-10" rotulo="Inscrição Municipal" valor={dados.emitente.inscricaoMunicipal} />
+          <Celula className="span-10" rotulo="Simples Nacional" valor={dados.emitente.regime} />
         </div>
       </div>
 
       {/* TOMADOR */}
       <div className="danfse-section">
         <div className="danfse-section-title">TOMADOR / ADQUIRENTE</div>
-        <div className="danfse-section-body">
-          <div className="danfse-split">
-            <div>
-              <div className="danfse-line">
-                <b>Nome/Razão Social:</b> {campo(dados.tomador.nome)}
-              </div>
-              <div className="danfse-line">
-                <b>CNPJ:</b> {campo(dados.tomador.cnpj)}
-              </div>
-              <div className="danfse-line">
-                <b>Endereço:</b> {enderecoLinha(dados.tomador.endereco)}
-              </div>
-            </div>
-            <div className="danfse-regime">
-              <div className="danfse-line">
-                <b>Município/UF:</b> {enderecoMunicipio(dados.tomador.endereco)}
-              </div>
-              <div className="danfse-line">
-                <b>CEP:</b> {campo(dados.tomador.endereco?.cep)}
-              </div>
-              <div className="danfse-line">
-                <b>E-mail:</b> {campo(dados.tomador.email)}
-              </div>
-              <div className="danfse-line">
-                <b>Telefone:</b> {campo(dados.tomador.telefone)}
-              </div>
-            </div>
-          </div>
+        <div className="danfse-grid-20">
+          <Celula className="span-14" rotulo="Nome/Razão Social" valor={campo(dados.tomador.nome)} />
+          <Celula className="span-6" rotulo="CNPJ" valor={campo(dados.tomador.cnpj)} />
+          <Celula className="span-11" rotulo="Endereço" valor={enderecoLinha(dados.tomador.endereco)} />
+          <Celula className="span-5" rotulo="Município/UF" valor={enderecoMunicipio(dados.tomador.endereco)} />
+          <Celula className="span-4" rotulo="CEP" valor={campo(dados.tomador.endereco?.cep)} />
+          <Celula className="span-10" rotulo="E-mail" valor={campo(dados.tomador.email)} />
+          <Celula className="span-10" rotulo="Telefone" valor={campo(dados.tomador.telefone)} />
         </div>
       </div>
 
@@ -512,18 +547,19 @@ export function montarHtmlDanfse(dados: DanfsePrintDados): string {
 }
 
 /**
- * Abre uma janela limpa (about:blank), escreve a DANFSe e dispara a impressão
- * (o usuário pode escolher "Salvar como PDF"). Deve ser chamado no clique
- * para não ser bloqueado como pop-up.
+ * Abre uma janela limpa via Blob URL, escreve a DANFSe e
+ * dispara a impressão (o usuário pode escolher "Salvar como PDF").
  */
 export function abrirImpressaoDanfse(dados: DanfsePrintDados): boolean {
-  const janela = window.open("", "_blank", "width=900,height=1200");
-  if (!janela) return false;
-
   const html = montarHtmlDanfse(dados);
-  janela.document.open();
-  janela.document.write(html);
-  janela.document.close();
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const janela = window.open(url, "_blank", "width=900,height=1200");
+  if (!janela) {
+    URL.revokeObjectURL(url);
+    return false;
+  }
 
   let disparado = false;
   const imprimir = function() {
@@ -539,6 +575,7 @@ export function abrirImpressaoDanfse(dados: DanfsePrintDados): boolean {
 
   janela.onload = function() { setTimeout(imprimir, 300); };
   setTimeout(imprimir, 1200);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
 
   return true;
 }
