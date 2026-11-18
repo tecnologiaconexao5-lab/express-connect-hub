@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock } from "lucide-react";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -28,6 +27,13 @@ const MATRIZ_NFSE_RAZAO_SOCIAL = "CONEXAO TRANSPORTES LTDA";
 const MATRIZ_NFSE_CNPJ_FORMATADO = "31.227.975/0001-80";
 const CODIGO_SERVICO_NACIONAL_PADRAO = "16.02.01.002";
 const CAMPOS_BUSCA_MUNICIPIO = ["nome", "codigo"];
+const PASSOS_NFSE = [
+  { chave: "prestador", titulo: "Prestador" },
+  { chave: "tomador", titulo: "Tomador" },
+  { chave: "servico", titulo: "Serviço" },
+  { chave: "tributacao", titulo: "Tributação" },
+  { chave: "revisao", titulo: "Revisão" },
+];
 const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
 type OrigemOpcao = {
@@ -66,8 +72,11 @@ export default function NfseTab() {
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [showGerar, setShowGerar] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [isEmitting, setIsEmitting] = useState(false);
+  const [passoAtual, setPassoAtual] = useState(1);
+  const [rascunhoAtualId, setRascunhoAtualId] = useState<string | null>(null);
+  const [emitindo, setEmitindo] = useState(false);
   const [selectedNfse, setSelectedNfse] = useState<any>(null);
   const [showPreEmissao, setShowPreEmissao] = useState(false);
   const [gerando, setGerando] = useState(false);
@@ -130,10 +139,9 @@ export default function NfseTab() {
     }
   };
 
-  const handleTransmitir = async function(nfseId: string) {
-    if (!nfseId || transmitindoId) return;
-
-    setTransmitindoId(nfseId);
+  const invocarTransmissao = async function(
+    nfseId: string,
+  ): Promise<{ ok: boolean; mensagem: string; numero?: string | number | null }> {
     try {
       const { data, error } = await supabase.functions.invoke(
         "nfse-assinar-transmitir",
@@ -150,33 +158,52 @@ export default function NfseTab() {
           const corpo = await contexto.json().catch(function() { return null; });
           payload = (corpo ?? payload) as RespostaTransmissao | null;
         }
-        toast.error(
-          mensagemTransmissao(
+        return {
+          ok: false,
+          mensagem: mensagemTransmissao(
             payload,
             error.message || "Falha ao transmitir a NFS-e.",
           ),
-        );
-        return;
+        };
       }
 
       if (!payload?.success) {
-        toast.error(
-          mensagemTransmissao(payload, "A Sefin rejeitou a NFS-e."),
-        );
-        return;
+        return {
+          ok: false,
+          mensagem: mensagemTransmissao(payload, "A Sefin rejeitou a NFS-e."),
+        };
       }
 
-      toast.success(
-        payload.numero
-          ? "NFS-e " + String(payload.numero) + " transmitida com sucesso!"
-          : "NFS-e transmitida com sucesso!",
-      );
+      return {
+        ok: true,
+        mensagem: "NFS-e transmitida com sucesso!",
+        numero: payload.numero ?? null,
+      };
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error
+      return {
+        ok: false,
+        mensagem: err instanceof Error
           ? err.message
           : "Erro inesperado ao transmitir a NFS-e.",
-      );
+      };
+    }
+  };
+
+  const handleTransmitir = async function(nfseId: string) {
+    if (!nfseId || transmitindoId) return;
+
+    setTransmitindoId(nfseId);
+    try {
+      const resultado = await invocarTransmissao(nfseId);
+      if (resultado.ok) {
+        toast.success(
+          resultado.numero
+            ? "NFS-e " + String(resultado.numero) + " transmitida com sucesso!"
+            : "NFS-e transmitida com sucesso!",
+        );
+      } else {
+        toast.error(resultado.mensagem);
+      }
     } finally {
       setTransmitindoId(null);
       await fetchNfses();
@@ -251,7 +278,9 @@ export default function NfseTab() {
     }
 
     fetchOrigens("os");
-    setShowGerar(true);
+    setPassoAtual(1);
+    setRascunhoAtualId(null);
+    setIsEmitting(true);
   };
 
   const fetchOrigens = async function(tipo: "os" | "cte") {
@@ -401,21 +430,26 @@ export default function NfseTab() {
     }
   };
 
-  const handleGerar = async function() {
+  const criarRascunhoAtual = async function(): Promise<{ id: string | null; erro?: string }> {
     if (gerarForm.origem !== "avulso" && !gerarForm.origem_id) {
-      toast.error("Selecione a OS ou o CT-e de origem.");
-      return;
+      return { id: null, erro: "Selecione a OS ou o CT-e de origem." };
     }
     if (gerarForm.origem === "avulso" && !gerarForm.tomador_nome) {
-      toast.error("Selecione o cliente do tomador para a emissao avulsa.");
-      return;
+      return { id: null, erro: "Selecione o cliente do tomador para a emissao avulsa." };
     }
-    if (!gerarForm.emitente_id) { toast.error("Matriz da NFS-e Nacional nao encontrada em configuracoes_fiscais."); return; }
-    if (!(gerarForm.valor_servico > 0)) { toast.error("Informe o valor do servico."); return; }
-    if (gerarForm.valor_desconto < 0) { toast.error("O desconto nao pode ser negativo."); return; }
-    if (gerarForm.valor_desconto > gerarForm.valor_servico) { toast.error("O desconto nao pode ser maior que o valor do servico."); return; }
+    if (!gerarForm.emitente_id) {
+      return { id: null, erro: "Matriz da NFS-e Nacional nao encontrada em configuracoes_fiscais." };
+    }
+    if (!(gerarForm.valor_servico > 0)) {
+      return { id: null, erro: "Informe o valor do servico." };
+    }
+    if (gerarForm.valor_desconto < 0) {
+      return { id: null, erro: "O desconto nao pode ser negativo." };
+    }
+    if (gerarForm.valor_desconto > gerarForm.valor_servico) {
+      return { id: null, erro: "O desconto nao pode ser maior que o valor do servico." };
+    }
 
-    setGerando(true);
     const aliquotaNumerica = gerarForm.aliquota_iss !== "" ? Number(gerarForm.aliquota_iss) : null;
 
     const result = await gerarRascunhoNfse({
@@ -435,13 +469,72 @@ export default function NfseTab() {
     });
 
     if (result.success) {
-      toast.success("Rascunho NFS-e salvo com sucesso!");
-      setShowGerar(false);
-      fetchNfses();
-    } else {
-      toast.error("Erro: " + (result.error || "Nao foi possivel salvar o rascunho."));
+      const criado = (result as { nfse?: { id?: string } }).nfse;
+      if (criado?.id) return { id: String(criado.id) };
     }
-    setGerando(false);
+    return {
+      id: null,
+      erro: (result as { error?: string }).error || "Nao foi possivel salvar o rascunho.",
+    };
+  };
+
+  const handleSalvarRascunho = async function(): Promise<string | null> {
+    if (gerando || emitindo) return rascunhoAtualId;
+    if (rascunhoAtualId) {
+      toast.info("Rascunho ja salvo. Use \"Emitir NFS-e\" para transmitir.");
+      return rascunhoAtualId;
+    }
+
+    setGerando(true);
+    try {
+      const resultado = await criarRascunhoAtual();
+      if (!resultado.id) {
+        toast.error(resultado.erro || "Nao foi possivel salvar o rascunho.");
+        return null;
+      }
+      setRascunhoAtualId(resultado.id);
+      toast.success("Rascunho NFS-e salvo com sucesso!");
+      await fetchNfses();
+      return resultado.id;
+    } finally {
+      setGerando(false);
+    }
+  };
+
+  const handleEmitirNfse = async function() {
+    if (emitindo || gerando) return;
+
+    let id = rascunhoAtualId;
+    if (!id) {
+      id = await handleSalvarRascunho();
+      if (!id) return;
+    }
+
+    setEmitindo(true);
+    try {
+      const resultado = await invocarTransmissao(id);
+      if (resultado.ok) {
+        toast.success(
+          resultado.numero
+            ? "NFS-e " + String(resultado.numero) + " emitida com sucesso!"
+            : "NFS-e emitida com sucesso!",
+        );
+        setRascunhoAtualId(null);
+        setIsEmitting(false);
+        setPassoAtual(1);
+      } else {
+        toast.error(resultado.mensagem);
+      }
+    } finally {
+      setEmitindo(false);
+      await fetchNfses();
+    }
+  };
+
+  const fecharWizard = function() {
+    setIsEmitting(false);
+    setPassoAtual(1);
+    setRascunhoAtualId(null);
   };
 
   const openDetails = function(nfse: any) { setSelectedNfse(nfse); setShowDetails(true); fetchHistorico(nfse.id); };
@@ -475,125 +568,170 @@ export default function NfseTab() {
     })
     : origens;
 
-  return (
-    <div className="space-y-4 pt-4">
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div><h2 className="text-2xl font-bold tracking-tight">NFS-e</h2><p className="text-muted-foreground text-sm">Nota Fiscal de Servico Eletronica.</p></div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchNfses} disabled={loading}><RefreshCw className="w-4 h-4 mr-2" /> Atualizar</Button>
-          <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleOpenGerar}><PlusCircle className="w-4 h-4 mr-2" /> Nova NFS-e</Button>
-        </div>
-      </div>
-
-      <Card className="w-full">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader><TableRow><TableHead>Nº NFS-e</TableHead><TableHead>Tomador</TableHead><TableHead>Servico</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead>Pendencias</TableHead><TableHead className="text-right">Acoes</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {erro ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-red-500"><AlertCircle className="w-5 h-5 mx-auto mb-1" /><p className="text-sm">{erro}</p><Button variant="link" size="sm" onClick={fetchNfses}>Tentar novamente</Button></TableCell></TableRow>
-               : loading ? <TableRow><TableCell colSpan={7} className="h-24 text-center"><ProgressiveBlocksLoader size="normal" /></TableCell></TableRow>
-               : nfses.length === 0 ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Nenhuma NFS-e encontrada.</TableCell></TableRow>
-                : nfses.map(function(n) {
-                    const m = n.metadata || {};
-                    const v = m.validacoes_pendentes || [];
-                    const statusNfse = String(n.status || "").toLowerCase();
-                    const podeTransmitir =
-                      statusNfse === "rascunho" || statusNfse === "erro_emissao";
-                    return (
-                      <TableRow key={n.id}>
-                        <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
-                        <TableCell className="text-sm">{m.tomador?.nome || "-"}</TableCell>
-                        <TableCell className="text-xs">{m.servico || "-"}</TableCell>
-                        <TableCell className="font-medium">{fmtFin(n.valor)}</TableCell>
-                        <TableCell><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{n.status}</Badge></TableCell>
-                        <TableCell>
-                          {v.length === 0 ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />0</Badge>
-                           : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><AlertTriangle className="w-3 h-3 mr-1" />{v.length}</Badge>}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {podeTransmitir && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 gap-1 px-2 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-                                onClick={function() { void handleTransmitir(n.id); }}
-                                disabled={transmitindoId !== null}
-                                title="Transmitir NFS-e para a Sefin"
-                                aria-label="Transmitir NFS-e"
-                              >
-                                {transmitindoId === n.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Send className="w-4 h-4" />
-                                )}
-                                <span className="text-xs font-medium">
-                                  {transmitindoId === n.id ? "Enviando..." : "Transmitir"}
-                                </span>
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={function(){openDetails(n);}}
-                              title="Ver detalhes"
-                              aria-label="Ver detalhes"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Modal Nova NFS-e (rascunho) */}
-      <Dialog open={showGerar} onOpenChange={setShowGerar}>
-        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Stamp className="w-5 h-5 text-emerald-600" /> Nova NFS-e — Rascunho
-            </DialogTitle>
-            <DialogDescription>
-              Preencha os dados fiscais. O rascunho e salvo em fiscal_nfse com os
-              valores e a tributacao no metadata (JSONB).
-            </DialogDescription>
-          </DialogHeader>
-
-          <Tabs defaultValue="tomador" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="tomador">Dados do Tomador</TabsTrigger>
-              <TabsTrigger value="valores">Servico e Valores</TabsTrigger>
-              <TabsTrigger value="tributacao">Tributacao</TabsTrigger>
-            </TabsList>
-
-            {/* ---------- ABA 1: TOMADOR ---------- */}
-            <TabsContent value="tomador" className="space-y-3 pt-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Emitente (matriz NFS-e Nacional)
-                </p>
-                <div className="mt-1 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">
-                      {gerarForm.emitente_nome || "Matriz nao carregada"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {gerarForm.emitente_cnpj || "—"}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
-                    Matriz
+  // ===================================================================
+  // WIZARD FULL PAGE — Emissao de NFS-e Nacional (5 passos)
+  // ===================================================================
+  if (isEmitting) {
+    return (
+      <div className="space-y-4">
+        {/* HEADER FUNCIONAL */}
+        <div className="flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fecharWizard}
+              title="Voltar para a lista"
+              aria-label="Voltar para a lista"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-bold tracking-tight">Emissão de NFS-e Nacional</h1>
+                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-xs">
+                  DPS em preparação
+                </Badge>
+                {rascunhoAtualId && (
+                  <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
+                    Rascunho salvo
                   </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Passo {passoAtual} de {PASSOS_NFSE.length} · {PASSOS_NFSE[passoAtual - 1].titulo}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={function() { void handleSalvarRascunho(); }}
+              disabled={gerando || emitindo}
+            >
+              {gerando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Stamp className="w-4 h-4 mr-2" />}
+              {gerando ? "Salvando..." : "Salvar rascunho"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={function() { setPassoAtual(5); }}>
+              <CheckCircle2 className="w-4 h-4 mr-2" /> Conferir
+            </Button>
+            <Button
+              size="sm"
+              className="bg-orange-600 text-white hover:bg-orange-700"
+              onClick={function() { void handleEmitirNfse(); }}
+              disabled={emitindo || gerando}
+            >
+              {emitindo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+              {emitindo ? "Emitindo..." : "Emitir NFS-e"}
+            </Button>
+          </div>
+        </div>
+
+        {/* STEPPER */}
+        <div className="overflow-x-auto rounded-xl border bg-white p-4">
+          <div className="flex min-w-[680px] items-center">
+            {PASSOS_NFSE.map(function(passo, indice) {
+              const numero = indice + 1;
+              const atual = numero === passoAtual;
+              const concluido = numero < passoAtual;
+              return (
+                <div key={passo.chave} className="flex flex-1 items-center">
+                  <button
+                    type="button"
+                    onClick={function() { setPassoAtual(numero); }}
+                    className="flex items-center gap-2"
+                  >
+                    <span
+                      className={
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors " +
+                        (atual
+                          ? "border-orange-600 bg-orange-600 text-white"
+                          : concluido
+                          ? "border-emerald-600 bg-emerald-600 text-white"
+                          : "border-slate-300 bg-white text-slate-500")
+                      }
+                    >
+                      {concluido ? <CheckCircle2 className="h-4 w-4" /> : numero}
+                    </span>
+                    <span
+                      className={
+                        "whitespace-nowrap text-xs font-medium " +
+                        (atual ? "text-orange-700" : concluido ? "text-emerald-700" : "text-slate-500")
+                      }
+                    >
+                      {passo.titulo}
+                    </span>
+                  </button>
+                  {indice < PASSOS_NFSE.length - 1 && (
+                    <span className={"mx-3 h-0.5 flex-1 " + (concluido ? "bg-emerald-500" : "bg-slate-200")} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* CONTEUDO DO PASSO */}
+        <div className="rounded-xl border bg-white p-5 shadow-sm">
+          {/* PASSO 1 — PRESTADOR */}
+          {passoAtual === 1 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Prestador</h2>
+                <p className="text-sm text-muted-foreground">
+                  Emitente da NFS-e Nacional (matriz oficial, somente leitura).
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+                <img
+                  src="/logos/logo-conexao-colorido.png"
+                  alt="Conexão Express"
+                  className="h-12 w-auto object-contain"
+                  onError={function(e) { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+                <div className="min-w-0">
+                  <p className="text-base font-bold text-slate-900">CONEXÃO EXPRESS</p>
+                  <p className="text-sm text-slate-700">{MATRIZ_NFSE_RAZAO_SOCIAL}</p>
+                  <p className="text-xs text-muted-foreground">CNPJ {MATRIZ_NFSE_CNPJ_FORMATADO}</p>
+                </div>
+                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 sm:ml-auto">
+                  Matriz oficial
+                </Badge>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>Município de emissão (IBGE)</Label>
+                  <Input value={gerarForm.municipio_ibge || "3550308"} readOnly className="bg-slate-50" />
+                </div>
+                <div>
+                  <Label>Código de Serviço Nacional padrão</Label>
+                  <Input value={CODIGO_SERVICO_NACIONAL_PADRAO} readOnly className="bg-slate-50 font-mono" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {!gerarForm.emitente_id && (
+                <div className="flex items-center gap-1 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                  <AlertCircle className="w-3 h-3" /> Matriz não encontrada em configuracoes_fiscais.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PASSO 2 — TOMADOR */}
+          {passoAtual === 2 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Tomador</h2>
+                <p className="text-sm text-muted-foreground">
+                  Selecione a origem e os dados do tomador. Campos da OS são travados.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label>Origem</Label>
                   <Select
@@ -696,12 +834,7 @@ export default function NfseTab() {
                     />
                   ) : (
                     <>
-                      <Input
-                        value={gerarForm.tomador_nome}
-                        readOnly
-                        className="bg-slate-50"
-                        placeholder="Preenchido pela OS"
-                      />
+                      <Input value={gerarForm.tomador_nome} readOnly className="bg-slate-50" placeholder="Preenchido pela OS" />
                       <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Lock className="h-3 w-3" /> Preenchido automaticamente pela origem
                       </p>
@@ -719,10 +852,17 @@ export default function NfseTab() {
                   />
                 </div>
               </div>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* ---------- ABA 2: SERVICO E VALORES ---------- */}
-            <TabsContent value="valores" className="space-y-3 pt-3">
+          {/* PASSO 3 — SERVICO E VALORES */}
+          {passoAtual === 3 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Serviço e Valores</h2>
+                <p className="text-sm text-muted-foreground">Descrição, valor bruto e desconto opcional.</p>
+              </div>
+
               <div>
                 <Label>Descricao do Servico</Label>
                 <Input
@@ -732,7 +872,7 @@ export default function NfseTab() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label>Valor do Servico (R$) *</Label>
                   <Input
@@ -771,12 +911,19 @@ export default function NfseTab() {
                   {fmtFin(Math.max(0, (gerarForm.valor_servico || 0) - (gerarForm.valor_desconto || 0)))}
                 </span>
               </div>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* ---------- ABA 3: TRIBUTACAO ---------- */}
-            <TabsContent value="tributacao" className="space-y-3 pt-3">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
+          {/* PASSO 4 — TRIBUTACAO */}
+          {passoAtual === 4 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Tributação</h2>
+                <p className="text-sm text-muted-foreground">Município, código nacional e ISSQN.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-2">
                   <Label>Municipio de Prestacao</Label>
                   <SearchableSelect
                     table="municipios_ibge"
@@ -808,7 +955,7 @@ export default function NfseTab() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <div className="flex items-center gap-1.5">
                     <Label htmlFor="nfse-codigo-servico">Codigo de Servico Nacional</Label>
@@ -820,8 +967,7 @@ export default function NfseTab() {
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
                         Codigo de tributacao nacional do ISSQN (LC 116/2003). O padrao da
-                        operacao e 16.02.01.002 (transporte de bens ou valores). Ajuste
-                        apenas se a negociacao exigir outro desdobro.
+                        operacao e 16.02.01.002 (transporte de bens ou valores).
                       </TooltipContent>
                     </Tooltip>
                   </div>
@@ -849,9 +995,7 @@ export default function NfseTab() {
                 <div className="flex items-start gap-1.5">
                   <div>
                     <p className="text-sm font-medium">ISS Retido pelo Tomador</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Retencao do ISSQN na fonte pelo tomador do servico.
-                    </p>
+                    <p className="text-[11px] text-muted-foreground">Retencao do ISSQN na fonte pelo tomador.</p>
                   </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -860,8 +1004,7 @@ export default function NfseTab() {
                       </button>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs text-xs">
-                      Marque "Sim" quando o tomador retiver o ISS e recolher em seu nome.
-                      Se o prestador (Conexao) recolhe o imposto, mantenha "Nao".
+                      Marque "Sim" quando o tomador retiver o ISS. Se a Conexao recolhe o imposto, mantenha "Nao".
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -887,21 +1030,195 @@ export default function NfseTab() {
                   <AlertCircle className="w-3 h-3" /> {avisoRegra}
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
+            </div>
+          )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={function() { setShowGerar(false); }}>Cancelar</Button>
-            <Button
-              onClick={handleGerar}
-              disabled={gerando || !gerarForm.origem_id || !(gerarForm.valor_servico > 0)}
-            >
-              {gerando ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Stamp className="w-4 h-4 mr-2" />}
-              {gerando ? "Salvando..." : "Salvar Rascunho"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {/* PASSO 5 — REVISAO */}
+          {passoAtual === 5 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Revisão</h2>
+                <p className="text-sm text-muted-foreground">Confira os dados antes de salvar/emitir.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Prestador</p>
+                  <p className="text-sm font-semibold">{gerarForm.emitente_nome || "—"}</p>
+                  <p className="text-xs text-muted-foreground">{gerarForm.emitente_cnpj || "—"}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Tomador</p>
+                  <p className="text-sm font-semibold">{gerarForm.tomador_nome || "—"}</p>
+                  <p className="text-xs text-muted-foreground">{gerarForm.tomador_cnpj || "—"}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Serviço</p>
+                  <p className="text-sm">{gerarForm.descricao_servico || "Transporte de bens ou valores"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Bruto: {fmtFin(gerarForm.valor_servico || 0)} · Desconto: {fmtFin(gerarForm.valor_desconto || 0)}
+                  </p>
+                  <p className="text-sm font-semibold text-emerald-700">
+                    Líquido: {fmtFin(Math.max(0, (gerarForm.valor_servico || 0) - (gerarForm.valor_desconto || 0)))}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Tributação</p>
+                  <p className="text-sm">{gerarForm.municipio} ({gerarForm.municipio_ibge})</p>
+                  <p className="text-xs text-muted-foreground">
+                    Cód. {gerarForm.codigo_servico} · ISS {gerarForm.aliquota_iss || "0"}% · {gerarForm.iss_retido ? "Retido" : "Não retido"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1 rounded-lg border p-3 text-sm">
+                <p className="flex items-center gap-2">
+                  {gerarForm.origem === "avulso" || gerarForm.origem_id
+                    ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                  Origem definida
+                </p>
+                <p className="flex items-center gap-2">
+                  {gerarForm.tomador_nome && gerarForm.tomador_cnpj
+                    ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                  Tomador e CNPJ
+                </p>
+                <p className="flex items-center gap-2">
+                  {gerarForm.valor_servico > 0
+                    ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                  Valor do serviço
+                </p>
+              </div>
+
+              {regraSugerida && (
+                <div className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-700">
+                  Regra municipal: {regraSugerida.codigo_servico} · ISS {regraSugerida.aliquota_iss}%
+                </div>
+              )}
+              {avisoRegra && (
+                <div className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                  <AlertCircle className="w-3 h-3" /> {avisoRegra}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* RODAPE DE NAVEGACAO */}
+        <div className="flex items-center justify-between rounded-xl border bg-white p-4 shadow-sm">
+          <Button
+            variant="outline"
+            onClick={function() {
+              if (passoAtual === 1) fecharWizard();
+              else setPassoAtual(passoAtual - 1);
+            }}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            {passoAtual === 1 ? "Voltar para a lista" : "Voltar"}
+          </Button>
+
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              Passo {passoAtual} de {PASSOS_NFSE.length}
+            </span>
+            {passoAtual < PASSOS_NFSE.length ? (
+              <Button onClick={function() { setPassoAtual(passoAtual + 1); }}>
+                Avançar
+              </Button>
+            ) : (
+              <Button
+                className="bg-orange-600 text-white hover:bg-orange-700"
+                onClick={function() { void handleEmitirNfse(); }}
+                disabled={emitindo || gerando}
+              >
+                {emitindo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                {emitindo ? "Emitindo..." : "Emitir NFS-e"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 pt-4">
+      <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div><h2 className="text-2xl font-bold tracking-tight">NFS-e</h2><p className="text-muted-foreground text-sm">Nota Fiscal de Servico Eletronica.</p></div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchNfses} disabled={loading}><RefreshCw className="w-4 h-4 mr-2" /> Atualizar</Button>
+          <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleOpenGerar}><PlusCircle className="w-4 h-4 mr-2" /> Nova NFS-e</Button>
+        </div>
+      </div>
+
+      <Card className="w-full">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader><TableRow><TableHead>Nº NFS-e</TableHead><TableHead>Tomador</TableHead><TableHead>Servico</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead>Pendencias</TableHead><TableHead className="text-right">Acoes</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {erro ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-red-500"><AlertCircle className="w-5 h-5 mx-auto mb-1" /><p className="text-sm">{erro}</p><Button variant="link" size="sm" onClick={fetchNfses}>Tentar novamente</Button></TableCell></TableRow>
+               : loading ? <TableRow><TableCell colSpan={7} className="h-24 text-center"><ProgressiveBlocksLoader size="normal" /></TableCell></TableRow>
+               : nfses.length === 0 ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Nenhuma NFS-e encontrada.</TableCell></TableRow>
+                : nfses.map(function(n) {
+                    const m = n.metadata || {};
+                    const v = m.validacoes_pendentes || [];
+                    const statusNfse = String(n.status || "").toLowerCase();
+                    const podeTransmitir =
+                      statusNfse === "rascunho" || statusNfse === "erro_emissao";
+                    return (
+                      <TableRow key={n.id}>
+                        <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
+                        <TableCell className="text-sm">{m.tomador?.nome || "-"}</TableCell>
+                        <TableCell className="text-xs">{m.servico || "-"}</TableCell>
+                        <TableCell className="font-medium">{fmtFin(n.valor)}</TableCell>
+                        <TableCell><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{n.status}</Badge></TableCell>
+                        <TableCell>
+                          {v.length === 0 ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />0</Badge>
+                           : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><AlertTriangle className="w-3 h-3 mr-1" />{v.length}</Badge>}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {podeTransmitir && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 gap-1 px-2 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                onClick={function() { void handleTransmitir(n.id); }}
+                                disabled={transmitindoId !== null}
+                                title="Transmitir NFS-e para a Sefin"
+                                aria-label="Transmitir NFS-e"
+                              >
+                                {transmitindoId === n.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Send className="w-4 h-4" />
+                                )}
+                                <span className="text-xs font-medium">
+                                  {transmitindoId === n.id ? "Enviando..." : "Transmitir"}
+                                </span>
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={function(){openDetails(n);}}
+                              title="Ver detalhes"
+                              aria-label="Ver detalhes"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {/* Modal Detalhes */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
