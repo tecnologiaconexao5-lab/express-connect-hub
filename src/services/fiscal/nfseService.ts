@@ -21,8 +21,10 @@ type EmitenteRow = {
 };
 
 export interface GerarNfseParams {
-  origem: "os" | "cte";
+  origem: "os" | "cte" | "avulso";
   origem_id: string;
+  /** Cliente vinculado quando a emissao e avulsa (sem OS/CT-e). */
+  cliente_id?: string | null;
   descricao_servico?: string;
   municipio_prestacao?: string;
   /** Codigo IBGE do municipio de prestacao (evita lookup por nome). */
@@ -41,16 +43,18 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
   try {
     const validacoes: { campo: string; mensagem: string; severidade: string }[] = [];
 
-    // 0. Verificar duplicidade
-    const { data: existente } = await supabase
-      .from("fiscal_nfse")
-      .select("id")
-      .eq("ordem_servico_id", params.origem_id)
-      .in("status", ["rascunho", "processando", "autorizado"])
-      .limit(1);
+    // 0. Verificar duplicidade (apenas quando ha OS/CT-e de origem)
+    if (params.origem !== "avulso") {
+      const { data: existente } = await supabase
+        .from("fiscal_nfse")
+        .select("id")
+        .eq("ordem_servico_id", params.origem_id)
+        .in("status", ["rascunho", "processando", "autorizado"])
+        .limit(1);
 
-    if (existente && existente.length > 0) {
-      return { success: false, error: "Já existe NFS-e para esta OS." };
+      if (existente && existente.length > 0) {
+        return { success: false, error: "Já existe NFS-e para esta OS." };
+      }
     }
 
     // Emitente: prioriza a MATRIZ da NFS-e Nacional (CNPJ 31.227.975/0001-80).
@@ -74,7 +78,20 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     let clienteId: string | null = null;
     let ordemServicoId: string | null = null;
 
-    if (params.origem === "cte") {
+    if (params.origem === "avulso") {
+      // Emissao avulsa: sem OS/CT-e. Usa o cliente selecionado no modal.
+      clienteId = params.cliente_id || null;
+      if (clienteId) {
+        const { data: cliente } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("id", clienteId)
+          .maybeSingle();
+        if (cliente) {
+          tomador = { nome: cliente.razao_social || cliente.nome_fantasia, cnpj: cliente.cnpj, ie: cliente.ie };
+        }
+      }
+    } else if (params.origem === "cte") {
       const { data: cte } = await supabase
         .from("fiscal_ctes")
         .select("*, ordens_servico(*)")
@@ -204,6 +221,7 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     );
 
     const metadata = {
+      origem: params.origem,
       emitente: emitente ? {
         nome: emitente.razao_social || emitente.nome_fantasia,
         cnpj: emitente.cnpj,
@@ -232,7 +250,7 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       .insert([{
         numero,
         cliente_id: clienteId,
-        ordem_servico_id: ordemServicoId || params.origem_id,
+        ordem_servico_id: ordemServicoId || (params.origem === "avulso" ? null : params.origem_id),
         valor: valorLiquido,
         status: "rascunho",
         data_emissao: null,

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,14 @@ const CODIGO_SERVICO_NACIONAL_PADRAO = "16.02.01.002";
 const CAMPOS_BUSCA_MUNICIPIO = ["nome", "codigo"];
 const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
+type OrigemOpcao = {
+  id: string;
+  numero: string | null;
+  cliente_id: string | null;
+  cliente_nome: string;
+  valor: number | null;
+};
+
 export default function NfseTab() {
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,8 +55,9 @@ export default function NfseTab() {
   const [historico, setHistorico] = useState<any[]>([]);
 
   const [gerarForm, setGerarForm] = useState({
-    origem: "os" as "os" | "cte",
+    origem: "os" as "os" | "cte" | "avulso",
     origem_id: "",
+    cliente_id: "",
     emitente_id: "",
     emitente_nome: "",
     emitente_cnpj: "",
@@ -64,7 +73,21 @@ export default function NfseTab() {
     valor_servico: 0 as number,
     valor_desconto: 0 as number,
   });
-  const [origens, setOrigens] = useState<any[]>([]);
+  const [origens, setOrigens] = useState<OrigemOpcao[]>([]);
+  const [buscaOrigem, setBuscaOrigem] = useState("");
+  const [origemAberto, setOrigemAberto] = useState(false);
+  const origemComboRef = useRef<HTMLDivElement>(null);
+
+  // Fecha o combobox de OS ao clicar fora.
+  useEffect(function() {
+    function aoClicarFora(event: MouseEvent) {
+      if (origemComboRef.current && !origemComboRef.current.contains(event.target as Node)) {
+        setOrigemAberto(false);
+      }
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return function() { document.removeEventListener("mousedown", aoClicarFora); };
+  }, []);
 
   useEffect(function() { fetchNfses(); }, []);
 
@@ -85,8 +108,10 @@ export default function NfseTab() {
   const handleOpenGerar = async function() {
     setRegraSugerida(null);
     setAvisoRegra("");
+    setBuscaOrigem("");
+    setOrigemAberto(false);
     setGerarForm({
-      origem: "os", origem_id: "",
+      origem: "os", origem_id: "", cliente_id: "",
       emitente_id: "", emitente_nome: "", emitente_cnpj: "",
       municipio: "SAO PAULO", municipio_ibge: "3550308", uf: "SP",
       codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
@@ -152,13 +177,89 @@ export default function NfseTab() {
   };
 
   const fetchOrigens = async function(tipo: "os" | "cte") {
+    const registros: Array<{
+      id: string;
+      numero: string | null;
+      cliente_id: string | null;
+      valor: number | null;
+    }> = [];
+
     if (tipo === "os") {
-      const { data } = await supabase.from("ordens_servico").select("id, numero, cliente_id, valor_cliente").not("cliente_id","is",null).limit(20).order("created_at",{ascending:false});
-      setOrigens(data || []);
+      const { data } = await supabase
+        .from("ordens_servico")
+        .select("id, numero, cliente_id, valor_cliente")
+        .not("cliente_id", "is", null)
+        .limit(50)
+        .order("created_at", { ascending: false });
+
+      (data || []).forEach(function(r: { id: string; numero: string | null; cliente_id: string | null; valor_cliente: number | null }) {
+        registros.push({ id: r.id, numero: r.numero, cliente_id: r.cliente_id, valor: r.valor_cliente ?? null });
+      });
     } else {
-      const { data } = await supabase.from("fiscal_ctes").select("id, numero, cliente_id, valor").eq("status","rascunho").limit(20).order("created_at",{ascending:false});
-      setOrigens(data || []);
+      const { data } = await supabase
+        .from("fiscal_ctes")
+        .select("id, numero, cliente_id, valor")
+        .eq("status", "rascunho")
+        .limit(50)
+        .order("created_at", { ascending: false });
+
+      (data || []).forEach(function(r: { id: string; numero: string | null; cliente_id: string | null; valor: number | null }) {
+        registros.push({ id: r.id, numero: r.numero, cliente_id: r.cliente_id, valor: r.valor ?? null });
+      });
     }
+
+    // Resolve o nome do cliente para exibir no combobox (numero + cliente).
+    const idsClientes = Array.from(new Set(
+      registros
+        .map(function(r) { return r.cliente_id; })
+        .filter(function(v): v is string { return Boolean(v); }),
+    ));
+
+    const nomesClientes = new Map<string, string>();
+    if (idsClientes.length > 0) {
+      const { data: clientes } = await supabase
+        .from("clientes")
+        .select("id, razao_social, nome_fantasia")
+        .in("id", idsClientes);
+
+      (clientes || []).forEach(function(c: { id: string; razao_social: string | null; nome_fantasia: string | null }) {
+        nomesClientes.set(c.id, c.razao_social || c.nome_fantasia || "Cliente sem nome");
+      });
+    }
+
+    setOrigens(registros.map(function(r) {
+      return {
+        id: r.id,
+        numero: r.numero,
+        cliente_id: r.cliente_id,
+        cliente_nome: r.cliente_id ? (nomesClientes.get(r.cliente_id) || "Cliente") : "Sem cliente",
+        valor: r.valor,
+      };
+    }));
+  };
+
+  const selecionarOrigem = async function(opcao: OrigemOpcao) {
+    const rotulo = (opcao.numero || opcao.id.substring(0, 8)) + " — " + opcao.cliente_nome;
+    setBuscaOrigem(rotulo);
+    setOrigemAberto(false);
+    await handleOrigemChange(opcao.id);
+  };
+
+  const handleTrocarOrigem = function(novo: "os" | "cte" | "avulso") {
+    setBuscaOrigem("");
+    setOrigemAberto(false);
+    setGerarForm(function(p) {
+      return {
+        ...p,
+        origem: novo,
+        origem_id: "",
+        cliente_id: "",
+        tomador_nome: "",
+        tomador_cnpj: "",
+        valor_servico: 0,
+      };
+    });
+    if (novo !== "avulso") void fetchOrigens(novo);
   };
 
   const handleOrigemChange = async function(origemId: string) {
@@ -223,7 +324,14 @@ export default function NfseTab() {
   };
 
   const handleGerar = async function() {
-    if (!gerarForm.origem_id) { toast.error("Selecione a origem (OS ou CT-e)."); return; }
+    if (gerarForm.origem !== "avulso" && !gerarForm.origem_id) {
+      toast.error("Selecione a OS ou o CT-e de origem.");
+      return;
+    }
+    if (gerarForm.origem === "avulso" && !gerarForm.tomador_nome) {
+      toast.error("Selecione o cliente do tomador para a emissao avulsa.");
+      return;
+    }
     if (!gerarForm.emitente_id) { toast.error("Matriz da NFS-e Nacional nao encontrada em configuracoes_fiscais."); return; }
     if (!(gerarForm.valor_servico > 0)) { toast.error("Informe o valor do servico."); return; }
     if (gerarForm.valor_desconto < 0) { toast.error("O desconto nao pode ser negativo."); return; }
@@ -235,6 +343,7 @@ export default function NfseTab() {
     const result = await gerarRascunhoNfse({
       origem: gerarForm.origem,
       origem_id: gerarForm.origem_id,
+      cliente_id: gerarForm.cliente_id || null,
       municipio_prestacao: gerarForm.municipio || "SAO PAULO",
       codigo_municipio_prestacao: gerarForm.municipio_ibge || null,
       descricao_servico: gerarForm.descricao_servico || "Prestacao de servico de transporte",
@@ -278,6 +387,15 @@ export default function NfseTab() {
     setShowPreEmissao(true);
     try { await supabase.from("fiscal_logs").insert([{ entidade_tipo:"NFSE",entidade_id:selectedNfse?.id,acao:"PRE_EMISSAO_NFSE_VISUALIZADA",request:{nfse_id:selectedNfse?.id},response:{status:"dados_internos_prontos"}}]); } catch{}
   };
+
+  // OS/CT-e travam tomador/CNPJ/valor (dados sistemicos); avulso libera edicao.
+  const camposTravados = gerarForm.origem !== "avulso";
+  const termoBuscaOrigem = buscaOrigem.trim().toLowerCase();
+  const origensFiltradas = termoBuscaOrigem
+    ? origens.filter(function(o) {
+      return ((o.numero || "") + " " + o.cliente_nome).toLowerCase().includes(termoBuscaOrigem);
+    })
+    : origens;
 
   return (
     <div className="space-y-4 pt-4">
@@ -367,44 +485,121 @@ export default function NfseTab() {
                   <Select
                     value={gerarForm.origem}
                     onValueChange={function(v: string) {
-                      setGerarForm(function(p) { return { ...p, origem: v as "os" | "cte", origem_id: "" }; });
-                      fetchOrigens(v as "os" | "cte");
+                      handleTrocarOrigem(v as "os" | "cte" | "avulso");
                     }}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="os">Ordem de Servico</SelectItem>
                       <SelectItem value="cte">CT-e Pronto</SelectItem>
+                      <SelectItem value="avulso">Avulso (sem OS)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>{gerarForm.origem === "os" ? "Ordem de Servico" : "CT-e"}</Label>
-                  <Select value={gerarForm.origem_id} onValueChange={handleOrigemChange}>
-                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>
-                      {origens.map(function(o: { id: string; numero?: string | null }) {
-                        return (
-                          <SelectItem key={o.id} value={o.id}>
-                            {o.numero || o.id.substring(0, 8)}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
+                  {gerarForm.origem === "avulso" ? (
+                    <>
+                      <Label>Documento de origem</Label>
+                      <div className="flex h-10 items-center rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 text-xs text-muted-foreground">
+                        Emissao avulsa — selecione o cliente em "Tomador".
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Label>{gerarForm.origem === "os" ? "Ordem de Servico" : "CT-e"}</Label>
+                      <div className="relative" ref={origemComboRef}>
+                        <Input
+                          value={buscaOrigem}
+                          placeholder={gerarForm.origem === "os" ? "Buscar por numero da OS ou cliente..." : "Buscar CT-e por numero ou cliente..."}
+                          onChange={function(e) {
+                            setBuscaOrigem(e.target.value);
+                            setOrigemAberto(true);
+                            if (gerarForm.origem_id) {
+                              setGerarForm(function(p) {
+                                return { ...p, origem_id: "", tomador_nome: "", tomador_cnpj: "", valor_servico: 0 };
+                              });
+                            }
+                          }}
+                          onFocus={function() { setOrigemAberto(true); }}
+                          onKeyDown={function(e) { if (e.key === "Escape") setOrigemAberto(false); }}
+                        />
+                        {origemAberto && (
+                          <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                            {origensFiltradas.length === 0 ? (
+                              <p className="p-3 text-center text-xs text-muted-foreground">
+                                Nenhum registro encontrado.
+                              </p>
+                            ) : origensFiltradas.map(function(o) {
+                              return (
+                                <button
+                                  type="button"
+                                  key={o.id}
+                                  onClick={function() { void selecionarOrigem(o); }}
+                                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+                                >
+                                  <span className="font-semibold text-slate-800">
+                                    {o.numero || o.id.substring(0, 8)}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {o.cliente_nome}{o.valor != null ? " · " + fmtFin(o.valor) : ""}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div>
                   <Label>Tomador / Razao Social</Label>
-                  <Input
-                    value={gerarForm.tomador_nome}
-                    onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_nome: e.target.value }; }); }}
-                    placeholder="Razao social do tomador"
-                  />
+                  {gerarForm.origem === "avulso" ? (
+                    <SearchableSelect
+                      table="clientes"
+                      labelField="razao_social"
+                      valueField="id"
+                      returnField="id"
+                      searchFields={["razao_social", "nome_fantasia", "cnpj"]}
+                      secondaryField="cnpj"
+                      placeholder="Buscar cliente cadastrado..."
+                      value={gerarForm.cliente_id || null}
+                      onChange={function(id: string | null, record: Record<string, unknown> | null) {
+                        const cli = record as {
+                          razao_social?: string | null;
+                          nome_fantasia?: string | null;
+                          cnpj?: string | null;
+                        } | null;
+                        setGerarForm(function(p) {
+                          return {
+                            ...p,
+                            cliente_id: id || "",
+                            tomador_nome: cli?.razao_social || cli?.nome_fantasia || "",
+                            tomador_cnpj: cli?.cnpj || "",
+                          };
+                        });
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <Input
+                        value={gerarForm.tomador_nome}
+                        readOnly
+                        className="bg-slate-50"
+                        placeholder="Preenchido pela OS"
+                      />
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Lock className="h-3 w-3" /> Preenchido automaticamente pela origem
+                      </p>
+                    </>
+                  )}
                 </div>
                 <div>
                   <Label>CNPJ do Tomador</Label>
                   <Input
                     value={gerarForm.tomador_cnpj}
+                    readOnly={camposTravados}
+                    className={camposTravados ? "bg-slate-50" : ""}
                     onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cnpj: e.target.value }; }); }}
                     placeholder="00.000.000/0000-00"
                   />
@@ -431,8 +626,15 @@ export default function NfseTab() {
                     min="0"
                     step="0.01"
                     value={gerarForm.valor_servico || ""}
+                    readOnly={camposTravados}
+                    className={camposTravados ? "bg-slate-50" : ""}
                     onChange={function(e) { setGerarForm(function(p) { return { ...p, valor_servico: parseFloat(e.target.value) || 0 }; }); }}
                   />
+                  {camposTravados && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Lock className="h-3 w-3" /> Valor herdado da origem
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label>Valor do Desconto (R$)</Label>
