@@ -206,10 +206,16 @@ function resumoSeguro(erro: unknown): string {
   return bruto.replace(/\s+/g, " ").slice(0, 280);
 }
 
+function normalizarEndpointSefin(endpoint: string): string {
+  const limpo = String(endpoint || "").trim();
+  // Evita duplicacao acidental: /nfse/nfse ou /dps/dps no final.
+  return limpo.replace(/(\/(?:nfse|dps))\/?\1\/?$/i, "$1");
+}
+
 function validarEndpointSefin(endpoint: string): URL {
   let url: URL;
   try {
-    url = new URL(String(endpoint || "").trim());
+    url = new URL(normalizarEndpointSefin(endpoint));
   } catch {
     throw new SefinComunicacaoError(
       "endpoint Sefin invalido (URL malformada em NFSE_SEFIN_URL_HOMOLOGACAO/PRODUCAO)",
@@ -265,7 +271,7 @@ async function postComDenoFetch(
   });
 
   const controller = new AbortController();
-  const timer = setTimeout(function() { controller.abort(); }, 30000);
+  const timer = setTimeout(function() { controller.abort(); }, 15000);
 
   try {
     const init = {
@@ -298,44 +304,92 @@ function postComNodeHttps(
   material: MaterialTls,
 ): Promise<RespostaHttp> {
   return new Promise((resolve, reject) => {
-    const corpoBytes = new TextEncoder().encode(xmlAssinado);
-    const ca = lerCaSefin();
+    let finalizado = false;
+    let requisicao: ReturnType<typeof https.request> | null = null;
 
-    const opcoes = {
-      protocol: url.protocol,
-      hostname: url.hostname,
-      port: url.port ? Number(url.port) : 443,
-      path: `${url.pathname || "/"}${url.search}`,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
-        "Content-Length": String(corpoBytes.byteLength),
-      },
-      cert: material.chainPem,
-      key: material.keyPem,
-      rejectUnauthorized: true,
-      servername: url.hostname,
-      ...(ca ? { ca } : {}),
+    const concluir = function(acao: () => void) {
+      if (finalizado) return;
+      finalizado = true;
+      acao();
+    };
+    const sucesso = function(resposta: RespostaHttp) {
+      concluir(function() { resolve(resposta); });
+    };
+    const falhar = function(erro: unknown) {
+      concluir(function() {
+        reject(erro instanceof Error ? erro : new Error(String(erro)));
+      });
     };
 
-    const requisicao = https.request(opcoes, (resposta) => {
-      const status = resposta.statusCode ?? 0;
-      let corpo = "";
-      resposta.setEncoding("utf8");
-      resposta.on("data", (parte) => {
-        corpo += parte;
-      });
-      resposta.on("end", () => resolve({ status, corpo }));
-      resposta.on("error", reject);
-    });
+    try {
+      const corpoBytes = new TextEncoder().encode(xmlAssinado);
+      const ca = lerCaSefin();
 
-    requisicao.setTimeout(30000, function() {
-      requisicao.destroy(new Error("timeout na conexao com a Sefin (30s)"));
-    });
-    requisicao.on("error", reject);
-    requisicao.write(xmlAssinado);
-    requisicao.end();
+      const opcoes = {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : 443,
+        path: `${url.pathname || "/"}${url.search}`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/xml; charset=utf-8",
+          "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
+          "Content-Length": String(corpoBytes.byteLength),
+        },
+        cert: material.chainPem,
+        key: material.keyPem,
+        rejectUnauthorized: true,
+        servername: url.hostname,
+        ...(ca ? { ca } : {}),
+      };
+
+      requisicao = https.request(opcoes, (resposta) => {
+        const status = resposta.statusCode ?? 0;
+        let corpo = "";
+
+        resposta.setEncoding("utf8");
+        resposta.on("data", function(parte) {
+          corpo += parte;
+        });
+        resposta.on("end", function() {
+          sucesso({ status, corpo });
+        });
+        resposta.on("error", function(erro) {
+          falhar(erro);
+        });
+        resposta.on("aborted", function() {
+          falhar(new Error("resposta da Sefin abortada"));
+        });
+        resposta.on("close", function() {
+          if (!finalizado) {
+            falhar(new Error("conexao fechada antes do fim da resposta da Sefin"));
+          }
+        });
+      });
+
+      requisicao.setTimeout(15000);
+      requisicao.on("timeout", function() {
+        requisicao?.destroy(new Error("timeout na conexao com a Sefin (15s)"));
+      });
+      requisicao.on("error", function(erro) {
+        falhar(erro);
+      });
+      requisicao.on("close", function() {
+        if (!finalizado) {
+          falhar(new Error("conexao encerrada antes da resposta da Sefin"));
+        }
+      });
+
+      requisicao.write(xmlAssinado);
+      requisicao.end();
+    } catch (erro) {
+      falhar(erro);
+      try {
+        requisicao?.destroy();
+      } catch {
+        // Ignora falha ao destruir a requisicao.
+      }
+    }
   });
 }
 

@@ -60,6 +60,19 @@ function extrairBearer(req: Request): string {
   return header.slice(7).trim();
 }
 
+// Rede de seguranca: evita que um rejection nao tratado derrube o worker
+// sem resposta HTTP (o que apareceria como "Failed to send a request").
+globalThis.addEventListener("unhandledrejection", function(event) {
+  event.preventDefault();
+  const motivo = event.reason instanceof Error
+    ? `${event.reason.name}: ${event.reason.message}`
+    : String(event.reason);
+  console.error(
+    "[nfse-assinar-transmitir] Unhandled rejection:",
+    motivo.replace(/\s+/g, " ").slice(0, 300),
+  );
+});
+
 function somenteDigitos(valor: unknown): string {
   return String(valor ?? "").replace(/\D/g, "");
 }
@@ -546,12 +559,30 @@ serve(async (req: Request) => {
 
     // ---------- 8) Transmissao ----------
     let resposta: RespostaSefin;
+    let timerTransmissao: ReturnType<typeof setTimeout> | undefined;
     try {
-      resposta = await transmitirParaSefin(
-        xmlAssinado,
-        { keyPem: material.keyPem, chainPem: material.chainPem },
-        endpoint,
-      );
+      const limiteTotal = new Promise<never>((_, reject) => {
+        timerTransmissao = setTimeout(function() {
+          reject(
+            new Error(
+              "Tempo total de transmissao excedido (32s). Verifique a conectividade com a Sefin.",
+            ),
+          );
+        }, 32000);
+      });
+
+      try {
+        resposta = await Promise.race([
+          transmitirParaSefin(
+            xmlAssinado,
+            { keyPem: material.keyPem, chainPem: material.chainPem },
+            endpoint,
+          ),
+          limiteTotal,
+        ]);
+      } finally {
+        if (timerTransmissao !== undefined) clearTimeout(timerTransmissao);
+      }
     } catch (erro) {
       const motivo = erro instanceof Error
         ? erro.message
