@@ -78,6 +78,10 @@ export interface FiscalCompanySettings {
   telefone?: string | null;
   regimeTributario?: string | null;
   crt?: string | null;
+  /** Situação no Simples Nacional: 1 Não Optante, 2 MEI, 3 ME/EPP. */
+  opSimpNac?: string | null;
+  /** Regime de apuração do SN (1/2/3) quando opSimpNac = 3. */
+  regApTribSN?: string | null;
   ambienteFiscal?: string | null;
 }
 
@@ -299,6 +303,11 @@ function numeroDps(dps: DpsPayload): string {
 }
 
 function mapearOpSimpNac(empresa: FiscalCompanySettings): "1" | "2" | "3" {
+  // Override explícito do emitente (Editar Emitente) tem prioridade.
+  const explicito = String(empresa.opSimpNac ?? "").trim();
+  if (explicito === "1" || explicito === "2" || explicito === "3") {
+    return explicito;
+  }
   const texto = `${empresa.crt ?? ""} ${empresa.regimeTributario ?? ""}`.toLowerCase();
   if (texto.includes("mei")) return "2"; // Optante - MEI
   if (texto.includes("simples") || String(empresa.crt ?? "") === "1") return "3"; // Optante - ME/EPP
@@ -416,10 +425,13 @@ export function gerarXmlDpsNacional(
     ? "1"
     : "2";
   const opSimpNac = mapearOpSimpNac(empresa);
-  const regApTribSN = opSimpNac === "3" ? "1" : null;
   // E0166: para optante do Simples Nacional ME/EPP (opSimpNac = 3) o
-  // <regApTribSN> é obrigatório. 1 = tributos federais e municipal pelo SN.
+  // <regApTribSN> é obrigatório. Valor lido do emitente (1/2/3); fallback 1.
   // Posição no XSD (TCRegTrib): opSimpNac, regApTribSN?, regEspTrib.
+  const regApTribSNExplicito = String(empresa.regApTribSN ?? "").trim();
+  const regApTribSN = opSimpNac === "3"
+    ? (["1", "2", "3"].includes(regApTribSNExplicito) ? regApTribSNExplicito : "1")
+    : null;
   const blocoRegApTribSN = regApTribSN
     ? `\n        <regApTribSN>${regApTribSN}</regApTribSN>`
     : "";

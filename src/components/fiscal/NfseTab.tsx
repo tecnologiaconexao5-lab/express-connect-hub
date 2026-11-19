@@ -31,6 +31,11 @@ const CNPJ_MATRIZ_NFSE = "31227975000180";
 const MATRIZ_NFSE_RAZAO_SOCIAL = "CONEXAO TRANSPORTES LTDA";
 const MATRIZ_NFSE_CNPJ_FORMATADO = "31.227.975/0001-80";
 const CODIGO_SERVICO_NACIONAL_PADRAO = "16.02.01.002";
+const CODIGO_NACIONAL_PADRAO = "16.02.01";
+const CODIGO_COMPLEMENTAR_PADRAO = "002";
+/** Descrição oficial da NFS-e (editável no Passo 3). */
+const DESCRICAO_SERVICO_PADRAO =
+  "Prestação de serviços de coleta e entrega de mercadorias, conforme programação operacional definida pelo contratante.";
 const CAMPOS_BUSCA_MUNICIPIO = ["nome", "codigo"];
 const PASSOS_NFSE = [
   { chave: "prestador", titulo: "Prestador" },
@@ -68,6 +73,59 @@ function montarCodigosServico(
   });
 
   return Array.from(mapa.values());
+}
+
+function formatarCodigoNacional(valor: string): string {
+  const digitos = (valor || "").replace(/\D/g, "").slice(0, 6);
+  return digitos.length === 6
+    ? `${digitos.slice(0, 2)}.${digitos.slice(2, 4)}.${digitos.slice(4, 6)}`
+    : digitos;
+}
+
+function dividirCodigoServico(valor: string): {
+  nacional: string;
+  complementar: string;
+  completo: string;
+} {
+  const digitos = (valor || "").replace(/\D/g, "");
+  const nacionalDigitos = digitos.slice(0, 6);
+  const complementar = digitos.slice(6, 9) || CODIGO_COMPLEMENTAR_PADRAO;
+  const nacional = formatarCodigoNacional(nacionalDigitos) || CODIGO_NACIONAL_PADRAO;
+  const completo = nacionalDigitos.length === 6
+    ? `${nacional}.${complementar}`
+    : CODIGO_SERVICO_NACIONAL_PADRAO;
+  return { nacional, complementar, completo };
+}
+
+/** Combina Código Nacional (6 dígitos) + Complementar Municipal (3 dígitos). */
+function comporCodigoServico(nacional: string, complementar: string): string {
+  const nacionalDigitos = (nacional || "").replace(/\D/g, "").slice(0, 6);
+  const complementoDigitos = (complementar || "").replace(/\D/g, "").slice(0, 3);
+  const nacionalFormatado = formatarCodigoNacional(nacionalDigitos);
+  if (nacionalDigitos.length === 6) {
+    return complementoDigitos
+      ? `${nacionalFormatado}.${complementoDigitos}`
+      : nacionalFormatado;
+  }
+  return nacionalDigitos + complementoDigitos;
+}
+
+/** Lista de códigos nacionais (6 dígitos) a partir dos códigos completos. */
+function montarCodigosNacionais(opcoes: CodigoServicoOpcao[]): CodigoServicoOpcao[] {
+  const mapa = new Map<string, { descricao: string; completo: boolean }>();
+  opcoes.forEach(function(opcao) {
+    const digitos = (opcao.codigo || "").replace(/\D/g, "");
+    if (digitos.length < 6) return;
+    const nacional = formatarCodigoNacional(digitos.slice(0, 6));
+    const atual = mapa.get(nacional);
+    const completo = digitos.length >= 9;
+    if (!atual || (completo && !atual.completo)) {
+      mapa.set(nacional, { descricao: opcao.descricao, completo });
+    }
+  });
+  return Array.from(mapa, function(par) {
+    return { codigo: par[0], descricao: par[1].descricao };
+  });
 }
 
 /** Código NBS padrão da operação (transporte rodoviário de cargas). */
@@ -321,6 +379,20 @@ type BrasilApiCnpj = {
   cep?: string | null;
 };
 
+/** Consulta CNPJ (BrasilAPI) para completar o DANFSe quando a nota não tem os dados. */
+async function buscarDadosCnpjFallback(cnpj: string): Promise<BrasilApiCnpj | null> {
+  try {
+    const resposta = await fetch(
+      `https://brasilapi.com.br/api/cnpj/v1/${cnpj}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!resposta.ok) return null;
+    return (await resposta.json()) as BrasilApiCnpj;
+  } catch {
+    return null;
+  }
+}
+
 const EMITENTE_DANFSE: DanfsePrintDados["emitente"] = {
   nome: "CONEXAO TRANSPORTES LTDA",
   cnpj: "31.227.975/0001-80",
@@ -433,6 +505,12 @@ export default function NfseTab() {
   const [rascunhoAtualId, setRascunhoAtualId] = useState<string | null>(null);
   const [emitindo, setEmitindo] = useState(false);
   const [selectedNfse, setSelectedNfse] = useState<any>(null);
+  // Cadastro do cliente usado como fallback para os dados do tomador no DANFSe
+  // (quando a nota antiga não guardou endereço/e-mail/telefone no metadata).
+  const [clienteNfseDetalhe, setClienteNfseDetalhe] = useState<Record<string, unknown> | null>(null);
+  // Complemento de exibição do tomador (CNPJ → Receita) quando a nota/cliente
+  // não guardaram endereço/e-mail/telefone. Não altera o XML nem o banco.
+  const [tomadorCnpjFallback, setTomadorCnpjFallback] = useState<BrasilApiCnpj | null>(null);
   const [showPreEmissao, setShowPreEmissao] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [regraSugerida, setRegraSugerida] = useState<any>(null);
@@ -457,8 +535,10 @@ export default function NfseTab() {
     municipio_ibge: "3550308",
     uf: "SP",
     codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
+    codigo_nacional: CODIGO_NACIONAL_PADRAO,
+    codigo_complementar: CODIGO_COMPLEMENTAR_PADRAO,
     codigo_nbs: CODIGO_NBS_PADRAO,
-    descricao_servico: "",
+    descricao_servico: DESCRICAO_SERVICO_PADRAO,
     aliquota_iss: "" as string,
     iss_retido: false,
     tomador_nome: "",
@@ -640,8 +720,10 @@ export default function NfseTab() {
       emitente_id: "", emitente_nome: "", emitente_cnpj: "",
       municipio: "SAO PAULO", municipio_ibge: "3550308", uf: "SP",
       codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
+      codigo_nacional: CODIGO_NACIONAL_PADRAO,
+      codigo_complementar: CODIGO_COMPLEMENTAR_PADRAO,
       codigo_nbs: CODIGO_NBS_PADRAO,
-      descricao_servico: "", aliquota_iss: "", iss_retido: false,
+      descricao_servico: DESCRICAO_SERVICO_PADRAO, aliquota_iss: "", iss_retido: false,
       tomador_nome: "", tomador_cnpj: "",
       tomador_email: "", tomador_telefone: "",
       tomador_logradouro: "", tomador_numero: "", tomador_complemento: "",
@@ -682,6 +764,9 @@ export default function NfseTab() {
       else setAvisoRegra("Nao ha regra NFS-e para o municipio da matriz (3550308). Configure na aba Regras NFS-e.");
 
       setGerarForm(function(p) {
+        const partesCodigo = dividirCodigoServico(
+          rule?.codigo_servico || CODIGO_SERVICO_NACIONAL_PADRAO,
+        );
         return {
           ...p,
           emitente_id: matriz.id,
@@ -691,8 +776,10 @@ export default function NfseTab() {
           municipio: matriz.cidade || "SAO PAULO",
           municipio_ibge: ibgeMatriz,
           uf: matriz.uf || "SP",
-          codigo_servico: rule?.codigo_servico || CODIGO_SERVICO_NACIONAL_PADRAO,
-          descricao_servico: rule?.descricao_servico || "",
+          codigo_servico: partesCodigo.completo,
+          codigo_nacional: partesCodigo.nacional,
+          codigo_complementar: partesCodigo.complementar,
+          descricao_servico: DESCRICAO_SERVICO_PADRAO,
           aliquota_iss: rule?.aliquota_iss != null ? String(rule.aliquota_iss) : "",
           iss_retido: rule?.iss_retido ?? false,
         };
@@ -940,12 +1027,17 @@ export default function NfseTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cnpjTomadorDigitos]);
 
-  const selecionarCodigoServico = function(opcao: CodigoServicoOpcao) {
+  const selecionarCodigoNacional = function(opcao: CodigoServicoOpcao) {
+    const nacionalDigitos = (opcao.codigo || "").replace(/\D/g, "").slice(0, 6);
     setGerarForm(function(p) {
       return {
         ...p,
-        codigo_servico: opcao.codigo,
-        descricao_servico: p.descricao_servico || opcao.descricao,
+        codigo_nacional: formatarCodigoNacional(nacionalDigitos),
+        codigo_servico: comporCodigoServico(
+          nacionalDigitos,
+          p.codigo_complementar,
+        ),
+        descricao_servico: p.descricao_servico || DESCRICAO_SERVICO_PADRAO,
       };
     });
   };
@@ -972,10 +1064,15 @@ export default function NfseTab() {
       setRegraSugerida(rule);
       setAvisoRegra("");
       setGerarForm(function(p) {
+        const partesCodigo = dividirCodigoServico(
+          rule?.codigo_servico || p.codigo_servico || CODIGO_SERVICO_NACIONAL_PADRAO,
+        );
         return {
           ...p,
-          codigo_servico: rule?.codigo_servico || p.codigo_servico || CODIGO_SERVICO_NACIONAL_PADRAO,
-          descricao_servico: rule?.descricao_servico || p.descricao_servico,
+          codigo_servico: partesCodigo.completo,
+          codigo_nacional: partesCodigo.nacional,
+          codigo_complementar: partesCodigo.complementar,
+          descricao_servico: p.descricao_servico || DESCRICAO_SERVICO_PADRAO,
           aliquota_iss: rule?.aliquota_iss != null ? String(rule.aliquota_iss) : p.aliquota_iss,
           iss_retido: rule?.iss_retido ?? p.iss_retido,
         };
@@ -1014,7 +1111,7 @@ export default function NfseTab() {
       cliente_id: gerarForm.cliente_id || null,
       municipio_prestacao: gerarForm.municipio || "SAO PAULO",
       codigo_municipio_prestacao: gerarForm.municipio_ibge || null,
-      descricao_servico: gerarForm.descricao_servico || "Prestacao de servico de transporte",
+      descricao_servico: gerarForm.descricao_servico || DESCRICAO_SERVICO_PADRAO,
       tomador_nome: gerarForm.tomador_nome || undefined,
       tomador_cnpj: gerarForm.tomador_cnpj || undefined,
       tomador_email: gerarForm.tomador_email || undefined,
@@ -1109,12 +1206,45 @@ export default function NfseTab() {
     setShowSimulacao(false);
     setShowPreEmissao(false);
     fetchHistorico(nfse.id);
+
+    // Fallback do tomador para o DANFSe: dados do cadastro do cliente.
+    setClienteNfseDetalhe(null);
+    if (nfse.cliente_id) {
+      const clienteId = nfse.cliente_id;
+      void supabase
+        .from("clientes")
+        .select("razao_social, nome_fantasia, cnpj, email, telefone, whatsapp, cep, logradouro, numero, complemento, bairro, cidade, uf")
+        .eq("id", clienteId)
+        .maybeSingle()
+        .then(function(resposta) {
+          setClienteNfseDetalhe(
+            (resposta.data as Record<string, unknown> | null) || null,
+          );
+        });
+    }
+
+    // Complemento via CNPJ (BrasilAPI) quando a nota não tem os dados do tomador.
+    setTomadorCnpjFallback(null);
+    const tomadorMeta = (nfse.metadata?.tomador || {}) as Record<string, unknown>;
+    const enderecoMeta = (tomadorMeta.endereco || {}) as Record<string, unknown>;
+    const cnpjTomador = somenteDigitos(String(tomadorMeta.cnpj || ""));
+    const faltaDadosTomador =
+      !String(tomadorMeta.email || "").trim() ||
+      !String(tomadorMeta.telefone || "").trim() ||
+      !String(enderecoMeta.logradouro || "").trim();
+    if (cnpjTomador.length === 14 && faltaDadosTomador) {
+      void buscarDadosCnpjFallback(cnpjTomador).then(function(dados) {
+        if (dados) setTomadorCnpjFallback(dados);
+      });
+    }
   };
 
   const fecharDetalhes = function() {
     setShowDetails(false);
     setShowSimulacao(false);
     setShowPreEmissao(false);
+    setClienteNfseDetalhe(null);
+    setTomadorCnpjFallback(null);
   };
 
   // ------------------------------------------------------------------
@@ -1122,16 +1252,78 @@ export default function NfseTab() {
   // ------------------------------------------------------------------
   const montarDadosDanfse = function(nfse: FiscalNfse): DanfsePrintDados {
     const meta = nfse.metadata || {};
-    const tomador = meta.tomador || {};
-    const enderecoTomador = tomador.endereco || {
-      logradouro: tomador.logradouro ?? null,
-      numero: tomador.numero ?? null,
-      complemento: tomador.complemento ?? null,
-      bairro: tomador.bairro ?? null,
-      municipio: tomador.municipio ?? null,
-      uf: tomador.uf ?? null,
-      cep: tomador.cep ?? null,
+    const tomador = (meta.tomador || {}) as Record<string, unknown>;
+    const cliente = (clienteNfseDetalhe || {}) as Record<string, unknown>;
+    const fallbackCnpj = tomadorCnpjFallback;
+
+    const textoOuVazio = function(valor: unknown): string {
+      return valor == null ? "" : String(valor).trim();
     };
+    const primeiroTexto = function(...valores: unknown[]): string {
+      for (const valor of valores) {
+        const texto = textoOuVazio(valor);
+        if (texto) return texto;
+      }
+      return "";
+    };
+
+    const enderecoMeta = (tomador.endereco || {}) as Record<string, unknown>;
+    const enderecoTomador = {
+      logradouro: primeiroTexto(enderecoMeta.logradouro, tomador.logradouro, cliente.logradouro, fallbackCnpj?.logradouro) || null,
+      numero: primeiroTexto(enderecoMeta.numero, tomador.numero, cliente.numero, fallbackCnpj?.numero) || null,
+      complemento: primeiroTexto(enderecoMeta.complemento, tomador.complemento, cliente.complemento, fallbackCnpj?.complemento) || null,
+      bairro: primeiroTexto(enderecoMeta.bairro, tomador.bairro, cliente.bairro, fallbackCnpj?.bairro) || null,
+      municipio: primeiroTexto(enderecoMeta.municipio, tomador.municipio, cliente.cidade, fallbackCnpj?.municipio) || null,
+      uf: primeiroTexto(enderecoMeta.uf, tomador.uf, cliente.uf, fallbackCnpj?.uf) || null,
+      cep: primeiroTexto(enderecoMeta.cep, tomador.cep, cliente.cep, somenteDigitos(fallbackCnpj?.cep)) || null,
+    };
+    const tomadorNome = primeiroTexto(
+      tomador.nome,
+      cliente.razao_social,
+      cliente.nome_fantasia,
+      fallbackCnpj?.razao_social,
+      fallbackCnpj?.nome_fantasia,
+    );
+    const tomadorCnpj = primeiroTexto(tomador.cnpj, cliente.cnpj);
+    const tomadorEmail = primeiroTexto(tomador.email, cliente.email, fallbackCnpj?.email);
+    const tomadorTelefone = primeiroTexto(
+      tomador.telefone,
+      cliente.telefone,
+      cliente.whatsapp,
+      fallbackCnpj?.ddd_telefone_1,
+      fallbackCnpj?.telefone,
+    );
+
+    // Número/Série da DPS: metadata da transmissão ou o mesmo fallback
+    // determinístico usado pelo gerador (últimos 9 dígitos do id, sem zeros).
+    const numeroDpsInformado = primeiroTexto(
+      meta.numero_dps,
+      meta.emissao?.numero_dps,
+    ).replace(/\D/g, "").replace(/^0+/, "").slice(0, 15);
+    const serieDpsInformada = primeiroTexto(meta.serie, meta.emissao?.serie)
+      .replace(/\D/g, "").slice(0, 5);
+    const digitosNfse = String(nfse.id || "").replace(/\D/g, "").slice(-9)
+      .replace(/^0+/, "");
+    const numeroDpsDanfse = numeroDpsInformado || digitosNfse || "—";
+    const serieDpsDanfse = serieDpsInformada || "1";
+
+    // NBS salvo na nota ou fallback do serviço padrão (transporte rodoviário).
+    const codigoServicoBruto = String(meta.codigo_servico || "16.02.01.002");
+    const codigoServicoDigitos = codigoServicoBruto.replace(/\D/g, "");
+    const codigoNbsDanfse = primeiroTexto(
+      meta.codigo_nbs,
+      meta.emissao?.codigo_nbs,
+      codigoServicoDigitos === "160201002" ? CODIGO_NBS_PADRAO : "",
+    ) || "—";
+
+    // Ambiente (homologação exibe faixa "SEM VALOR FISCAL").
+    const ambienteDanfse = primeiroTexto(
+      meta.emissao?.ambiente,
+      meta.ambiente,
+      meta.emissao?.tp_amb,
+      meta.tp_amb,
+      meta.tpAmb,
+    ) || null;
 
     const valorServico = Number(meta.valor_servico ?? nfse.valor ?? 0);
     const desconto = Number(meta.valor_desconto ?? 0);
@@ -1142,11 +1334,10 @@ export default function NfseTab() {
     const issqn = Number(meta.issqn ?? (base * aliquota) / 100);
     const retencoes = Number(meta.total_retencoes ?? (issRetido ? issqn : 0));
 
-    const codigo = String(meta.codigo_servico || "16.02.01.002");
-    const digitos = codigo.replace(/\D/g, "");
+    const digitos = codigoServicoBruto.replace(/\D/g, "");
     const codigoFormatado = digitos.length >= 9
       ? `${digitos.slice(0, 2)}.${digitos.slice(2, 4)}.${digitos.slice(4, 6)}/${digitos.slice(6, 9)}`
-      : codigo;
+      : codigoServicoBruto;
 
     const municipio = String(meta.municipio_prestacao || EMITENTE_DANFSE.municipio);
     const uf = String(meta.uf || EMITENTE_DANFSE.uf);
@@ -1167,22 +1358,23 @@ export default function NfseTab() {
       chaveAcesso: String(nfse.chave_acesso || meta.emissao?.chave_acesso || ""),
       competencia: formatarCompetenciaDanfse(meta.competencia, nfse.created_at),
       emissao: formatarDataHoraDanfse(nfse.data_emissao || nfse.created_at),
-      numeroDps: String(meta.numero_dps || "—"),
-      serieDps: String(meta.serie || "—"),
+      numeroDps: numeroDpsDanfse,
+      serieDps: serieDpsDanfse,
       situacao: situacaoDanfse(nfse.status),
       statusCodigo: String(nfse.status || ""),
+      ambiente: ambienteDanfse,
       emitente: emitenteDanfse,
       tomador: {
-        nome: String(tomador.nome || "—"),
-        cnpj: String(tomador.cnpj || "—"),
-        email: tomador.email ? String(tomador.email) : null,
-        telefone: tomador.telefone ? String(tomador.telefone) : null,
+        nome: tomadorNome || "—",
+        cnpj: tomadorCnpj || "—",
+        email: tomadorEmail || null,
+        telefone: tomadorTelefone || null,
         endereco: enderecoTomador,
       },
       servico: {
-        descricao: String(meta.servico || "Transporte de bens ou valores"),
+        descricao: String(meta.servico || DESCRICAO_SERVICO_PADRAO),
         codigoTributacao: codigoFormatado,
-        codigoNbs: String(meta.codigo_nbs || "—"),
+        codigoNbs: codigoNbsDanfse,
         localPrestacao: `${municipio}/${uf}`,
       },
       tributacao: {
@@ -1248,7 +1440,7 @@ export default function NfseTab() {
       },
       servico: {
         codigoTributacaoNacional: String(meta.codigo_servico || "16.02.01.002"),
-        descricao: String(meta.servico || "Transporte de bens ou valores"),
+        descricao: String(meta.servico || DESCRICAO_SERVICO_PADRAO),
         valorServico: Number(meta.valor_servico ?? nfse.valor ?? 0),
         aliquotaIss: Number(meta.aliquota_iss ?? 0),
         issRetido: meta.iss_retido === true,
@@ -1274,6 +1466,8 @@ export default function NfseTab() {
       email: "fiscal@conexaoexpress.com.br",
       regimeTributario: "Simples Nacional (ME)",
       crt: "1",
+      opSimpNac: String(metaEmitente.op_simp_nac || "3"),
+      regApTribSN: String(metaEmitente.reg_ap_trib_sn || "1"),
       ambienteFiscal: String(meta.emissao?.ambiente || "homologacao"),
     };
 
@@ -1443,6 +1637,7 @@ export default function NfseTab() {
       return ((o.numero || "") + " " + o.cliente_nome).toLowerCase().includes(termoBuscaOrigem);
     })
     : origens;
+  const codigosNacionais = montarCodigosNacionais(codigosServico);
 
   // ===================================================================
   // WIZARD FULL PAGE — Emissao de NFS-e Nacional (5 passos)
@@ -1578,23 +1773,49 @@ export default function NfseTab() {
                 </Badge>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <Label>Município de emissão (IBGE)</Label>
                   <Input value={gerarForm.municipio_ibge || "3550308"} readOnly className="bg-slate-50" />
                 </div>
                 <div>
-                  <Label>Código de Serviço Nacional</Label>
+                  <Label>Código Nacional</Label>
                   <CodigoCombobox
-                    value={gerarForm.codigo_servico}
-                    options={codigosServico}
-                    placeholder="Ex.: 16.02.01.002"
+                    value={gerarForm.codigo_nacional}
+                    options={codigosNacionais}
+                    placeholder="Ex.: 16.02.01"
                     vazioTexto="Nenhum código na lista. Você pode digitar manualmente."
-                    rodapeTexto="Selecione ou digite um código customizado."
+                    rodapeTexto="Código nacional do ISSQN (6 dígitos). Ex.: 16.02.01."
                     onChangeValue={function(valor) {
-                      setGerarForm(function(p) { return { ...p, codigo_servico: valor }; });
+                      setGerarForm(function(p) {
+                        return {
+                          ...p,
+                          codigo_nacional: valor,
+                          codigo_servico: comporCodigoServico(valor, p.codigo_complementar),
+                        };
+                      });
                     }}
-                    onSelectOption={selecionarCodigoServico}
+                    onSelectOption={selecionarCodigoNacional}
+                  />
+                </div>
+                <div>
+                  <Label>Código Complementar Municipal</Label>
+                  <Input
+                    value={gerarForm.codigo_complementar}
+                    inputMode="numeric"
+                    maxLength={3}
+                    placeholder="002"
+                    className="font-mono"
+                    onChange={function(e) {
+                      const valor = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      setGerarForm(function(p) {
+                        return {
+                          ...p,
+                          codigo_complementar: valor,
+                          codigo_servico: comporCodigoServico(p.codigo_nacional, valor),
+                        };
+                      });
+                    }}
                   />
                 </div>
                 <div>
@@ -1615,8 +1836,9 @@ export default function NfseTab() {
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                O código de serviço (cTribNac) e o NBS seguem para a DPS. Padrão:
-                16.02.01.002 (transporte de bens) e NBS 1.0501.15.00.
+                Padrão: Nacional 16.02.01 + Complementar 002 (São Paulo) e NBS
+                1.0501.15.00. Altere livremente (ex.: Complementar 001 para São
+                Bernardo do Campo).
               </p>
 
               {!gerarForm.emitente_id && (
@@ -1917,7 +2139,7 @@ export default function NfseTab() {
                 <Input
                   value={gerarForm.descricao_servico}
                   onChange={function(e) { setGerarForm(function(p) { return { ...p, descricao_servico: e.target.value }; }); }}
-                  placeholder="Transporte de bens ou valores"
+                  placeholder="Prestação de serviços de coleta e entrega de mercadorias"
                 />
               </div>
 
@@ -2005,10 +2227,10 @@ export default function NfseTab() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="nfse-codigo-servico">Codigo de Servico Nacional</Label>
+                    <Label htmlFor="nfse-codigo-servico">Código Nacional</Label>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button type="button" aria-label="Ajuda sobre o codigo de servico" className="rounded p-0.5 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
@@ -2016,25 +2238,52 @@ export default function NfseTab() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Codigo de tributacao nacional do ISSQN (LC 116/2003). O padrao da
-                        operacao e 16.02.01.002 (transporte de bens ou valores).
+                        Código de tributação nacional do ISSQN (6 dígitos, LC 116/2003).
+                        Padrão da operação: 16.02.01.
                       </TooltipContent>
                     </Tooltip>
                   </div>
                   <div className="mt-1">
                     <CodigoCombobox
                       id="nfse-codigo-servico"
-                      value={gerarForm.codigo_servico}
-                      options={codigosServico}
-                      placeholder="Ex.: 16.02.01.002"
+                      value={gerarForm.codigo_nacional}
+                      options={codigosNacionais}
+                      placeholder="Ex.: 16.02.01"
                       vazioTexto="Nenhum código na lista. Você pode digitar manualmente."
-                      rodapeTexto="Selecione ou digite um código customizado."
+                      rodapeTexto="Código nacional do ISSQN (6 dígitos)."
                       onChangeValue={function(valor) {
-                        setGerarForm(function(p) { return { ...p, codigo_servico: valor }; });
+                        setGerarForm(function(p) {
+                          return {
+                            ...p,
+                            codigo_nacional: valor,
+                            codigo_servico: comporCodigoServico(valor, p.codigo_complementar),
+                          };
+                        });
                       }}
-                      onSelectOption={selecionarCodigoServico}
+                      onSelectOption={selecionarCodigoNacional}
                     />
                   </div>
+                </div>
+                <div>
+                  <Label htmlFor="nfse-codigo-complementar">Código Complementar Municipal</Label>
+                  <Input
+                    id="nfse-codigo-complementar"
+                    value={gerarForm.codigo_complementar}
+                    inputMode="numeric"
+                    maxLength={3}
+                    placeholder="002"
+                    className="mt-1 font-mono"
+                    onChange={function(e) {
+                      const valor = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      setGerarForm(function(p) {
+                        return {
+                          ...p,
+                          codigo_complementar: valor,
+                          codigo_servico: comporCodigoServico(p.codigo_nacional, valor),
+                        };
+                      });
+                    }}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -2151,7 +2400,7 @@ export default function NfseTab() {
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Serviço</p>
-                  <p className="text-sm">{gerarForm.descricao_servico || "Transporte de bens ou valores"}</p>
+                  <p className="text-sm">{gerarForm.descricao_servico || DESCRICAO_SERVICO_PADRAO}</p>
                   <p className="text-xs text-muted-foreground">
                     Bruto: {fmtFin(gerarForm.valor_servico || 0)} · Desconto: {fmtFin(gerarForm.valor_desconto || 0)}
                   </p>

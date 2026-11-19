@@ -86,6 +86,7 @@ export interface ConfiguracaoFiscal {
   certificado_nome?: string | null;
   certificado_validade?: string | null;
   certificado_status?: string | null;
+  metadata?: Record<string, unknown> | null;
   created_at: string | null;
   updated_at: string | null;
 }

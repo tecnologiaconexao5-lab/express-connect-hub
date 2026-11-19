@@ -1,5 +1,54 @@
 # Summary
 
+## MISSÃO NFS-E-PADRAO-002 — Defaults oficiais, códigos separados e regime tributário editável (2026-11-19)
+
+**Status:** ✅ Concluída (código + validação + deploy da Edge). `npx tsc --noEmit` 0 erros · `deno check` da edge ok · `npm run build` ok (35,78s) · **4 variantes de DPS validadas contra o XSD RTC oficial → VALIDACAO_OK** · Edge `nfse-assinar-transmitir` republicada. **Sem migration** (regime salvo no JSONB `metadata.nfse_nacional`).
+
+### O que mudou
+1. **Wizard (Passo 3 e 4)** — descrição padrão oficial: “Prestação de serviços de coleta e entrega de mercadorias, conforme programação operacional definida pelo contratante.” (editável; também usada como fallback em `nfseService`, edge e DANFSe). Mantidos **São Paulo/SP (3550308)**, **Nacional 16.02.01**, **Complementar 002**, **NBS 1.0501.15.00** e **ISS Não Retido** como defaults. Agora o Passo 1/4 tem **Código Nacional** (6 dígitos, combobox livre) e **Código Complementar Municipal** (3 dígitos, ex.: `001` para São Bernardo) separados e editáveis; município/NBS também livres. O `codigo_servico` da DPS continua combinado (6+3) — **estrutura/ordem de tags inalterada**.
+2. **Emitente editável** — novos selects em **Editar Emitente**: `opSimpNac` (1/2/3, padrão 3) e `regApTribSN` (1/2/3, padrão 1, exibido quando `opSimpNac = 3`). Persistidos em `configuracoes_fiscais.metadata.nfse_nacional` (sem migration); `nfseService` copia para `metadata.emitente`.
+3. **DPS (client/edge)** — `FiscalCompanySettings.opSimpNac/regApTribSN` lidos do emitente com fallback **“3”/“1”**; `mapearOpSimpNac` prioriza o valor explícito; `<regApTribSN>` usa o valor escolhido (1/2/3). Regras validadas mantidas: E0166 (regApTribSN obrigatório no 3), E0625 (`pAliq` omitido só quando `regApTribSN = 1` e `tpRetISSQN = 1`), E0712 (`pTotTribSN` no Simples). NBS antes de `xDescServ`, sem `<xNome>`/`<end>` no `<prest>`, IM com zeros.
+4. **DANFSe** — logo **260×92px** (centralizado); Número/Série da DPS e NBS com fallback do gerador; tomador (endereço/município/CEP/e-mail/telefone) do metadata → cadastro do cliente → consulta CNPJ (BrasilAPI, **somente exibição**, não altera XML/banco); faixa “AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL” apenas quando homologação.
+
+### Validação
+- DPS padrão (opSimpNac=3, regApTribSN=1, sem retenção) → `<regApTribSN>1</regApTribSN>`, sem `pAliq`, `<pTotTribSN>0.00</pTotTribSN>` → **VALIDACAO_OK**.
+- Variantes regApTribSN=2/3 (pAliq presente) e opSimpNac=1 (sem regApTribSN, indTotTrib) → **VALIDACAO_OK**.
+- Prova estrutural: `cNBS` antes de `xDescServ`, `<prest>` sem `xNome`/`end`, `<IM>000000060458216</IM>`.
+
+### Arquivos
+- `src/components/fiscal/NfseTab.tsx` · `src/components/fiscal/EmitenteFiscalConfig.tsx` · `src/components/fiscal/DanfsePrintTemplate.tsx` · `src/services/fiscal/nfseService.ts` · `src/services/fiscal/nfseEmissaoService.ts` · `src/services/fiscal/configuracoesFiscaisService.ts` · `src/types/fiscal.ts` · `supabase/functions/_shared/nfseDps.ts` · `supabase/functions/nfse-assinar-transmitir/index.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) `git push` (Vercel) do frontend — a Edge já foi republicada.
+2. (QA) Salvar o emitente com os selects e conferir `metadata.nfse_nacional`; emitir com Complementar `001` (São Bernardo) e NBS alterado.
+3. (QA) DANFSe: logo/NBS/DPS e faixa de homologação; para a nota antiga sem endereço, a exibição usa o CNPJ (BrasilAPI) quando disponível.
+
+---
+
+## MISSÃO DANFSE-AJUSTES-MAPEAMENTO — Logo maior, DPS/NBS/Tomador e faixa de homologação (2026-11-19)
+
+**Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · `npx deno check` da edge ok · `npm run build` ok (45,88s). Sem migration e sem alteração de banco.
+
+### O que mudou
+1. **Logo do cabeçalho** (`DanfsePrintTemplate.tsx`) — passou de `195×68px` para **`250×88px`** (`object-fit: contain`), com `align-items: center` no wrapper/header (centralizado verticalmente com "DANFSe v2.0").
+2. **Número / Série da DPS** (`montarDadosDanfse`) — lê `metadata.numero_dps`/`metadata.serie` (e `metadata.emissao.*`); se ausente, usa o **mesmo fallback determinístico do gerador** (últimos 9 dígitos do id sem zeros; série sanitizada, default `1`). A nota antiga passa a exibir o número usado na transmissão em vez de "—".
+3. **Código NBS** — lê `metadata.codigo_nbs` → `metadata.emissao.codigo_nbs` → fallback **`1.0501.15.00`** quando o serviço é `16.02.01.002` (antiga nota, que não gravou o NBS no metadata).
+4. **Tomador (endereço, município/UF, CEP, e-mail, telefone)** — `montarDadosDanfse` agora mescla as formas salvas (objeto `tomador.endereco` + campos planos) e, como fallback, o **cadastro do cliente** carregado em `openDetails` (`clientes` por `cliente_id`). E-mail usa `email` e telefone usa `telefone`/`whatsapp`.
+5. **Faixa de homologação** — novo campo `ambiente` em `DanfsePrintDados`; quando `tpAmb === "2"` ou `ambiente` contém "homolog", exibe no topo **"AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL"** (`.danfse-homolog`, âmbar discreto). Em produção a faixa não é renderizada.
+
+### Observação (dados da nota legada)
+- A nota `cc7d259b-…` (emitida antes do autofill de CNPJ) tem `metadata.tomador` só com `nome`/`cnpj`/`ie` e o cliente **Bc Flex** está com **endereço/e-mail/telefone nulos** em `clientes` (verificado read-only). Logo, esses 5 campos continuam "—" nessa nota específica — não há dado salvo para exibir. Novas emissões (com "Buscar CNPJ" no Passo 2) gravam e exibem os dados. Para a nota antiga, basta completar o cadastro do cliente e reimprimir.
+
+### Arquivos
+- `src/components/fiscal/DanfsePrintTemplate.tsx` · `src/components/fiscal/NfseTab.tsx` · `AGENTS.md`
+
+### Pendências
+1. (deploy) `git push` (Vercel) para publicar o frontend.
+2. (QA) Imprimir a NFS-e: logo maior/alinhado; Número/Série da DPS e NBS preenchidos; faixa de homologação visível (e ausente em produção).
+3. (dados) Para a nota antiga, completar endereço/e-mail/telefone do cliente (ou reemitir) para o DANFSe exibir os campos do tomador.
+
+---
+
 ## MISSÃO NFS-E-WIZARD-USABILIDADE — Comboboxes reais, busca de CNPJ e NBS/IM com zeros (2026-11-19)
 
 **Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · `npx deno check` da edge `nfse-assinar-transmitir` ok · ESLint sem erros/avisos novos (baseline `no-explicit-any` e `no-empty` intactos) · `npm run build` ok (35,88s). Sem migration.

@@ -36,6 +36,9 @@ const CNPJ_MATRIZ_NFSE = "31227975000180";
 const CODIGO_SERVICO_PADRAO = "16.02.01.002";
 /** NBS padrão da operação (transporte rodoviário de cargas) — 9 dígitos na DPS. */
 const CODIGO_NBS_PADRAO = "1.0501.15.00";
+/** Descrição padrão oficial da NFS-e (fallback quando o rascunho não informar). */
+const DESCRICAO_SERVICO_PADRAO =
+  "Prestação de serviços de coleta e entrega de mercadorias, conforme programação operacional definida pelo contratante.";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -292,7 +295,7 @@ serve(async (req: Request) => {
     const { data: emitentes, error: emitentesError } = await admin
       .from("configuracoes_fiscais")
       .select(
-        "id, cnpj, razao_social, nome_fantasia, ie, inscricao_municipal, codigo_ibge, uf, cidade, logradouro, numero, complemento, bairro, cep, email, telefone, regime_tributario, crt, ambiente_fiscal, padrao",
+        "id, cnpj, razao_social, nome_fantasia, ie, inscricao_municipal, codigo_ibge, uf, cidade, logradouro, numero, complemento, bairro, cep, email, telefone, regime_tributario, crt, ambiente_fiscal, padrao, metadata",
       )
       .eq("ativo", true);
 
@@ -477,7 +480,7 @@ serve(async (req: Request) => {
       },
       servico: {
         codigoTributacaoNacional: codigoServicoMeta,
-        descricao: texto(meta.servico) || "Transporte de bens ou valores",
+        descricao: texto(meta.servico) || DESCRICAO_SERVICO_PADRAO,
         valorServico: Number(meta.valor_servico ?? rascunho.valor ?? 0),
         aliquotaIss: meta.aliquota_iss != null
           ? Number(meta.aliquota_iss)
@@ -491,6 +494,12 @@ serve(async (req: Request) => {
       numero: numeroDpsMeta,
       nfseId,
     };
+
+    const matrizMeta = objeto(matriz["metadata"]) ?? {};
+    const nfseNacionalMeta = objeto(matrizMeta["nfse_nacional"]) ?? {};
+    // Regime tributário configurável no Editar Emitente (fallback 3/1).
+    const opSimpNacEmitente = texto(nfseNacionalMeta["op_simp_nac"]) || "3";
+    const regApTribSNEmitente = texto(nfseNacionalMeta["reg_ap_trib_sn"]) || "1";
 
     const empresa: FiscalCompanySettings = {
       cnpj: String(matriz["cnpj"] ?? ""),
@@ -509,6 +518,8 @@ serve(async (req: Request) => {
       telefone: texto(matriz["telefone"]),
       regimeTributario: texto(matriz["regime_tributario"]),
       crt: texto(matriz["crt"]),
+      opSimpNac: opSimpNacEmitente,
+      regApTribSN: regApTribSNEmitente,
       ambienteFiscal: ambiente,
     };
 

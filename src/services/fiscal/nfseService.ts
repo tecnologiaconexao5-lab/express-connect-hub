@@ -5,6 +5,10 @@ import { buscarCodigoIbge } from "@/services/fiscal/ibgeService";
 /** Matriz oficial da NFS-e Nacional (CONEXAO TRANSPORTES LTDA). */
 const CNPJ_MATRIZ_NFSE = "31227975000180";
 
+/** Descrição padrão oficial da NFS-e (editável no Passo 3). */
+const DESCRICAO_SERVICO_PADRAO =
+  "Prestação de serviços de coleta e entrega de mercadorias, conforme programação operacional definida pelo contratante.";
+
 function somenteDigitosCnpj(valor: string | null | undefined): string {
   return (valor || "").replace(/\D/g, "");
 }
@@ -18,6 +22,8 @@ type EmitenteRow = {
   ie: string | null;
   /** Inscrição municipal — string (preserva zeros à esquerda, ex.: 000000060458216). */
   inscricao_municipal: string | null;
+  /** JSONB do emitente (nfse_nacional.op_simp_nac / reg_ap_trib_sn etc.). */
+  metadata?: Record<string, unknown> | null;
   cidade: string | null;
   uf: string | null;
 };
@@ -252,6 +258,9 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       Number(((valorServico || 0) - valorDesconto).toFixed(2)),
     );
 
+    const emitenteMeta = (emitente?.metadata || {}) as Record<string, unknown>;
+    const nfseNacionalMeta = (emitenteMeta.nfse_nacional || {}) as Record<string, unknown>;
+
     const metadata = {
       origem: params.origem,
       emitente: emitente ? {
@@ -260,11 +269,14 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
         ie: emitente.ie,
         // Gravado como string para preservar zeros à esquerda (ex.: 000000060458216).
         inscricao_municipal: emitente.inscricao_municipal,
+        // Regime tributário configurado no Editar Emitente (fallback 3/1).
+        op_simp_nac: String(emitenteMeta.op_simp_nac ?? nfseNacionalMeta.op_simp_nac ?? "3"),
+        reg_ap_trib_sn: String(emitenteMeta.reg_ap_trib_sn ?? nfseNacionalMeta.reg_ap_trib_sn ?? "1"),
         cidade: emitente.cidade,
         uf: emitente.uf,
       } : null,
       tomador,
-      servico: regraMunicipal?.descricao_servico || params.descricao_servico || "Prestacao de servico de transporte",
+      servico: params.descricao_servico?.trim() || regraMunicipal?.descricao_servico || DESCRICAO_SERVICO_PADRAO,
       valor_servico: valorServico,
       valor_desconto: valorDesconto,
       valor_liquido: valorLiquido,

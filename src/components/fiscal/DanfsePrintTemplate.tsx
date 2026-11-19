@@ -41,6 +41,8 @@ export interface DanfsePrintDados {
   serieDps: string;
   situacao: string;
   statusCodigo: string;
+  /** Ambiente da emissão: "homologacao"/"producao" ou tpAmb ("1"/"2"). */
+  ambiente?: string | null;
   emitente: DanfseEmitente;
   tomador: DanfseTomador;
   servico: {
@@ -150,6 +152,20 @@ const CSS_DANFSE = `
   }
   .danfse-page > *:not(.danfse-watermark) { position: relative; z-index: 1; }
 
+  .danfse-homolog {
+    background: #FEF3C7;
+    border: 1px solid #F59E0B;
+    color: #92400E;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    text-align: center;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 5px;
+  }
+
   .danfse-header {
     display: flex;
     align-items: center;
@@ -158,10 +174,10 @@ const CSS_DANFSE = `
     border-radius: 4px;
     padding: 6px 10px;
   }
-  .danfse-logo-wrap { flex: 0 0 auto; }
+  .danfse-logo-wrap { flex: 0 0 auto; display: flex; align-items: center; }
   .danfse-logo {
-    width: 195px;
-    max-height: 68px;
+    width: 260px;
+    max-height: 92px;
     height: auto;
     object-fit: contain;
     display: block;
@@ -418,6 +434,9 @@ function Mini({ rotulo, valor }: { rotulo: string; valor: string }) {
 
 export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
   const rascunho = String(dados.statusCodigo || "").toLowerCase() === "rascunho";
+  const ambienteTexto = String(dados.ambiente || "").toLowerCase();
+  // tpAmb = 2 ou ambiente "homologacao"/"homologação" → aviso sem valor fiscal.
+  const homologacao = ambienteTexto === "2" || ambienteTexto.includes("homolog");
   const qrValor = dados.chaveAcesso
     ? `https://www.nfse.gov.br/consultapublica?chave=${encodeURIComponent(dados.chaveAcesso)}`
     : "https://www.nfse.gov.br/consultapublica";
@@ -427,6 +446,12 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
       {rascunho && <div className="danfse-watermark">RASCUNHO — SEM VALOR FISCAL</div>}
 
       <div className="danfse-content">
+        {homologacao && (
+          <div className="danfse-homolog">
+            AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL
+          </div>
+        )}
+
         {/* CABEÇALHO */}
       <div className="danfse-header">
         <div className="danfse-logo-wrap">

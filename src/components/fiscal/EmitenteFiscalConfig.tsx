@@ -22,7 +22,12 @@ import {
 } from "@/services/fiscal/configuracoesFiscaisService";
 import type { ConfiguracaoFiscal } from "@/types/fiscal";
 
-const emptyForm: SalvarConfiguracaoFiscalInput = {
+type EmitenteForm = SalvarConfiguracaoFiscalInput & {
+  op_simp_nac: string;
+  reg_ap_trib_sn: string;
+};
+
+const emptyForm: EmitenteForm = {
   razao_social: "", nome_fantasia: "", cnpj: "", ie: "",
   inscricao_municipal: "", rntrc: "",
   cep: "", logradouro: "", numero: "", complemento: "", bairro: "",
@@ -30,6 +35,8 @@ const emptyForm: SalvarConfiguracaoFiscalInput = {
   ambiente_fiscal: "homologacao", ativo: true, apelido: null,
   padrao: false, limite_plano: 3,
   focus_empresa_id: null, focus_token_configurado: false, certificado_configurado: false,
+  op_simp_nac: "3",
+  reg_ap_trib_sn: "1",
 };
 
 export default function EmitenteFiscalConfig() {
@@ -38,7 +45,7 @@ export default function EmitenteFiscalConfig() {
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState<SalvarConfiguracaoFiscalInput>({ ...emptyForm });
+  const [form, setForm] = useState<EmitenteForm>({ ...emptyForm });
   const [uploading, setUploading] = useState(false);
 
   useEffect(function() { carregar(); }, []);
@@ -99,6 +106,8 @@ export default function EmitenteFiscalConfig() {
 
   const openEditar = function(emit: ConfiguracaoFiscal) {
     setEditId(emit.id);
+    const metadata = (emit.metadata || {}) as Record<string, unknown>;
+    const nfseNacional = (metadata.nfse_nacional || {}) as Record<string, unknown>;
     setForm({
       razao_social: emit.razao_social || "", nome_fantasia: emit.nome_fantasia || "",
       cnpj: emit.cnpj || "", ie: emit.ie || "",
@@ -117,6 +126,8 @@ export default function EmitenteFiscalConfig() {
       focus_empresa_id: emit.focus_empresa_id || null,
       focus_token_configurado: emit.focus_token_configurado ?? false,
       certificado_configurado: emit.certificado_configurado ?? false,
+      op_simp_nac: String(metadata.op_simp_nac ?? nfseNacional.op_simp_nac ?? "3"),
+      reg_ap_trib_sn: String(metadata.reg_ap_trib_sn ?? nfseNacional.reg_ap_trib_sn ?? "1"),
     });
     setModalOpen(true);
   };
@@ -127,12 +138,36 @@ export default function EmitenteFiscalConfig() {
       return;
     }
     setSaving(true);
+
+    const emitenteAtual = editId
+      ? emitentes.find(function(e) { return e.id === editId; }) ?? null
+      : null;
+    const metadataAtual = (emitenteAtual?.metadata || {}) as Record<string, unknown>;
+    const nfseNacionalAtual = (metadataAtual.nfse_nacional || {}) as Record<string, unknown>;
+    const { op_simp_nac, reg_ap_trib_sn, ...restoForm } = form;
+    const payload: SalvarConfiguracaoFiscalInput = {
+      ...restoForm,
+      metadata: {
+        ...metadataAtual,
+        nfse_nacional: {
+          ...nfseNacionalAtual,
+          habilitado: nfseNacionalAtual.habilitado ?? true,
+          municipio_ibge: nfseNacionalAtual.municipio_ibge ??
+            form.codigo_ibge ?? "3550308",
+          codigo_tributacao_nacional:
+            nfseNacionalAtual.codigo_tributacao_nacional ?? "16.02.01.002",
+          op_simp_nac: op_simp_nac || "3",
+          reg_ap_trib_sn: op_simp_nac === "3" ? (reg_ap_trib_sn || "1") : null,
+        },
+      },
+    };
+
     if (editId) {
-      const { success, error } = await atualizarEmitenteFiscal(editId, form);
+      const { success, error } = await atualizarEmitenteFiscal(editId, payload);
       if (success) toast.success("Emitente atualizado!");
       else toast.error("Erro: " + (error || ""));
     } else {
-      const { success, error } = await salvarEmitenteFiscal(form);
+      const { success, error } = await salvarEmitenteFiscal(payload);
       if (success) toast.success("Emitente cadastrado!");
       else toast.error("Erro: " + (error || ""));
     }
@@ -335,7 +370,31 @@ export default function EmitenteFiscalConfig() {
                   <Label>Focus Empresa ID</Label>
                   <Input value={form.focus_empresa_id || ""} onChange={function(e) { setForm(function(p) { return { ...p, focus_empresa_id: e.target.value || null }; }); }} placeholder="ID da empresa na Focus" />
                 </div>
-                <div className="flex items-end gap-4">
+            <div>
+              <Label>Opção no Simples Nacional (opSimpNac)</Label>
+              <Select value={form.op_simp_nac} onValueChange={function(v) { setForm(function(p) { return { ...p, op_simp_nac: v }; }); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 — Não Optante</SelectItem>
+                  <SelectItem value="2">2 — MEI</SelectItem>
+                  <SelectItem value="3">3 — Optante ME/EPP (padrão)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {form.op_simp_nac === "3" && (
+              <div>
+                <Label>Regime de Apuração no SN (regApTribSN)</Label>
+                <Select value={form.reg_ap_trib_sn} onValueChange={function(v) { setForm(function(p) { return { ...p, reg_ap_trib_sn: v }; }); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 — Federais e municipal pelo SN (padrão)</SelectItem>
+                    <SelectItem value="2">2 — Federais pelo SN e ISSQN pela NFS-e municipal</SelectItem>
+                    <SelectItem value="3">3 — Federais e municipal pela NFS-e</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="flex items-end gap-4">
                   <div className="flex items-center gap-2">
                     <Switch checked={form.focus_token_configurado ?? false} onCheckedChange={function(v) { setForm(function(p) { return { ...p, focus_token_configurado: v }; }); }} />
                     <Label>Token configurado</Label>

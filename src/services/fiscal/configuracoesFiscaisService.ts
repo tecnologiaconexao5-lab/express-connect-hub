@@ -33,6 +33,8 @@ export interface SalvarConfiguracaoFiscalInput {
   certificado_nome?: string;
   certificado_validade?: string;
   certificado_status?: string;
+  /** JSONB livre do emitente (nfse_nacional.op_simp_nac / reg_ap_trib_sn etc.). */
+  metadata?: Record<string, unknown> | null;
 }
 
 function normalizarInscricaoMunicipal<T extends Partial<SalvarConfiguracaoFiscalInput>>(
