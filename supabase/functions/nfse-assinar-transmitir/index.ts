@@ -289,7 +289,9 @@ serve(async (req: Request) => {
     // ---------- 4) Matriz ----------
     const { data: emitentes, error: emitentesError } = await admin
       .from("configuracoes_fiscais")
-      .select("*")
+      .select(
+        "id, cnpj, razao_social, nome_fantasia, ie, inscricao_municipal, codigo_ibge, uf, cidade, logradouro, numero, complemento, bairro, cep, email, telefone, regime_tributario, crt, ambiente_fiscal, padrao",
+      )
       .eq("ativo", true);
 
     if (emitentesError) {
@@ -318,6 +320,7 @@ serve(async (req: Request) => {
     }
 
     const ambiente = String(matriz["ambiente_fiscal"] ?? "homologacao");
+    const inscricaoMunicipal = somenteDigitos(matriz["inscricao_municipal"]);
     const endpoint = resolverEndpointSefin(ambiente);
     if (!endpoint) {
       return respostaJson(
@@ -455,7 +458,7 @@ serve(async (req: Request) => {
       competencia,
       prestador: {
         cnpj: String(matriz["cnpj"] ?? ""),
-        inscricaoMunicipal: texto(matriz["inscricao_municipal"]),
+        inscricaoMunicipal: inscricaoMunicipal || null,
         razaoSocial: texto(matriz["razao_social"]),
         municipioIbge: texto(matriz["codigo_ibge"]),
       },
@@ -486,7 +489,7 @@ serve(async (req: Request) => {
       cnpj: String(matriz["cnpj"] ?? ""),
       razaoSocial: String(matriz["razao_social"] ?? ""),
       nomeFantasia: texto(matriz["nome_fantasia"]),
-      inscricaoMunicipal: texto(matriz["inscricao_municipal"]),
+      inscricaoMunicipal: inscricaoMunicipal || null,
       codigoIbge: texto(matriz["codigo_ibge"]),
       uf: texto(matriz["uf"]),
       cidade: texto(matriz["cidade"]),

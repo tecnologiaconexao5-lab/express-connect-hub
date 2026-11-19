@@ -260,8 +260,11 @@ export function gerarXmlDpsNacional(
       </end>`;
   }
 
-  const blocoImPrestador = empresa.inscricaoMunicipal?.trim()
-    ? `\n      <IM>${escaparXml(empresa.inscricaoMunicipal.trim())}</IM>`
+  const inscricaoMunicipalPrestador = somenteDigitos(
+    empresa.inscricaoMunicipal || dps.prestador?.inscricaoMunicipal,
+  );
+  const blocoImPrestador = inscricaoMunicipalPrestador
+    ? `\n      <IM>${escaparXml(inscricaoMunicipalPrestador)}</IM>`
     : "";
   const blocoEmailPrestador = empresa.email?.trim()
     ? `\n      <email>${escaparXml(empresa.email.trim())}</email>`
@@ -286,6 +289,7 @@ export function gerarXmlDpsNacional(
     <nDPS>${nDPS}</nDPS>
     <dCompet>${dCompet}</dCompet>
     <tpEmit>1</tpEmit>
+    <finNFSe>0</finNFSe>
     <cLocEmi>${cLocEmi}</cLocEmi>
     <prest>
       <CNPJ>${cnpjPrestador}</CNPJ>${blocoImPrestador}

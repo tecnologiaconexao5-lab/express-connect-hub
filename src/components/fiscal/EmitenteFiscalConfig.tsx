@@ -23,7 +23,8 @@ import {
 import type { ConfiguracaoFiscal } from "@/types/fiscal";
 
 const emptyForm: SalvarConfiguracaoFiscalInput = {
-  razao_social: "", nome_fantasia: "", cnpj: "", ie: "", rntrc: "",
+  razao_social: "", nome_fantasia: "", cnpj: "", ie: "",
+  inscricao_municipal: "", rntrc: "",
   cep: "", logradouro: "", numero: "", complemento: "", bairro: "",
   cidade: "", uf: "", telefone: "", email: "",
   ambiente_fiscal: "homologacao", ativo: true, apelido: null,
@@ -100,7 +101,9 @@ export default function EmitenteFiscalConfig() {
     setEditId(emit.id);
     setForm({
       razao_social: emit.razao_social || "", nome_fantasia: emit.nome_fantasia || "",
-      cnpj: emit.cnpj || "", ie: emit.ie || "", rntrc: emit.rntrc || "",
+      cnpj: emit.cnpj || "", ie: emit.ie || "",
+      inscricao_municipal: String(emit.inscricao_municipal || "").replace(/\D/g, ""),
+      rntrc: emit.rntrc || "",
       cep: emit.cep || "", logradouro: emit.logradouro || "",
       numero: emit.numero || "", complemento: emit.complemento || "",
       bairro: emit.bairro || "",       cidade: emit.cidade || "", uf: emit.uf || "",
@@ -273,6 +276,19 @@ export default function EmitenteFiscalConfig() {
               <Input value={form.cnpj} onChange={function(e) { setForm(function(p) { return { ...p, cnpj: e.target.value }; }); }} />
             </div>
             <div><Label>IE</Label><Input value={form.ie} onChange={function(e) { setForm(function(p) { return { ...p, ie: e.target.value }; }); }} /></div>
+            <div>
+              <Label>Inscrição Municipal (IM)</Label>
+              <Input
+                value={form.inscricao_municipal || ""}
+                onChange={function(e) {
+                  const digitos = e.target.value.replace(/\D/g, "");
+                  setForm(function(p) { return { ...p, inscricao_municipal: digitos }; });
+                }}
+                inputMode="numeric"
+                maxLength={15}
+                placeholder="Somente números"
+              />
+            </div>
             <div><Label>RNTRC</Label><Input value={form.rntrc} onChange={function(e) { setForm(function(p) { return { ...p, rntrc: e.target.value }; }); }} /></div>
             <div><Label>CEP</Label><Input value={form.cep} onChange={function(e) { setForm(function(p) { return { ...p, cep: e.target.value }; }); }} /></div>
             <div><Label>Logradouro</Label><Input value={form.logradouro} onChange={function(e) { setForm(function(p) { return { ...p, logradouro: e.target.value }; }); }} /></div>

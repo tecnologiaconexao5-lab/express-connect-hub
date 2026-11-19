@@ -6,7 +6,7 @@ export interface SalvarConfiguracaoFiscalInput {
   nome_fantasia: string;
   cnpj: string;
   ie: string;
-  inscricao_municipal?: string;
+  inscricao_municipal?: string | null;
   rntrc: string;
   cep: string;
   logradouro: string;
@@ -33,6 +33,16 @@ export interface SalvarConfiguracaoFiscalInput {
   certificado_nome?: string;
   certificado_validade?: string;
   certificado_status?: string;
+}
+
+function normalizarInscricaoMunicipal<T extends Partial<SalvarConfiguracaoFiscalInput>>(
+  dados: T,
+): T {
+  if (!Object.prototype.hasOwnProperty.call(dados, "inscricao_municipal")) {
+    return dados;
+  }
+  const digitos = String(dados.inscricao_municipal ?? "").replace(/\D/g, "");
+  return { ...dados, inscricao_municipal: digitos || null };
 }
 
 export async function buscarEmitentePadrao(): Promise<ConfiguracaoFiscal | null> {
@@ -70,7 +80,7 @@ export async function salvarEmitenteFiscal(dados: SalvarConfiguracaoFiscalInput)
 
     const { data, error } = await supabase
       .from("configuracoes_fiscais")
-      .insert([dados])
+      .insert([normalizarInscricaoMunicipal(dados)])
       .select("*")
       .single();
 
@@ -101,7 +111,7 @@ export async function atualizarEmitenteFiscal(id: string, dados: Partial<SalvarC
   try {
     const { data, error } = await supabase
       .from("configuracoes_fiscais")
-      .update(dados)
+      .update(normalizarInscricaoMunicipal(dados))
       .eq("id", id)
       .select("*")
       .single();
