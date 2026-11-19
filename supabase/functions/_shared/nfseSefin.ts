@@ -9,8 +9,11 @@
 //   NFSE_SEFIN_URL_PRODUCAO
 //   NFSE_SEFIN_URL_HOMOLOGACAO
 //   NFSE_SEFIN_CA_PEM         (opcional: CA do servidor Sefin, PEM)
+//   NFSE_SEFIN_PROXY_URL      (opcional: proxy Vercel em gru1)
+//   NFSE_SEFIN_PROXY_TOKEN    (opcional: token x-proxy-token do proxy)
 //
-// mTLS: tenta `Deno.createHttpClient` + fetch e, se indisponivel/falhar,
+// mTLS: se o proxy estiver configurado, envia por ele (IP Brasil).
+// Caso contrario, tenta `Deno.createHttpClient` + fetch e, se falhar,
 // usa `node:https` com cert/key e rejectUnauthorized: true.
 // ===================================================================
 import * as https from "node:https";
@@ -237,6 +240,39 @@ function lerCaSefin(): string | undefined {
   return ca || undefined;
 }
 
+interface ConfigProxySefin {
+  url: string;
+  token: string;
+}
+
+function obterProxySefin(): ConfigProxySefin | null {
+  const url = Deno.env.get("NFSE_SEFIN_PROXY_URL")?.trim();
+  const token = Deno.env.get("NFSE_SEFIN_PROXY_TOKEN")?.trim();
+
+  if (!url && !token) return null;
+  if (!url || !token) {
+    throw new SefinComunicacaoError(
+      "NFSE_SEFIN_PROXY_URL e NFSE_SEFIN_PROXY_TOKEN devem ser configurados juntos",
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new SefinComunicacaoError(
+      "NFSE_SEFIN_PROXY_URL invalida (URL malformada)",
+    );
+  }
+  if (parsed.protocol !== "https:") {
+    throw new SefinComunicacaoError(
+      "NFSE_SEFIN_PROXY_URL deve usar https://",
+    );
+  }
+
+  return { url: parsed.toString(), token };
+}
+
 function respostaComJson(status: number, corpo: string): RespostaSefin {
   let json: unknown = null;
   try {
@@ -245,6 +281,68 @@ function respostaComJson(status: number, corpo: string): RespostaSefin {
     json = null;
   }
   return analisarResposta(status, corpo, json);
+}
+
+/** Envio via proxy Vercel (regiao gru1) com mTLS do lado do proxy. */
+async function postComProxy(
+  urlSefin: string,
+  xmlAssinado: string,
+  material: MaterialTls,
+  proxy: ConfigProxySefin,
+): Promise<RespostaHttp> {
+  const controller = new AbortController();
+  const timer = setTimeout(function() { controller.abort(); }, 25000);
+  const ca = lerCaSefin();
+
+  try {
+    const resposta = await fetch(proxy.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept": "application/json",
+        "x-proxy-token": proxy.token,
+      },
+      body: JSON.stringify({
+        url: urlSefin,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/xml; charset=utf-8",
+          "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
+        },
+        body: xmlAssinado,
+        cert: material.chainPem,
+        key: material.keyPem,
+        ...(ca ? { ca } : {}),
+      }),
+      signal: controller.signal,
+    });
+
+    const textoResposta = await resposta.text();
+    let json: unknown = null;
+    try {
+      json = JSON.parse(textoResposta);
+    } catch {
+      json = null;
+    }
+    const obj = objeto(json);
+
+    if (!resposta.ok) {
+      const detalhe = texto(obj?.["detalhe"]) || texto(obj?.["error"]) ||
+        `HTTP ${resposta.status}`;
+      throw new Error(`proxy ${detalhe}`);
+    }
+
+    if (
+      !obj || typeof obj["status"] !== "number" ||
+      typeof obj["body"] !== "string"
+    ) {
+      throw new Error("resposta invalida do proxy");
+    }
+
+    return { status: Number(obj["status"]), corpo: String(obj["body"]) };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Caminho principal: Deno.createHttpClient + fetch. */
@@ -395,8 +493,8 @@ function postComNodeHttps(
 
 /**
  * Envia o XML assinado com o certificado A1 como agente TLS (mTLS).
- * Tenta Deno.fetch e cai automaticamente para node:https.
- * Erros sao sanitizados (sem senha/PFX/chave).
+ * Com proxy configurado, usa a Vercel (gru1). Sem proxy, tenta Deno.fetch
+ * e cai automaticamente para node:https. Erros sanitizados (sem segredos).
  */
 export async function transmitirParaSefin(
   xmlAssinado: string,
@@ -404,6 +502,22 @@ export async function transmitirParaSefin(
   endpoint: string,
 ): Promise<RespostaSefin> {
   const url = validarEndpointSefin(endpoint);
+  const proxy = obterProxySefin();
+
+  if (proxy) {
+    try {
+      const resposta = await postComProxy(
+        url.toString(),
+        xmlAssinado,
+        material,
+        proxy,
+      );
+      return respostaComJson(resposta.status, resposta.corpo);
+    } catch (erro) {
+      throw new SefinComunicacaoError(`proxy ${resumoSeguro(erro)}`);
+    }
+  }
+
   const detalhes: string[] = [];
 
   try {
