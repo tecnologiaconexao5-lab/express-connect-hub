@@ -776,6 +776,12 @@ serve(async (req: Request) => {
     }
 
     // ---------- 10) Rejeicao ----------
+    console.error(
+      "[nfse-assinar-transmitir] Rejeicao Sefin:",
+      `status=${resposta.httpStatus}`,
+      `body=${resposta.corpoResumo.slice(0, 600)}`,
+    );
+
     const motivo = truncar(
       [resposta.codigoRejeicao, resposta.mensagemRejeicao]
         .filter(Boolean)

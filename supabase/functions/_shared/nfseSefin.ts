@@ -85,37 +85,94 @@ function extrairTagXml(xml: string, tag: string): string | null {
 function extrairErrosSefin(
   valor: unknown,
 ): { codigo: string | null; mensagem: string | null } {
-  const itens: unknown[] = Array.isArray(valor)
-    ? valor
-    : valor == null
-    ? []
-    : [valor];
   const codigos: string[] = [];
-  const mensagens: string[] = [];
+  const mensagens = new Set<string>();
+  const chavesConhecidas = [
+    "codigo",
+    "code",
+    "id",
+    "descricao",
+    "mensagem",
+    "message",
+    "detail",
+    "title",
+    "status",
+    "type",
+    "instance",
+  ];
 
-  for (const item of itens) {
+  const visitar = function(item: unknown, chave?: string) {
+    if (item === null || item === undefined) return;
+
     if (typeof item === "string") {
-      if (item.trim()) mensagens.push(item.trim());
-      continue;
+      const textoItem = item.trim();
+      if (textoItem) {
+        mensagens.add(chave ? `${chave}: ${textoItem}` : textoItem);
+      }
+      return;
+    }
+    if (typeof item === "number" || typeof item === "boolean") {
+      mensagens.add(String(item));
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(function(valorItem) { visitar(valorItem, chave); });
+      return;
     }
 
     const obj = objeto(item);
-    if (!obj) continue;
+    if (!obj) return;
 
     const codigo = buscarCampo([obj], ["codigo", "code", "id"]);
     const mensagem = buscarCampo(
       [obj],
-      ["descricao", "mensagem", "message", "detail"],
+      ["descricao", "mensagem", "message", "detail", "title"],
     );
 
     if (codigo) codigos.push(codigo);
-    if (mensagem) mensagens.push(mensagem);
-    else if (codigo) mensagens.push(codigo);
-  }
+    if (mensagem) {
+      mensagens.add(codigo ? `${codigo} - ${mensagem}` : mensagem);
+    } else if (codigo) {
+      mensagens.add(codigo);
+    }
+
+    // ASP.NET pode devolver { errors: { Campo: ["msg"] } }.
+    for (const [nome, conteudo] of Object.entries(obj)) {
+      if (chavesConhecidas.includes(nome)) continue;
+      if (
+        conteudo === null || conteudo === undefined ||
+        typeof conteudo === "string" || typeof conteudo === "object"
+      ) {
+        visitar(conteudo, chave ? `${chave}.${nome}` : nome);
+      }
+    }
+  };
+
+  visitar(valor);
 
   return {
     codigo: codigos[0] || null,
-    mensagem: mensagens.length ? mensagens.join("; ") : null,
+    mensagem: mensagens.size ? Array.from(mensagens).join("; ") : null,
+  };
+}
+
+function extrairErrosXml(
+  xml: string,
+): { codigo: string | null; mensagem: string | null } {
+  const codigo = extrairTagXml(xml, "Codigo") ||
+    extrairTagXml(xml, "codigo") ||
+    extrairTagXml(xml, "Code");
+  const descricao = extrairTagXml(xml, "Descricao") ||
+    extrairTagXml(xml, "descricao") ||
+    extrairTagXml(xml, "Mensagem") ||
+    extrairTagXml(xml, "mensagem") ||
+    extrairTagXml(xml, "Message");
+
+  return {
+    codigo,
+    mensagem: descricao
+      ? (codigo ? `${codigo} - ${descricao}` : descricao)
+      : null,
   };
 }
 
@@ -190,12 +247,63 @@ async function analisarResposta(
     "danfseUrl",
   ]);
 
-  const erroBruto = raiz?.["erros"] ?? raiz?.["erro"] ?? raiz?.["rejeicao"] ??
-    raiz?.["falha"];
-  const errosExtraidos = extrairErrosSefin(erroBruto);
+  const httpOk = httpStatus >= 200 && httpStatus < 300;
+  const sucessoFlag = raiz?.["sucesso"] ?? raiz?.["success"];
 
-  let codigo = errosExtraidos.codigo;
-  let mensagem = errosExtraidos.mensagem;
+  const containersErro = [
+    Array.isArray(json) ? json : null,
+    raiz?.["erros"],
+    raiz?.["erro"],
+    raiz?.["errors"],
+    raiz?.["mensagens"],
+    raiz?.["rejeicao"],
+    raiz?.["falha"],
+  ].filter((valor) => {
+    if (valor === undefined || valor === null || valor === "") return false;
+    if (Array.isArray(valor) && valor.length === 0) return false;
+    if (
+      valor && typeof valor === "object" && !Array.isArray(valor) &&
+      Object.keys(valor).length === 0
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const temContainerErro = containersErro.length > 0;
+  const podeTerMensagemAmpla = !httpOk || temContainerErro ||
+    sucessoFlag === false;
+
+  const fontesErro = [
+    ...containersErro,
+    ...(podeTerMensagemAmpla
+      ? [
+        raiz?.["mensagem"],
+        raiz?.["descricao"],
+        raiz?.["title"],
+        raiz?.["detail"],
+      ]
+      : []),
+  ].filter((valor) => valor !== undefined && valor !== null && valor !== "");
+
+  let codigo: string | null = null;
+  const mensagensErro = new Set<string>();
+
+  for (const fonte of fontesErro) {
+    const parcial = extrairErrosSefin(fonte);
+    if (!codigo && parcial.codigo) codigo = parcial.codigo;
+    if (parcial.mensagem) mensagensErro.add(parcial.mensagem);
+  }
+
+  let mensagem: string | null = mensagensErro.size
+    ? Array.from(mensagensErro).join("; ")
+    : null;
+
+  if (!mensagem && podeTerMensagemAmpla) {
+    const xmlErro = extrairErrosXml(corpo);
+    if (!codigo && xmlErro.codigo) codigo = xmlErro.codigo;
+    if (xmlErro.mensagem) mensagem = xmlErro.mensagem;
+  }
 
   if (!codigo) {
     codigo = buscarCampo(objetos, ["codigoRejeicao", "codigo_rejeicao"]);
@@ -208,19 +316,15 @@ async function analisarResposta(
     ]);
   }
 
-  const sucessoFlag = raiz?.["sucesso"] ?? raiz?.["success"];
   const temErro = Boolean(
-    codigo ||
-      mensagem ||
-      (Array.isArray(erroBruto) && erroBruto.length > 0) ||
-      sucessoFlag === false,
+    codigo || mensagem || temContainerErro || sucessoFlag === false,
   );
-  const httpOk = httpStatus >= 200 && httpStatus < 300;
   const ok = httpOk && !temErro;
 
   if (!ok && !mensagem) {
-    mensagem = httpOk
-      ? "Rejeicao sem mensagem retornada pela Sefin."
+    const trecho = corpo.replace(/\s+/g, " ").trim().slice(0, 600);
+    mensagem = trecho
+      ? `HTTP ${httpStatus}: ${trecho}`
       : `HTTP ${httpStatus}`;
   }
 
