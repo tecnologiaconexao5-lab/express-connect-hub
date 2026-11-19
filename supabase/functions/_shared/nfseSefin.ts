@@ -26,6 +26,7 @@ export interface MaterialTls {
 export interface RespostaSefin {
   ok: boolean;
   httpStatus: number;
+  idDps: string | null;
   chaveAcesso: string | null;
   numero: string | null;
   protocolo: string | null;
@@ -36,6 +37,86 @@ export interface RespostaSefin {
   xmlRetorno: string | null;
   corpoResumo: string;
   json: Record<string, unknown> | null;
+}
+
+function bytesParaBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const bloco = 0x8000;
+  for (let i = 0; i < bytes.length; i += bloco) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + bloco));
+  }
+  return btoa(bin);
+}
+
+function base64ParaBytes(texto: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(texto);
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function comprimirGzipBase64(texto: string): Promise<string> {
+  const textoBytes = new TextEncoder().encode(texto);
+  const entrada = new Uint8Array(new ArrayBuffer(textoBytes.length));
+  entrada.set(textoBytes);
+  const stream = new Blob([entrada]).stream().pipeThrough(
+    new CompressionStream("gzip"),
+  );
+  const comprimido = new Uint8Array(await new Response(stream).arrayBuffer());
+  return bytesParaBase64(comprimido);
+}
+
+async function descomprimirGzipBase64(valor: string): Promise<string> {
+  const bytes = base64ParaBytes(valor);
+  const stream = new Blob([bytes]).stream().pipeThrough(
+    new DecompressionStream("gzip"),
+  );
+  return await new Response(stream).text();
+}
+
+function extrairTagXml(xml: string, tag: string): string | null {
+  const regex = new RegExp(
+    `<(?:\\w+:)?${tag}[^>]*>([^<]+)<\\/(?:\\w+:)?${tag}>`,
+    "i",
+  );
+  return xml.match(regex)?.[1]?.trim() || null;
+}
+
+function extrairErrosSefin(
+  valor: unknown,
+): { codigo: string | null; mensagem: string | null } {
+  const itens: unknown[] = Array.isArray(valor)
+    ? valor
+    : valor == null
+    ? []
+    : [valor];
+  const codigos: string[] = [];
+  const mensagens: string[] = [];
+
+  for (const item of itens) {
+    if (typeof item === "string") {
+      if (item.trim()) mensagens.push(item.trim());
+      continue;
+    }
+
+    const obj = objeto(item);
+    if (!obj) continue;
+
+    const codigo = buscarCampo([obj], ["codigo", "code", "id"]);
+    const mensagem = buscarCampo(
+      [obj],
+      ["descricao", "mensagem", "message", "detail"],
+    );
+
+    if (codigo) codigos.push(codigo);
+    if (mensagem) mensagens.push(mensagem);
+    else if (codigo) mensagens.push(codigo);
+  }
+
+  return {
+    codigo: codigos[0] || null,
+    mensagem: mensagens.length ? mensagens.join("; ") : null,
+  };
 }
 
 function objeto(valor: unknown): Record<string, unknown> | null {
@@ -63,11 +144,11 @@ function buscarCampo(
   return null;
 }
 
-function analisarResposta(
+async function analisarResposta(
   httpStatus: number,
   corpo: string,
   json: unknown,
-): RespostaSefin {
+): Promise<RespostaSefin> {
   const raiz = objeto(json);
   const objetos = [
     raiz,
@@ -77,13 +158,13 @@ function analisarResposta(
     objeto(raiz?.["dps"]),
   ].filter((o): o is Record<string, unknown> => Boolean(o));
 
-  const chaveAcesso = buscarCampo(objetos, [
+  let chaveAcesso = buscarCampo(objetos, [
     "chaveAcesso",
     "chave_acesso",
     "chave",
     "codigoVerificacao",
   ]);
-  const numero = buscarCampo(objetos, [
+  let numero = buscarCampo(objetos, [
     "numero",
     "numeroNfse",
     "numero_nfse",
@@ -109,35 +190,12 @@ function analisarResposta(
     "danfseUrl",
   ]);
 
-  let codigo: string | null = null;
-  let mensagem: string | null = null;
-
   const erroBruto = raiz?.["erros"] ?? raiz?.["erro"] ?? raiz?.["rejeicao"] ??
     raiz?.["falha"];
+  const errosExtraidos = extrairErrosSefin(erroBruto);
 
-  if (Array.isArray(erroBruto) && erroBruto.length > 0) {
-    const primeiro = objeto(erroBruto[0]);
-    if (primeiro) {
-      codigo = buscarCampo([primeiro], ["codigo", "code", "id"]);
-      mensagem = buscarCampo(
-        [primeiro],
-        ["mensagem", "message", "descricao", "detail"],
-      );
-    } else {
-      mensagem = texto(erroBruto[0]);
-    }
-  } else {
-    const objErro = objeto(erroBruto);
-    if (objErro) {
-      codigo = buscarCampo([objErro], ["codigo", "code", "id"]);
-      mensagem = buscarCampo(
-        [objErro],
-        ["mensagem", "message", "descricao", "detail"],
-      );
-    } else {
-      mensagem = texto(erroBruto);
-    }
-  }
+  let codigo = errosExtraidos.codigo;
+  let mensagem = errosExtraidos.mensagem;
 
   if (!codigo) {
     codigo = buscarCampo(objetos, ["codigoRejeicao", "codigo_rejeicao"]);
@@ -166,13 +224,44 @@ function analisarResposta(
       : `HTTP ${httpStatus}`;
   }
 
-  const xmlRetorno = /^\s*</.test(corpo) && !/<html/i.test(corpo)
-    ? corpo
-    : null;
+  const xmlGzipB64 = buscarCampo(objetos, [
+    "nfseXmlGZipB64",
+    "nfseXmlGzipB64",
+    "xmlGZipB64",
+    "nfseXmlGzip",
+  ]);
+
+  let xmlRetorno: string | null = null;
+  if (xmlGzipB64) {
+    try {
+      xmlRetorno = await descomprimirGzipBase64(xmlGzipB64);
+    } catch (erro) {
+      console.warn(
+        "[nfseSefin] Falha ao descomprimir nfseXmlGZipB64:",
+        erro instanceof Error ? erro.message.slice(0, 200) : "erro",
+      );
+    }
+  }
+  if (!xmlRetorno) {
+    xmlRetorno = /^\s*</.test(corpo) && !/<html/i.test(corpo) ? corpo : null;
+  }
+
+  if (!chaveAcesso && xmlRetorno) {
+    chaveAcesso = extrairTagXml(xmlRetorno, "chaveAcesso") ||
+      extrairTagXml(xmlRetorno, "chaveAcessoNFSe");
+  }
+  if (!numero && xmlRetorno) {
+    numero = extrairTagXml(xmlRetorno, "nNFSe") ||
+      extrairTagXml(xmlRetorno, "numeroNfse") ||
+      extrairTagXml(xmlRetorno, "numero");
+  }
+
+  const idDps = buscarCampo(objetos, ["idDps", "id_dps"]);
 
   return {
     ok,
     httpStatus,
+    idDps,
     chaveAcesso,
     numero,
     protocolo,
@@ -273,20 +362,40 @@ function obterProxySefin(): ConfigProxySefin | null {
   return { url: parsed.toString(), token };
 }
 
-function respostaComJson(status: number, corpo: string): RespostaSefin {
+async function respostaComJson(
+  status: number,
+  corpo: string,
+): Promise<RespostaSefin> {
   let json: unknown = null;
   try {
     json = JSON.parse(corpo);
   } catch {
     json = null;
   }
-  return analisarResposta(status, corpo, json);
+  return await analisarResposta(status, corpo, json);
+}
+
+interface CorpoSefin {
+  body: string;
+  headers: Record<string, string>;
+}
+
+/** Contrato oficial: DPS em GZip+Base64 dentro de JSON. */
+async function montarCorpoSefin(xmlAssinado: string): Promise<CorpoSefin> {
+  const dpsXmlGZipB64 = await comprimirGzipBase64(xmlAssinado);
+  return {
+    body: JSON.stringify({ dpsXmlGZipB64 }),
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+  };
 }
 
 /** Envio via proxy Vercel (regiao gru1) com mTLS do lado do proxy. */
 async function postComProxy(
   urlSefin: string,
-  xmlAssinado: string,
+  corpoSefin: CorpoSefin,
   material: MaterialTls,
   proxy: ConfigProxySefin,
 ): Promise<RespostaHttp> {
@@ -305,11 +414,8 @@ async function postComProxy(
       body: JSON.stringify({
         url: urlSefin,
         method: "POST",
-        headers: {
-          "Content-Type": "application/xml; charset=utf-8",
-          "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
-        },
-        body: xmlAssinado,
+        headers: corpoSefin.headers,
+        body: corpoSefin.body,
         cert: material.chainPem,
         key: material.keyPem,
         ...(ca ? { ca } : {}),
@@ -348,7 +454,7 @@ async function postComProxy(
 /** Caminho principal: Deno.createHttpClient + fetch. */
 async function postComDenoFetch(
   endpoint: string,
-  xmlAssinado: string,
+  corpoSefin: CorpoSefin,
   material: MaterialTls,
 ): Promise<RespostaHttp> {
   const createHttpClient = (Deno as unknown as {
@@ -374,11 +480,8 @@ async function postComDenoFetch(
   try {
     const init = {
       method: "POST",
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
-      },
-      body: xmlAssinado,
+      headers: corpoSefin.headers,
+      body: corpoSefin.body,
       client: cliente,
       signal: controller.signal,
     } as unknown as RequestInit;
@@ -398,7 +501,7 @@ async function postComDenoFetch(
 /** Fallback: node:https com mTLS (cert/key PEM e CA valida). */
 function postComNodeHttps(
   url: URL,
-  xmlAssinado: string,
+  corpoSefin: CorpoSefin,
   material: MaterialTls,
 ): Promise<RespostaHttp> {
   return new Promise((resolve, reject) => {
@@ -420,7 +523,7 @@ function postComNodeHttps(
     };
 
     try {
-      const corpoBytes = new TextEncoder().encode(xmlAssinado);
+      const corpoBytes = new TextEncoder().encode(corpoSefin.body);
       const ca = lerCaSefin();
 
       const opcoes = {
@@ -430,8 +533,7 @@ function postComNodeHttps(
         path: `${url.pathname || "/"}${url.search}`,
         method: "POST",
         headers: {
-          "Content-Type": "application/xml; charset=utf-8",
-          "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
+          ...corpoSefin.headers,
           "Content-Length": String(corpoBytes.byteLength),
         },
         cert: material.chainPem,
@@ -478,7 +580,7 @@ function postComNodeHttps(
         }
       });
 
-      requisicao.write(xmlAssinado);
+      requisicao.write(corpoSefin.body);
       requisicao.end();
     } catch (erro) {
       falhar(erro);
@@ -503,16 +605,17 @@ export async function transmitirParaSefin(
 ): Promise<RespostaSefin> {
   const url = validarEndpointSefin(endpoint);
   const proxy = obterProxySefin();
+  const corpoSefin = await montarCorpoSefin(xmlAssinado);
 
   if (proxy) {
     try {
       const resposta = await postComProxy(
         url.toString(),
-        xmlAssinado,
+        corpoSefin,
         material,
         proxy,
       );
-      return respostaComJson(resposta.status, resposta.corpo);
+      return await respostaComJson(resposta.status, resposta.corpo);
     } catch (erro) {
       throw new SefinComunicacaoError(`proxy ${resumoSeguro(erro)}`);
     }
@@ -521,15 +624,19 @@ export async function transmitirParaSefin(
   const detalhes: string[] = [];
 
   try {
-    const resposta = await postComDenoFetch(url.toString(), xmlAssinado, material);
-    return respostaComJson(resposta.status, resposta.corpo);
+    const resposta = await postComDenoFetch(
+      url.toString(),
+      corpoSefin,
+      material,
+    );
+    return await respostaComJson(resposta.status, resposta.corpo);
   } catch (erro) {
     detalhes.push(`deno-fetch ${resumoSeguro(erro)}`);
   }
 
   try {
-    const resposta = await postComNodeHttps(url, xmlAssinado, material);
-    return respostaComJson(resposta.status, resposta.corpo);
+    const resposta = await postComNodeHttps(url, corpoSefin, material);
+    return await respostaComJson(resposta.status, resposta.corpo);
   } catch (erro) {
     detalhes.push(`node-https ${resumoSeguro(erro)}`);
   }

@@ -690,6 +690,7 @@ serve(async (req: Request) => {
             emissao: {
               ambiente,
               http_status: resposta.httpStatus,
+              id_dps: resposta.idDps,
               chave_acesso: resposta.chaveAcesso,
               numero: numeroOficial,
               protocolo: resposta.protocolo,
@@ -766,6 +767,7 @@ serve(async (req: Request) => {
       return respostaJson({
         success: true,
         status: "emitida",
+        id_dps: resposta.idDps,
         numero: numeroOficial,
         chave_acesso: resposta.chaveAcesso,
         protocolo: resposta.protocolo,
