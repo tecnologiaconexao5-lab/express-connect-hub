@@ -34,6 +34,8 @@ const BUCKET_CERTIFICADOS = "certificados-fiscais";
 const BUCKET_DOCUMENTOS = "fiscal-documentos";
 const CNPJ_MATRIZ_NFSE = "31227975000180";
 const CODIGO_SERVICO_PADRAO = "16.02.01.002";
+/** NBS padrão da operação (transporte rodoviário de cargas) — 9 dígitos na DPS. */
+const CODIGO_NBS_PADRAO = "1.0501.15.00";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -454,6 +456,11 @@ serve(async (req: Request) => {
       ? competenciaMeta
       : new Date(rascunho.created_at || Date.now()).toISOString().slice(0, 7);
 
+    const codigoServicoMeta = texto(meta.codigo_servico) ||
+      CODIGO_SERVICO_PADRAO;
+    const codigoNbsMeta = texto(meta.codigo_nbs) ||
+      (codigoServicoMeta === CODIGO_SERVICO_PADRAO ? CODIGO_NBS_PADRAO : null);
+
     const dps: DpsPayload = {
       competencia,
       prestador: {
@@ -469,8 +476,7 @@ serve(async (req: Request) => {
         email: texto(tomadorMeta?.["email"]),
       },
       servico: {
-        codigoTributacaoNacional: texto(meta.codigo_servico) ||
-          CODIGO_SERVICO_PADRAO,
+        codigoTributacaoNacional: codigoServicoMeta,
         descricao: texto(meta.servico) || "Transporte de bens ou valores",
         valorServico: Number(meta.valor_servico ?? rascunho.valor ?? 0),
         aliquotaIss: meta.aliquota_iss != null
@@ -479,6 +485,7 @@ serve(async (req: Request) => {
         issRetido: meta.iss_retido === true,
         codigoMunicipioPrestacao: texto(meta.codigo_municipio_prestacao) ||
           texto(matriz["codigo_ibge"]),
+        codigoNbs: codigoNbsMeta,
       },
       serie: serieMeta,
       numero: numeroDpsMeta,

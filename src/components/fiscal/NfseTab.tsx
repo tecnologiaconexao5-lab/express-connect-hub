@@ -43,7 +43,7 @@ const PASSOS_NFSE = [
 type CodigoServicoOpcao = { codigo: string; descricao: string };
 
 const CODIGOS_SERVICO_NACIONAIS: CodigoServicoOpcao[] = [
-  { codigo: "16.02.01.002", descricao: "Transporte de bens ou valores" },
+  { codigo: "16.02.01.002", descricao: "Transporte de bens ou valores, dentro do território do Município" },
   { codigo: "16.01.01", descricao: "Transporte coletivo" },
   { codigo: "16.01.02", descricao: "Transporte escolar" },
   { codigo: "16.02.01", descricao: "Outros serviços de transporte de natureza municipal" },
@@ -68,6 +68,241 @@ function montarCodigosServico(
   });
 
   return Array.from(mapa.values());
+}
+
+/** Código NBS padrão da operação (transporte rodoviário de cargas). */
+const CODIGO_NBS_PADRAO = "1.0501.15.00";
+const CODIGOS_NBS: CodigoServicoOpcao[] = [
+  {
+    codigo: "1.0501.15.00",
+    descricao: "Serviços de transporte rodoviário de cargas postais e malotes",
+  },
+  {
+    codigo: "1.0501.19.00",
+    descricao: "Serviços de transporte rodoviário de cargas não classificados nas subposições anteriores",
+  },
+];
+
+type CodigoComboboxProps = {
+  id?: string;
+  value: string;
+  options: CodigoServicoOpcao[];
+  placeholder?: string;
+  vazioTexto?: string;
+  rodapeTexto?: string;
+  onChangeValue: (valor: string) => void;
+  onSelectOption: (opcao: CodigoServicoOpcao) => void;
+};
+
+/** Combobox pesquisável de códigos (serviço nacional / NBS). */
+function CodigoCombobox({
+  id,
+  value,
+  options,
+  placeholder,
+  vazioTexto,
+  rodapeTexto,
+  onChangeValue,
+  onSelectOption,
+}: CodigoComboboxProps) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const comboRef = useRef<HTMLDivElement>(null);
+
+  useEffect(function() {
+    function aoClicarFora(event: MouseEvent) {
+      if (comboRef.current && !comboRef.current.contains(event.target as Node)) {
+        setAberto(false);
+      }
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return function() { document.removeEventListener("mousedown", aoClicarFora); };
+  }, []);
+
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo
+    ? options.filter(function(opcao) {
+      return opcao.codigo.toLowerCase().includes(termo) ||
+        opcao.descricao.toLowerCase().includes(termo);
+    })
+    : options;
+
+  return (
+    <div className="relative" ref={comboRef}>
+      <Input
+        id={id}
+        className="font-mono"
+        value={value}
+        placeholder={placeholder}
+        onChange={function(e) {
+          onChangeValue(e.target.value);
+          setBusca(e.target.value);
+          setAberto(true);
+        }}
+        onFocus={function() { setBusca(""); setAberto(true); }}
+        onClick={function() { setBusca(""); setAberto(true); }}
+        onKeyDown={function(e) { if (e.key === "Escape") setAberto(false); }}
+      />
+      {aberto && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+          {filtrados.length === 0 ? (
+            <p className="p-3 text-xs text-muted-foreground">
+              {vazioTexto || "Nenhum código na lista. Você pode digitar manualmente."}
+            </p>
+          ) : filtrados.slice(0, 40).map(function(opcao) {
+            return (
+              <button
+                type="button"
+                key={opcao.codigo}
+                onClick={function() {
+                  onSelectOption(opcao);
+                  setBusca("");
+                  setAberto(false);
+                }}
+                className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-slate-50"
+              >
+                <span className="font-mono text-xs font-semibold text-slate-800">
+                  {opcao.codigo}
+                </span>
+                <span className="text-xs text-slate-500">{opcao.descricao}</span>
+              </button>
+            );
+          })}
+          {rodapeTexto && (
+            <p className="border-t px-3 py-2 text-[10px] text-muted-foreground">
+              {rodapeTexto}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type MunicipioComboboxProps = {
+  value: string;
+  uf: string;
+  placeholder?: string;
+  onChange: (nome: string, ufSelecionada?: string) => void;
+};
+
+type MunicipioIbgeOpcao = { nome: string; uf: string | null; codigo: string };
+
+/** Combobox de municípios (tabela municipios_ibge) com lista real ao abrir. */
+function MunicipioCombobox({
+  value,
+  uf,
+  placeholder,
+  onChange,
+}: MunicipioComboboxProps) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [resultados, setResultados] = useState<MunicipioIbgeOpcao[]>([]);
+  const [carregando, setCarregando] = useState(false);
+  const comboRef = useRef<HTMLDivElement>(null);
+  const sequenciaRef = useRef(0);
+
+  useEffect(function() {
+    function aoClicarFora(event: MouseEvent) {
+      if (comboRef.current && !comboRef.current.contains(event.target as Node)) {
+        setAberto(false);
+      }
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return function() { document.removeEventListener("mousedown", aoClicarFora); };
+  }, []);
+
+  useEffect(function() {
+    if (!aberto) return;
+    const meu = ++sequenciaRef.current;
+    setCarregando(true);
+    let cancelado = false;
+
+    const timer = setTimeout(async function() {
+      let query = supabase
+        .from("municipios_ibge")
+        .select("nome, uf, codigo")
+        .order("nome", { ascending: true })
+        .limit(25);
+
+      const termo = busca.trim();
+      if (termo) query = query.ilike("nome", `%${termo}%`);
+
+      const { data, error } = await query;
+      if (cancelado || meu !== sequenciaRef.current) return;
+
+      const lista = (error ? [] : (data || [])) as MunicipioIbgeOpcao[];
+      setResultados(lista.filter(function(item) { return Boolean(item.nome); }));
+      setCarregando(false);
+    }, 250);
+
+    return function() {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [aberto, busca]);
+
+  return (
+    <div className="relative" ref={comboRef}>
+      <div className="relative flex items-center">
+        <Input
+          value={value}
+          placeholder={placeholder || "Buscar cidade (ex.: São Paulo)"}
+          onChange={function(e) {
+            onChange(e.target.value);
+            setBusca(e.target.value);
+            setAberto(true);
+          }}
+          onFocus={function() { setBusca(""); setAberto(true); }}
+          onClick={function() { setBusca(""); setAberto(true); }}
+          onKeyDown={function(e) { if (e.key === "Escape") setAberto(false); }}
+          className="pr-16"
+        />
+        <div className="absolute right-2 flex items-center gap-1">
+          {uf && (
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+              {uf}
+            </span>
+          )}
+          {carregando
+            ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+            : <Search className="h-4 w-4 text-slate-400" />}
+        </div>
+      </div>
+
+      {aberto && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+          {carregando && resultados.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 p-3 text-xs text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Buscando...
+            </div>
+          ) : resultados.length === 0 ? (
+            <p className="p-3 text-center text-xs text-muted-foreground">
+              Nenhum município encontrado. Você pode digitar manualmente.
+            </p>
+          ) : resultados.map(function(item) {
+            return (
+              <button
+                type="button"
+                key={item.codigo}
+                onClick={function() {
+                  onChange(item.nome, item.uf || undefined);
+                  setBusca("");
+                  setAberto(false);
+                }}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+              >
+                <span className="truncate text-slate-800">{item.nome}</span>
+                <span className="shrink-0 text-[10px] font-semibold text-slate-500">
+                  {item.uf || "—"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type BrasilApiCnpj = {
@@ -222,6 +457,7 @@ export default function NfseTab() {
     municipio_ibge: "3550308",
     uf: "SP",
     codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
+    codigo_nbs: CODIGO_NBS_PADRAO,
     descricao_servico: "",
     aliquota_iss: "" as string,
     iss_retido: false,
@@ -244,26 +480,14 @@ export default function NfseTab() {
   const [origemAberto, setOrigemAberto] = useState(false);
   const origemComboRef = useRef<HTMLDivElement>(null);
   const [consultandoCnpj, setConsultandoCnpj] = useState(false);
+  const [erroConsultaCnpj, setErroConsultaCnpj] = useState("");
   const [codigosServico, setCodigosServico] = useState<CodigoServicoOpcao[]>(CODIGOS_SERVICO_NACIONAIS);
-  const [codigoAberto, setCodigoAberto] = useState(false);
-  const codigoComboRef = useRef<HTMLDivElement>(null);
 
   // Fecha o combobox de OS ao clicar fora.
   useEffect(function() {
     function aoClicarFora(event: MouseEvent) {
       if (origemComboRef.current && !origemComboRef.current.contains(event.target as Node)) {
         setOrigemAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", aoClicarFora);
-    return function() { document.removeEventListener("mousedown", aoClicarFora); };
-  }, []);
-
-  // Fecha o combobox de código de serviço ao clicar fora.
-  useEffect(function() {
-    function aoClicarFora(event: MouseEvent) {
-      if (codigoComboRef.current && !codigoComboRef.current.contains(event.target as Node)) {
-        setCodigoAberto(false);
       }
     }
     document.addEventListener("mousedown", aoClicarFora);
@@ -416,6 +640,7 @@ export default function NfseTab() {
       emitente_id: "", emitente_nome: "", emitente_cnpj: "",
       municipio: "SAO PAULO", municipio_ibge: "3550308", uf: "SP",
       codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
+      codigo_nbs: CODIGO_NBS_PADRAO,
       descricao_servico: "", aliquota_iss: "", iss_retido: false,
       tomador_nome: "", tomador_cnpj: "",
       tomador_email: "", tomador_telefone: "",
@@ -482,7 +707,6 @@ export default function NfseTab() {
     } catch {
       setCodigosServico(CODIGOS_SERVICO_NACIONAIS);
     }
-    setCodigoAberto(false);
 
     fetchOrigens("os");
     setPassoAtual(1);
@@ -640,13 +864,17 @@ export default function NfseTab() {
     }
   };
 
-  const consultarCnpjTomador = async function() {
-    const cnpj = somenteDigitos(gerarForm.tomador_cnpj);
+  const consultarCnpjTomador = async function(cnpjInformado?: string) {
+    const cnpj = somenteDigitos(cnpjInformado ?? gerarForm.tomador_cnpj);
     if (cnpj.length !== 14) {
-      toast.error("Informe um CNPJ valido (14 digitos).");
+      const msg = "Informe um CNPJ válido (14 dígitos).";
+      setErroConsultaCnpj(msg);
+      toast.error(msg);
       return;
     }
+    if (consultandoCnpj) return;
 
+    setErroConsultaCnpj("");
     setConsultandoCnpj(true);
     try {
       const resposta = await fetch(
@@ -655,11 +883,11 @@ export default function NfseTab() {
       );
 
       if (!resposta.ok) {
-        toast.error(
-          resposta.status === 404
-            ? "CNPJ nao encontrado na Receita."
-            : "Falha ao consultar o CNPJ.",
-        );
+        const msg = resposta.status === 404
+          ? "CNPJ não encontrado na Receita."
+          : "Falha ao consultar o CNPJ.";
+        setErroConsultaCnpj(msg);
+        toast.error(msg);
         return;
       }
 
@@ -668,6 +896,7 @@ export default function NfseTab() {
       setGerarForm(function(p) {
         return {
           ...p,
+          tomador_cnpj: cnpj,
           tomador_nome: dados.razao_social || dados.nome_fantasia || p.tomador_nome,
           tomador_email: dados.email || p.tomador_email,
           tomador_telefone: dados.ddd_telefone_1 || dados.telefone || p.tomador_telefone,
@@ -681,17 +910,35 @@ export default function NfseTab() {
         };
       });
 
+      setErroConsultaCnpj("");
       toast.success("Dados do CNPJ carregados.");
     } catch (erro: unknown) {
       console.error(
         "[NfseTab] Erro ao consultar CNPJ:",
         erro instanceof Error ? erro.message : String(erro),
       );
-      toast.error("Erro de rede ao consultar o CNPJ.");
+      const msg = "Erro de rede ao consultar o CNPJ.";
+      setErroConsultaCnpj(msg);
+      toast.error(msg);
     } finally {
       setConsultandoCnpj(false);
     }
   };
+
+  // Consulta automática ao completar 14 dígitos (o botão "Buscar CNPJ" também dispara).
+  const cnpjTomadorDigitos = somenteDigitos(gerarForm.tomador_cnpj);
+  const ultimoCnpjConsultadoRef = useRef("");
+
+  useEffect(function() {
+    if (cnpjTomadorDigitos.length !== 14) {
+      ultimoCnpjConsultadoRef.current = "";
+      return;
+    }
+    if (ultimoCnpjConsultadoRef.current === cnpjTomadorDigitos) return;
+    ultimoCnpjConsultadoRef.current = cnpjTomadorDigitos;
+    void consultarCnpjTomador(cnpjTomadorDigitos);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cnpjTomadorDigitos]);
 
   const selecionarCodigoServico = function(opcao: CodigoServicoOpcao) {
     setGerarForm(function(p) {
@@ -701,7 +948,6 @@ export default function NfseTab() {
         descricao_servico: p.descricao_servico || opcao.descricao,
       };
     });
-    setCodigoAberto(false);
   };
 
   const aplicarRegraMunicipal = async function(codigoIbge: string, nomeMunicipio: string) {
@@ -783,6 +1029,7 @@ export default function NfseTab() {
       valor_servico: gerarForm.valor_servico,
       valor_desconto: gerarForm.valor_desconto,
       codigo_servico: gerarForm.codigo_servico || undefined,
+      codigo_nbs: gerarForm.codigo_nbs || undefined,
       aliquota_iss: aliquotaNumerica != null && !Number.isNaN(aliquotaNumerica) ? aliquotaNumerica : null,
       iss_retido: gerarForm.iss_retido,
     });
@@ -904,6 +1151,16 @@ export default function NfseTab() {
     const municipio = String(meta.municipio_prestacao || EMITENTE_DANFSE.municipio);
     const uf = String(meta.uf || EMITENTE_DANFSE.uf);
 
+    // IM da DANFSe: usa a IM registrada no emitente (string, com zeros à
+    // esquerda). Fallback para o valor oficial de São Paulo.
+    const metaEmitenteDanfse = (meta.emitente || {}) as Record<string, unknown>;
+    const emitenteDanfse: DanfsePrintDados["emitente"] = {
+      ...EMITENTE_DANFSE,
+      inscricaoMunicipal: String(
+        metaEmitenteDanfse.inscricao_municipal || EMITENTE_DANFSE.inscricaoMunicipal,
+      ),
+    };
+
     return {
       logoUrl: urlLogoAbsoluta(logoEmitenteUrl),
       numero: String(nfse.numero || "—"),
@@ -914,7 +1171,7 @@ export default function NfseTab() {
       serieDps: String(meta.serie || "—"),
       situacao: situacaoDanfse(nfse.status),
       statusCodigo: String(nfse.status || ""),
-      emitente: EMITENTE_DANFSE,
+      emitente: emitenteDanfse,
       tomador: {
         nome: String(tomador.nome || "—"),
         cnpj: String(tomador.cnpj || "—"),
@@ -965,15 +1222,21 @@ export default function NfseTab() {
   const gerarXmlDoRascunho = function(nfse: FiscalNfse): string {
     const meta = nfse.metadata || {};
     const tomador = meta.tomador || {};
+    const metaEmitente = (meta.emitente || {}) as Record<string, unknown>;
     const competencia = /^\d{4}-\d{2}$/.test(String(meta.competencia || ""))
       ? String(meta.competencia)
       : new Date(nfse.created_at || Date.now()).toISOString().slice(0, 7);
+
+    // IM como STRING — preserva zeros à esquerda (ex.: 000000060458216).
+    const inscricaoMunicipalEmitente = String(
+      metaEmitente.inscricao_municipal || EMITENTE_DANFSE.inscricaoMunicipal,
+    );
 
     const dps: DpsPayload = {
       competencia,
       prestador: {
         cnpj: "31227975000180",
-        inscricaoMunicipal: "60458216",
+        inscricaoMunicipal: inscricaoMunicipalEmitente,
         razaoSocial: EMITENTE_DANFSE.nome,
         municipioIbge: "3550308",
       },
@@ -990,6 +1253,7 @@ export default function NfseTab() {
         aliquotaIss: Number(meta.aliquota_iss ?? 0),
         issRetido: meta.iss_retido === true,
         codigoMunicipioPrestacao: String(meta.codigo_municipio_prestacao || "3550308"),
+        codigoNbs: meta.codigo_nbs ? String(meta.codigo_nbs) : null,
       },
       serie: String(meta.serie || "1"),
       numero: meta.numero_dps ? String(meta.numero_dps) : null,
@@ -999,7 +1263,7 @@ export default function NfseTab() {
     const empresa: FiscalCompanySettings = {
       cnpj: "31.227.975/0001-80",
       razaoSocial: EMITENTE_DANFSE.nome,
-      inscricaoMunicipal: "60458216",
+      inscricaoMunicipal: inscricaoMunicipalEmitente,
       codigoIbge: "3550308",
       cep: "03087010",
       logradouro: "RUA ANTONIO MACEDO",
@@ -1170,22 +1434,15 @@ export default function NfseTab() {
     try { await supabase.from("fiscal_logs").insert([{ entidade_tipo:"NFSE",entidade_id:selectedNfse?.id,acao:"PRE_EMISSAO_NFSE_VISUALIZADA",request:{nfse_id:selectedNfse?.id},response:{status:"dados_internos_prontos"}}]); } catch{}
   };
 
-  // OS/CT-e travam tomador/CNPJ/valor (dados sistemicos); avulso libera edicao.
-  const camposTravados = gerarForm.origem !== "avulso";
+  // Apenas o VALOR do serviço fica travado pela origem. Tomador/CNPJ/endereço
+  // permanecem editáveis (inclusive para busca avulsa de CNPJ).
+  const valorTravadoPelaOrigem = gerarForm.origem !== "avulso";
   const termoBuscaOrigem = buscaOrigem.trim().toLowerCase();
   const origensFiltradas = termoBuscaOrigem
     ? origens.filter(function(o) {
       return ((o.numero || "") + " " + o.cliente_nome).toLowerCase().includes(termoBuscaOrigem);
     })
     : origens;
-
-  const termoCodigoServico = (gerarForm.codigo_servico || "").trim().toLowerCase();
-  const codigosFiltrados = termoCodigoServico
-    ? codigosServico.filter(function(opcao) {
-      return opcao.codigo.toLowerCase().includes(termoCodigoServico) ||
-        opcao.descricao.toLowerCase().includes(termoCodigoServico);
-    })
-    : codigosServico;
 
   // ===================================================================
   // WIZARD FULL PAGE — Emissao de NFS-e Nacional (5 passos)
@@ -1321,16 +1578,46 @@ export default function NfseTab() {
                 </Badge>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div>
                   <Label>Município de emissão (IBGE)</Label>
                   <Input value={gerarForm.municipio_ibge || "3550308"} readOnly className="bg-slate-50" />
                 </div>
                 <div>
-                  <Label>Código de Serviço Nacional padrão</Label>
-                  <Input value={CODIGO_SERVICO_NACIONAL_PADRAO} readOnly className="bg-slate-50 font-mono" />
+                  <Label>Código de Serviço Nacional</Label>
+                  <CodigoCombobox
+                    value={gerarForm.codigo_servico}
+                    options={codigosServico}
+                    placeholder="Ex.: 16.02.01.002"
+                    vazioTexto="Nenhum código na lista. Você pode digitar manualmente."
+                    rodapeTexto="Selecione ou digite um código customizado."
+                    onChangeValue={function(valor) {
+                      setGerarForm(function(p) { return { ...p, codigo_servico: valor }; });
+                    }}
+                    onSelectOption={selecionarCodigoServico}
+                  />
+                </div>
+                <div>
+                  <Label>Código NBS</Label>
+                  <CodigoCombobox
+                    value={gerarForm.codigo_nbs}
+                    options={CODIGOS_NBS}
+                    placeholder="Ex.: 1.0501.15.00"
+                    vazioTexto="Nenhum NBS na lista. Você pode digitar manualmente."
+                    rodapeTexto="NBS 2.0 — transporte rodoviário de cargas: 1.0501.15.00."
+                    onChangeValue={function(valor) {
+                      setGerarForm(function(p) { return { ...p, codigo_nbs: valor }; });
+                    }}
+                    onSelectOption={function(opcao) {
+                      setGerarForm(function(p) { return { ...p, codigo_nbs: opcao.codigo }; });
+                    }}
+                  />
                 </div>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                O código de serviço (cTribNac) e o NBS seguem para a DPS. Padrão:
+                16.02.01.002 (transporte de bens) e NBS 1.0501.15.00.
+              </p>
 
               {!gerarForm.emitente_id && (
                 <div className="flex items-center gap-1 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
@@ -1346,7 +1633,7 @@ export default function NfseTab() {
               <div>
                 <h2 className="text-lg font-semibold">Tomador</h2>
                 <p className="text-sm text-muted-foreground">
-                  Selecione a origem e os dados do tomador. Campos da OS são travados.
+                  Selecione a origem ou informe o CNPJ do tomador. Todos os campos ficam editáveis.
                 </p>
               </div>
 
@@ -1391,7 +1678,20 @@ export default function NfseTab() {
                               });
                             }
                           }}
-                          onFocus={function() { setOrigemAberto(true); }}
+                          onFocus={function() {
+                            setOrigemAberto(true);
+                            // Garante a lista real das OSs/CT-e recentes ao clicar,
+                            // mesmo se a carga inicial ainda não terminou.
+                            if (origens.length === 0) {
+                              void fetchOrigens(gerarForm.origem === "cte" ? "cte" : "os");
+                            }
+                          }}
+                          onClick={function() {
+                            setOrigemAberto(true);
+                            if (origens.length === 0) {
+                              void fetchOrigens(gerarForm.origem === "cte" ? "cte" : "os");
+                            }
+                          }}
                           onKeyDown={function(e) { if (e.key === "Escape") setOrigemAberto(false); }}
                         />
                         {origemAberto && (
@@ -1472,9 +1772,13 @@ export default function NfseTab() {
                     />
                   ) : (
                     <>
-                      <Input value={gerarForm.tomador_nome} readOnly className="bg-slate-50" placeholder="Preenchido pela OS" />
+                      <Input
+                        value={gerarForm.tomador_nome}
+                        onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_nome: e.target.value }; }); }}
+                        placeholder="Razão social do tomador"
+                      />
                       <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <Lock className="h-3 w-3" /> Preenchido automaticamente pela origem
+                        <Lock className="h-3 w-3" /> Preenchido pela origem/CNPJ — editável
                       </p>
                     </>
                   )}
@@ -1484,26 +1788,30 @@ export default function NfseTab() {
                   <div className="flex gap-2">
                     <Input
                       value={gerarForm.tomador_cnpj}
-                      readOnly={camposTravados}
-                      className={camposTravados ? "bg-slate-50" : ""}
                       onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cnpj: e.target.value }; }); }}
                       placeholder="00.000.000/0000-00"
                     />
-                    {gerarForm.origem === "avulso" && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 gap-1"
-                        onClick={function() { void consultarCnpjTomador(); }}
-                        disabled={consultandoCnpj}
-                        title="Consultar CNPJ na BrasilAPI"
-                      >
-                        {consultandoCnpj ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                        <span className="hidden sm:inline">Consultar</span>
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1"
+                      onClick={function() { void consultarCnpjTomador(); }}
+                      disabled={consultandoCnpj}
+                      title="Buscar dados do CNPJ na Receita (BrasilAPI)"
+                    >
+                      {consultandoCnpj ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      <span className="hidden sm:inline">Buscar CNPJ</span>
+                    </Button>
                   </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Digite o CNPJ (consulta automática ao completar 14 dígitos) ou use "Buscar CNPJ".
+                  </p>
+                  {erroConsultaCnpj && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-red-600">
+                      <AlertCircle className="h-3 w-3" /> {erroConsultaCnpj}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1559,9 +1867,18 @@ export default function NfseTab() {
                   </div>
                   <div>
                     <Label>Município</Label>
-                    <Input
+                    <MunicipioCombobox
                       value={gerarForm.tomador_municipio}
-                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_municipio: e.target.value }; }); }}
+                      uf={gerarForm.tomador_uf}
+                      onChange={function(nome, ufSelecionada) {
+                        setGerarForm(function(p) {
+                          return {
+                            ...p,
+                            tomador_municipio: nome,
+                            tomador_uf: ufSelecionada || p.tomador_uf,
+                          };
+                        });
+                      }}
                     />
                   </div>
                   <div>
@@ -1612,11 +1929,11 @@ export default function NfseTab() {
                     min="0"
                     step="0.01"
                     value={gerarForm.valor_servico || ""}
-                    readOnly={camposTravados}
-                    className={camposTravados ? "bg-slate-50" : ""}
+                    readOnly={valorTravadoPelaOrigem}
+                    className={valorTravadoPelaOrigem ? "bg-slate-50" : ""}
                     onChange={function(e) { setGerarForm(function(p) { return { ...p, valor_servico: parseFloat(e.target.value) || 0 }; }); }}
                   />
-                  {camposTravados && (
+                  {valorTravadoPelaOrigem && (
                     <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
                       <Lock className="h-3 w-3" /> Valor herdado da origem
                     </p>
@@ -1666,6 +1983,7 @@ export default function NfseTab() {
                     secondaryField="uf"
                     placeholder="Buscar cidade (ex.: Sao Paulo)"
                     value={gerarForm.municipio_ibge || null}
+                    listAllOnOpen
                     onChange={function(codigo: string | null, record: Record<string, unknown> | null) {
                       const reg = record as { nome?: string; uf?: string } | null;
                       const cod = codigo || "";
@@ -1687,7 +2005,7 @@ export default function NfseTab() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <div className="flex items-center gap-1.5">
                     <Label htmlFor="nfse-codigo-servico">Codigo de Servico Nacional</Label>
@@ -1703,45 +2021,51 @@ export default function NfseTab() {
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="relative" ref={codigoComboRef}>
-                    <Input
+                  <div className="mt-1">
+                    <CodigoCombobox
                       id="nfse-codigo-servico"
-                      className="mt-1 font-mono"
                       value={gerarForm.codigo_servico}
-                      onChange={function(e) {
-                        setGerarForm(function(p) { return { ...p, codigo_servico: e.target.value }; });
-                        setCodigoAberto(true);
-                      }}
-                      onFocus={function() { setCodigoAberto(true); }}
-                      onKeyDown={function(e) { if (e.key === "Escape") setCodigoAberto(false); }}
+                      options={codigosServico}
                       placeholder="Ex.: 16.02.01.002"
+                      vazioTexto="Nenhum código na lista. Você pode digitar manualmente."
+                      rodapeTexto="Selecione ou digite um código customizado."
+                      onChangeValue={function(valor) {
+                        setGerarForm(function(p) { return { ...p, codigo_servico: valor }; });
+                      }}
+                      onSelectOption={selecionarCodigoServico}
                     />
-                    {codigoAberto && (
-                      <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                        {codigosFiltrados.length === 0 ? (
-                          <p className="p-3 text-xs text-muted-foreground">
-                            Nenhum código na lista. Você pode digitar o código manualmente.
-                          </p>
-                        ) : codigosFiltrados.slice(0, 30).map(function(opcao) {
-                          return (
-                            <button
-                              type="button"
-                              key={opcao.codigo}
-                              onClick={function() { selecionarCodigoServico(opcao); }}
-                              className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-slate-50"
-                            >
-                              <span className="font-mono text-xs font-semibold text-slate-800">
-                                {opcao.codigo}
-                              </span>
-                              <span className="text-xs text-slate-500">{opcao.descricao}</span>
-                            </button>
-                          );
-                        })}
-                        <p className="border-t px-3 py-2 text-[10px] text-muted-foreground">
-                          Selecione ou digite um código customizado.
-                        </p>
-                      </div>
-                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="nfse-codigo-nbs">Código NBS</Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Ajuda sobre o codigo NBS" className="rounded p-0.5 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
+                          <HelpCircle className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Nomenclatura Brasileira de Serviços (NBS 2.0). Padrão da operação:
+                        1.0501.15.00 (transporte rodoviário de cargas). Na DPS vai como 105011500.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <div className="mt-1">
+                    <CodigoCombobox
+                      id="nfse-codigo-nbs"
+                      value={gerarForm.codigo_nbs}
+                      options={CODIGOS_NBS}
+                      placeholder="Ex.: 1.0501.15.00"
+                      vazioTexto="Nenhum NBS na lista. Você pode digitar manualmente."
+                      rodapeTexto="NBS 2.0 — transporte rodoviário de cargas: 1.0501.15.00."
+                      onChangeValue={function(valor) {
+                        setGerarForm(function(p) { return { ...p, codigo_nbs: valor }; });
+                      }}
+                      onSelectOption={function(opcao) {
+                        setGerarForm(function(p) { return { ...p, codigo_nbs: opcao.codigo }; });
+                      }}
+                    />
                   </div>
                 </div>
                 <div>
@@ -1839,7 +2163,7 @@ export default function NfseTab() {
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Tributação</p>
                   <p className="text-sm">{gerarForm.municipio} ({gerarForm.municipio_ibge})</p>
                   <p className="text-xs text-muted-foreground">
-                    Cód. {gerarForm.codigo_servico} · ISS {gerarForm.aliquota_iss || "0"}% · {gerarForm.iss_retido ? "Retido" : "Não retido"}
+                    Cód. {gerarForm.codigo_servico} · NBS {gerarForm.codigo_nbs || "—"} · ISS {gerarForm.aliquota_iss || "0"}% · {gerarForm.iss_retido ? "Retido" : "Não retido"}
                   </p>
                 </div>
               </div>

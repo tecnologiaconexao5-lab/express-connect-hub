@@ -37,6 +37,8 @@ export interface DpsServico {
   aliquotaIss?: number | null;
   issRetido?: boolean | null;
   codigoMunicipioPrestacao?: string | null;
+  /** Código NBS (Nomenclatura Brasileira de Serviços) — ex.: 1.0501.15.00. */
+  codigoNbs?: string | null;
 }
 
 export interface DpsPayload {
@@ -332,6 +334,13 @@ export function gerarXmlDpsNacional(
   if (cLocEmi.length !== 7) {
     erros.push("codigoIbge da matriz obrigatorio (7 digitos) para cLocEmi.");
   }
+  // IM é STRING (TSInscMun, até 15 chars) — preserva zeros à esquerda.
+  const imPrestadorValidacao = somenteDigitos(
+    empresa.inscricaoMunicipal || dps.prestador?.inscricaoMunicipal,
+  );
+  if (imPrestadorValidacao.length > 15) {
+    erros.push("inscricaoMunicipal do prestador deve ter no maximo 15 digitos.");
+  }
 
   // ---- Tomador ----
   const nomeTomador = (dps.tomador?.nome || "").trim();
@@ -374,6 +383,12 @@ export function gerarXmlDpsNacional(
     erros.push("codigo do municipio de prestacao invalido (7 digitos).");
   }
 
+  // NBS (opcional no XSD v1.01): TSCodNBS = 9 digitos (ex.: 1.0501.15.00 -> 105011500).
+  const digitosNbs = somenteDigitos(dps.servico?.codigoNbs);
+  if (digitosNbs && digitosNbs.length !== 9) {
+    erros.push("servico.codigoNbs deve ter 9 digitos (padrao NBS 2.0).");
+  }
+
   // ---- Competencia / aliquota ----
   if (!REGEX_COMPETENCIA.test(dps.competencia || "")) {
     erros.push("competencia deve estar no formato AAAA-MM.");
@@ -401,13 +416,37 @@ export function gerarXmlDpsNacional(
     ? "1"
     : "2";
   const opSimpNac = mapearOpSimpNac(empresa);
+  const regApTribSN = opSimpNac === "3" ? "1" : null;
+  // E0166: para optante do Simples Nacional ME/EPP (opSimpNac = 3) o
+  // <regApTribSN> é obrigatório. 1 = tributos federais e municipal pelo SN.
+  // Posição no XSD (TCRegTrib): opSimpNac, regApTribSN?, regEspTrib.
+  const blocoRegApTribSN = regApTribSN
+    ? `\n        <regApTribSN>${regApTribSN}</regApTribSN>`
+    : "";
   const tpRetISSQN = dps.servico?.issRetido ? "2" : "1";
+  // E0625: ME/EPP no Simples (regApTribSN = 1) SEM retenção do ISSQN não deve
+  // informar <pAliq> — a alíquota é apurada pelo Simples Nacional.
+  const blocoPAliq = (opSimpNac === "3" && regApTribSN === "1" &&
+      tpRetISSQN === "1")
+    ? ""
+    : `\n          <pAliq>${formatarAliquota(aliquota)}</pAliq>`;
+  // E0712: ME/EPP não pode informar <indTotTrib> em <totTrib> (choice do XSD).
+  // Para o Simples, usa <pTotTribSN> (percentual aproximado do Simples Nacional).
+  const blocoTotTrib = opSimpNac === "3"
+    ? `\n          <pTotTribSN>0.00</pTotTribSN>`
+    : `\n          <indTotTrib>0</indTotTrib>`;
   const dCompet = `${dps.competencia}-01`;
+
+  // tpEmit = "1": emitente da DPS é o próprio prestador.
+  // Regras Sefin: E0121 (não informar <xNome>) e E0122 (não informar <end>)
+  // dentro de <prest> quando tpEmit = 1.
+  const tpEmit: string = "1";
 
   // ---- Endereco do prestador (opcional no XSD; exige endNac completo) ----
   const cep = somenteDigitos(empresa.cep);
   let blocoEndPrestador = "";
   if (
+    tpEmit !== "1" &&
     cLocEmi.length === 7 &&
     cep.length === 8 &&
     empresa.logradouro &&
@@ -430,6 +469,14 @@ export function gerarXmlDpsNacional(
       </end>`;
   }
 
+  // E0121: quando tpEmit = "1" o <xNome> do prestador não deve ser informado
+  // (o nome é o próprio emitente da DPS).
+  const blocoNomePrestador = tpEmit === "1"
+    ? ""
+    : `\n      <xNome>${escaparXml(razaoPrestador)}</xNome>`;
+
+  // IM como STRING (TSInscMun, ate 15 chars): SOMENTE remove separadores.
+  // Nunca converter para numero — preserva zeros à esquerda (ex.: 000000060458216).
   const inscricaoMunicipalPrestador = somenteDigitos(
     empresa.inscricaoMunicipal || dps.prestador?.inscricaoMunicipal,
   );
@@ -448,6 +495,9 @@ export function gerarXmlDpsNacional(
   const blocoCTribMun = cTribMun
     ? `\n        <cTribMun>${cTribMun}</cTribMun>`
     : "";
+  const blocoCNbs = digitosNbs
+    ? `\n        <cNBS>${digitosNbs}</cNBS>`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <DPS xmlns="${NAMESPACE_DPS}" versao="${VERSAO_DPS}">
@@ -458,14 +508,13 @@ export function gerarXmlDpsNacional(
     <serie>${serieValor}</serie>
     <nDPS>${nDPS}</nDPS>
     <dCompet>${dCompet}</dCompet>
-    <tpEmit>1</tpEmit>
+    <tpEmit>${tpEmit}</tpEmit>
     <finNFSe>0</finNFSe>
     <cLocEmi>${cLocEmi}</cLocEmi>
     <prest>
-      <CNPJ>${cnpjPrestador}</CNPJ>${blocoImPrestador}
-      <xNome>${escaparXml(razaoPrestador)}</xNome>${blocoEndPrestador}${blocoEmailPrestador}
+      <CNPJ>${cnpjPrestador}</CNPJ>${blocoImPrestador}${blocoNomePrestador}${blocoEndPrestador}${blocoEmailPrestador}
       <regTrib>
-        <opSimpNac>${opSimpNac}</opSimpNac>
+        <opSimpNac>${opSimpNac}</opSimpNac>${blocoRegApTribSN}
         <regEspTrib>0</regEspTrib>
       </regTrib>
     </prest>
@@ -478,7 +527,7 @@ export function gerarXmlDpsNacional(
         <cLocPrestacao>${municipioPrestacao}</cLocPrestacao>
       </locPrest>
       <cServ>
-        <cTribNac>${cTribNac}</cTribNac>${blocoCTribMun}
+        <cTribNac>${cTribNac}</cTribNac>${blocoCTribMun}${blocoCNbs}
         <xDescServ>${escaparXml(descricaoServico)}</xDescServ>
       </cServ>
     </serv>
@@ -489,11 +538,9 @@ export function gerarXmlDpsNacional(
       <trib>
         <tribMun>
           <tribISSQN>1</tribISSQN>
-          <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
-          <pAliq>${formatarAliquota(aliquota)}</pAliq>
+          <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>${blocoPAliq}
         </tribMun>
-        <totTrib>
-          <indTotTrib>0</indTotTrib>
+        <totTrib>${blocoTotTrib}
         </totTrib>
       </trib>
     </valores>

@@ -1,5 +1,76 @@
 # Summary
 
+## MISSÃO NFS-E-WIZARD-USABILIDADE — Comboboxes reais, busca de CNPJ e NBS/IM com zeros (2026-11-19)
+
+**Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · `npx deno check` da edge `nfse-assinar-transmitir` ok · ESLint sem erros/avisos novos (baseline `no-explicit-any` e `no-empty` intactos) · `npm run build` ok (35,88s). Sem migration.
+
+### O que mudou
+1. **Listas reais ao clicar** — `SearchableSelect` ganhou `listAllOnOpen` (abre a lista completa com valor já selecionado; digitar volta a filtrar). Aplicado ao **Município de Prestação** (Passo 4). O combobox de **OS/CT-e** (Passo 2) já abria no foco e agora também recarrega a lista se estiver vazia.
+2. **Código de Serviço Nacional (Passo 1 e Passo 4)** — novo componente `CodigoCombobox` (código + descrição, abre a lista completa no foco/clique, permite digitar). Lista real = códigos nacionais + regras municipais carregadas de `regras_fiscais_nfse`; item `16.02.01.002 — Transporte de bens ou valores, dentro do território do Município`.
+3. **Código NBS** — campo/seleção novo (padrão **1.0501.15.00**) no Passo 1 e no Passo 4, exibido na Revisão; persiste em `metadata.codigo_nbs`; DANFSe já o lia. Na DPS vira `<cNBS>105011500</cNBS>` (9 dígitos, após `xDescServ`), conforme XSD v1.01 `TCCServ`.
+4. **CNPJ do Tomador (Passo 2)** — campo **sempre editável** (não trava mais em OS/CT-e) + botão **Buscar CNPJ** sempre visível (BrasilAPI) + **consulta automática ao completar 14 dígitos**. Preenche razão social, e-mail, telefone e endereço completo (logradouro/número/complemento/bairro/município/UF/CEP), todos editáveis, com spinner e erro inline (CNPJ inválido/não encontrado/rede). Nome do tomador também passou a ser editável.
+5. **Município do Tomador** — novo `MunicipioCombobox` (tabela `municipios_ibge`) que abre a lista real no foco/clique, pesquisa ao digitar e preenche a UF.
+6. **IM com zeros à esquerda** — confirmado e documentado: `EmitenteFiscalConfig` e os geradores (`nfseDps.ts` client/edge) usam string + `somenteDigitos` (nunca `Number`), preservando `000000060458216` (DANFSe SP). Validação: IM ≤ 15 dígitos (TSInscMun). A DANFSe e a DPS local passam a usar a IM do emitente (`metadata.emitente.inscricao_municipal`).
+7. **Edge** — `nfse-assinar-transmitir` lê `meta.codigo_nbs` e, para rascunhos antigos com serviço padrão, aplica o fallback NBS `1.0501.15.00`.
+
+### Validação extra
+- Prova do gerador DPS (Deno): `<IM>000000060458216</IM>` preservado, `<cNBS>105011500</cNBS>` **antes de** `<xDescServ>` (posição do XSD 20261020), sem `<IM>60458216</IM>`.
+
+### Atualização E0121/E0122 (2026-11-19)
+- Com a IM aceita, a Sefin passou a rejeitar com **E0121** ("O nome ou razão social do prestador não deve ser informado quando o emitente da DPS for o próprio prestador"). Ajuste nos dois geradores (`supabase/functions/_shared/nfseDps.ts` e `src/services/fiscal/nfseEmissaoService.ts`):
+  - `const tpEmit: string = "1"` (emitente = prestador) e `<tpEmit>${tpEmit}</tpEmit>`.
+  - **E0121**: `<xNome>` **não** é emitido dentro de `<prest>` quando `tpEmit === "1"` (`blocoNomePrestador` vazio).
+  - **E0122**: `<end>` **não** é emitido dentro de `<prest>` quando `tpEmit === "1"` (condição do `blocoEndPrestador` exige `tpEmit !== "1"`).
+  - Mantidos em `<prest>`: `<CNPJ>`, `<IM>`, `<email>` (se houver) e `<regTrib>`; o `<xNome>` do **tomador** permanece.
+- Prova (Deno): `<tpEmit>1</tpEmit>`, `<prest>` sem `<xNome>` e sem `<end>`, com `<CNPJ>`, `<IM>`, `<email>` e `<regTrib>`; `<xNome>` do tomador intacto.
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0 · `npx tsc --noEmit` 0 erros · `npm run build` ok (35,23s).
+- **Deploy efetuado**: `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn" (bundle inclui `_shared/nfseDps.ts`).
+- Pendência: retransmitir a NFS-e após o deploy (rascunho `fiscal_nfse` com IM zero-padded).
+
+### Atualização E1235 — posição do `cNBS` no XSD 20261020 (2026-11-19)
+- Após E0121/E0122, a Sefin rejeitou com **E1235** ("Falha no esquema XML do DF-e"): `cServ` com filho inválido `cNBS`.
+- **Causa**: o XSD oficial `esquemas_prod_restrita_20261020` define `TCCServ` como `cTribNac, cTribMun?, cNBS?, cIntContrib?, xDescServ` — ou seja, `cNBS` vem **antes** de `xDescServ`. O gerador emitia `cNBS` **depois** de `xDescServ` (ordem do espelho antigo v1.01 pré-RTC).
+- **Correção** (nos dois geradores): `<cNBS>` passou para logo após `<cTribMun>` e **antes** de `<xDescServ>`.
+- **Validação real contra o XSD oficial**: baixado o pacote `prod-restrita-20261020` (mirror `andrebassi/nfse-digital`) e validado com `System.Xml.Schema.XmlSchemaSet` (.NET) uma DPS completa (`<IM>000000060458216</IM>`, `<prest>` sem `<xNome>`/sem `<end>`, `<cNBS>105011500</cNBS>` antes de `<xDescServ>`) → **VALIDACAO_OK**. Teste negativo (cNBS após xDescServ) reproduziu exatamente o E1235, provando que o validador está efetivo.
+- `TPInfDPS` oficial confirmado: `... tpEmit, cMotivoEmisTI?, finNFSe, chNFSeRej?, cLocEmi, subst?, prest, toma?, interm?, serv, valores, IBSCBS?` — o gerador já segue essa ordem.
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0 · `npx tsc --noEmit` 0 erros · `npm run build` ok (37,16s).
+- **Deploy efetuado novamente**: `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn". Pronto para retransmitir a NFS-e.
+
+### Atualização E0166 — `regApTribSN` para Simples Nacional ME/EPP (2026-11-19)
+- Com o esquema válido, a Sefin rejeitou com **E0166** ("é obrigatório o preenchimento do campo de regime de apuração dos tributos do SN para o optante do Simples Nacional ME/EPP").
+- **XSD oficial**: `TCRegTrib` = `opSimpNac, regApTribSN?, regEspTrib` (`regApTribSN` é `minOccurs=0` no schema, mas regra de negócio exige quando `opSimpNac = 3`).
+- **Correção** (nos dois geradores): novo `blocoRegApTribSN` (`opSimpNac === "3" ? <regApTribSN>1</regApTribSN> : ""`) inserido **entre** `<opSimpNac>` e `<regEspTrib>` (1 = tributos federais e municipal pelo SN).
+- **Prova**: `<regTrib><opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib></regTrib>`; DPS completa validada contra o XSD `prod-restrita-20261020` (.NET) → **VALIDACAO_OK**.
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0 · `npx tsc --noEmit` 0 erros · `npm run build` ok (36,05s).
+- **Deploy efetuado**: `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn". Pronto para retransmitir a NFS-e.
+
+### Atualização E0625 — omitir `pAliq` no Simples sem retenção do ISSQN (2026-11-19)
+- Com E0166 corrigido, a Sefin rejeitou com **E0625** ("Não é permitido informar alíquota quando não há indicação de retenção do ISSQN (tpRetISSQN = 1) para o prestador ME/EPP (opSimpNac = 3) … com apuração do ISSQN pelo Simples (regApTribISSQN = 1)").
+- **XSD oficial**: `TCTribMunicipal` = `tribISSQN, cPaisResult?, tpImunidade?, exigSusp?, BM?, tpRetISSQN, pAliq?` — `pAliq` é `minOccurs=0`.
+- **Correção** (nos dois geradores): `blocoPAliq` vazio quando `opSimpNac === "3" && regApTribSN === "1" && tpRetISSQN === "1"`; nos demais casos mantém `<pAliq>`. Refatorado `regApTribSN` para const (`"1"` quando `opSimpNac === "3"`).
+- **Prova**: sem retenção → `<tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>1</tpRetISSQN></tribMun>` (sem `pAliq`); com retenção (tpRetISSQN=2) → `<pAliq>2.90</pAliq>` mantido. Ambas as DPS validadas contra o XSD `prod-restrita-20261020` (.NET) → **VALIDACAO_OK**.
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0 · `npx tsc --noEmit` 0 erros · `npm run build` ok (36,50s).
+- **Deploy efetuado**: `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn". Pronto para retransmitir a NFS-e.
+
+### Atualização E0712 — `pTotTribSN` no Simples (sem `indTotTrib`) (2026-11-19)
+- Com E0625 corrigido, a Sefin rejeitou com **E0712** ("Para ME/EPP o indicador de informação de valor total de tributos não pode ser informado").
+- **XSD oficial**: `TCTribTotal` = `choice(vTotTrib | pTotTrib | indTotTrib | pTotTribSN)` — `indTotTrib` não pode ser informado para ME/EPP; `pTotTribSN` (`TSDec2V2`, aceita `0.00`) é a alternativa do Simples.
+- **Correção** (nos dois geradores): novo `blocoTotTrib` — `opSimpNac === "3"` → `<pTotTribSN>0.00</pTotTribSN>`; demais → `<indTotTrib>0</indTotTrib>`.
+- **Prova**: Simples → `<totTrib><pTotTribSN>0.00</pTotTribSN></totTrib>` (sem `indTotTrib`); não optante → `<totTrib><indTotTrib>0</indTotTrib></totTrib>`. Ambas validadas contra o XSD `prod-restrita-20261020` (.NET) → **VALIDACAO_OK**.
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0 · `npx tsc --noEmit` 0 erros · `npm run build` ok (45,36s).
+- **Deploy efetuado**: `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn". Pronto para retransmitir a NFS-e.
+
+### Arquivos
+- `src/components/fiscal/NfseTab.tsx` · `src/components/ui/SearchableSelect.tsx` · `src/components/fiscal/EmitenteFiscalConfig.tsx` · `src/services/fiscal/nfseService.ts` · `src/services/fiscal/nfseEmissaoService.ts` · `supabase/functions/_shared/nfseDps.ts` · `supabase/functions/nfse-assinar-transmitir/index.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) `git push` do frontend (a Edge `nfse-assinar-transmitir` já foi republicada com E0121/E0122 + NBS na posição correta do XSD 20261020 + `regApTribSN` + `pAliq` omitido no Simples sem retenção + `pTotTribSN` no Simples).
+2. (QA) Passo 2: clicar na OS sem digitar → lista real; digitar CNPJ de 14 dígitos → autofill completo e editável; "Buscar CNPJ" com inválido/inexistente → erro inline.
+3. (QA) Passo 1/4: clique nos campos de serviço/NBS → lista completa + filtro; Município abre a lista real mesmo com valor escolhido.
+4. (dados/E0116) Garantir que a IM da matriz esteja registrada/confirmada com os zeros à esquerda (`000000060458216`) em **Editar Emitente** antes de retransmitir.
+
+---
+
 ## MISSÃO OS-LISTA-ACOES-SEMPRE-VISIVEIS — Coluna Ações com flex-wrap para OSs Pendente/Em Andamento (2026-11-14)
 
 **Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (baseline `no-explicit-any` 6× + `exhaustive-deps` 1× intactos) · testes: 18 specs que leem `OrdensServicoLista` **236/236** (inclui `refino_operacao_premium` 22 com a string do título do Editar, `solicitacoes_sla` 11 e `operacional_lote2` 11 com `FAROL_SLA_ROW`) · `npm run build` ok. Sem migration.

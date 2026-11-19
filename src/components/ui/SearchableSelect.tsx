@@ -20,6 +20,11 @@ interface SearchableSelectProps {
   secondaryField?: string;
   /** Desabilita o campo (somente leitura, sem abertura do dropdown). */
   disabled?: boolean;
+  /**
+   * Ao abrir com um valor já selecionado, carrega a lista completa (sem
+   * filtrar pelo rótulo atual). Ao digitar, volta a filtrar normalmente.
+   */
+  listAllOnOpen?: boolean;
   /** Habilita a linha "Cadastrar '<termo>'" no dropdown (cadastro rápido). */
   allowQuickCreate?: boolean;
   /** Cria o registro rápido a partir do termo digitado. Deve retornar o registro criado (ou null). */
@@ -41,6 +46,7 @@ export function SearchableSelect({
   renderOption,
   secondaryField,
   disabled = false,
+  listAllOnOpen = false,
   allowQuickCreate = false,
   onQuickCreate,
   isIncomplete,
@@ -84,6 +90,10 @@ export function SearchableSelect({
     }
   }, [value, table, labelField, valueField]);
 
+  // Com `listAllOnOpen`, abrir com um valor selecionado mostra a lista completa;
+  // digitar limpa a seleção (handleChange) e volta a filtrar pelo termo.
+  const termoBusca = listAllOnOpen && selectedValue ? "" : searchTerm;
+
   useEffect(() => {
     if (!isOpen) return;
     
@@ -92,9 +102,9 @@ export function SearchableSelect({
       
       let query = supabase.from(table).select("*").limit(10);
       
-      if (searchTerm) {
+      if (termoBusca) {
          // Build OR query like: nome.ilike.%termo%,cnpj.ilike.%termo%
-         const orString = searchFields.map(f => `${f}.ilike.%${searchTerm}%`).join(",");
+         const orString = searchFields.map(f => `${f}.ilike.%${termoBusca}%`).join(",");
          query = query.or(orString);
       }
       
@@ -122,7 +132,7 @@ export function SearchableSelect({
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, isOpen, table, searchFields, filters]);
+  }, [termoBusca, isOpen, table, searchFields, filters, selectedValue]);
 
   // Mantém o item ativo visível durante navegação por teclado
   useEffect(() => {

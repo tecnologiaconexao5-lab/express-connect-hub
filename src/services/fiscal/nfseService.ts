@@ -16,6 +16,8 @@ type EmitenteRow = {
   nome_fantasia: string | null;
   cnpj: string | null;
   ie: string | null;
+  /** Inscrição municipal — string (preserva zeros à esquerda, ex.: 000000060458216). */
+  inscricao_municipal: string | null;
   cidade: string | null;
   uf: string | null;
 };
@@ -44,6 +46,8 @@ export interface GerarNfseParams {
   valor_servico?: number;
   valor_desconto?: number;
   codigo_servico?: string;
+  /** Código NBS (Nomenclatura Brasileira de Serviços) — padrão 1.0501.15.00. */
+  codigo_nbs?: string;
   aliquota_iss?: number | null;
   iss_retido?: boolean;
 }
@@ -254,6 +258,8 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
         nome: emitente.razao_social || emitente.nome_fantasia,
         cnpj: emitente.cnpj,
         ie: emitente.ie,
+        // Gravado como string para preservar zeros à esquerda (ex.: 000000060458216).
+        inscricao_municipal: emitente.inscricao_municipal,
         cidade: emitente.cidade,
         uf: emitente.uf,
       } : null,
@@ -264,6 +270,7 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       valor_liquido: valorLiquido,
       municipio_prestacao: params.municipio_prestacao || null,
       codigo_servico: codigoServico,
+      codigo_nbs: params.codigo_nbs?.trim() || null,
       aliquota_iss: aliquotaIss,
       iss_retido: issRetido,
       codigo_municipio_prestacao: codigoMunicipioPrestacao,

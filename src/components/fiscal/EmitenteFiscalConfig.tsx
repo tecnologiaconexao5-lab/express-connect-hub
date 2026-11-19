@@ -281,13 +281,18 @@ export default function EmitenteFiscalConfig() {
               <Input
                 value={form.inscricao_municipal || ""}
                 onChange={function(e) {
+                  // Mantém como texto: preserva zeros à esquerda (ex.: 000000060458216).
                   const digitos = e.target.value.replace(/\D/g, "");
                   setForm(function(p) { return { ...p, inscricao_municipal: digitos }; });
                 }}
                 inputMode="numeric"
                 maxLength={15}
-                placeholder="Somente números"
+                placeholder="Ex.: 000000060458216"
               />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Informe a IM com os zeros à esquerda, como consta na DANFSe oficial
+                (São Paulo: 000000060458216). Não convertemos o valor para número.
+              </p>
             </div>
             <div><Label>RNTRC</Label><Input value={form.rntrc} onChange={function(e) { setForm(function(p) { return { ...p, rntrc: e.target.value }; }); }} /></div>
             <div><Label>CEP</Label><Input value={form.cep} onChange={function(e) { setForm(function(p) { return { ...p, cep: e.target.value }; }); }} /></div>
