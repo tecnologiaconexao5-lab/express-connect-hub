@@ -1,5 +1,26 @@
 # Summary
 
+## MISSÃO DANFSE-LAYOUT-FINAL — Folha única A4, logo ampliado, barras sem filete laranja, rodapé executivo, QR por ambiente e máscaras do tomador (2026-11-21)
+
+**Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · `npm run build` ok (48,98s). **Sem migration · sem alteração de lógica fiscal, XML da DPS ou regras da Sefin** — mudanças exclusivas do template de impressão.
+
+### O que mudou (`src/components/fiscal/DanfsePrintTemplate.tsx`)
+1. **Folha única A4** — página com padding `8mm`; células `min-height 7.5mm` e padding `3px 6px`; seções `margin-top 4px`; títulos `2.5px`; divisor `2px`; descrição `min-height 9mm`; caixas de valores/líquido compactadas; `@media print` fixa `.danfse-page` em `height: 296mm` (evita spill para a página 2) com o rodapé ancorado na base (`justify-content: space-between` + `margin-top: auto`).
+2. **Logo ampliado** — `48mm × 32mm` (proporção nativa 1536×1024 = 3:2, sem letterbox), `object-fit: contain` + `object-position: center`; cabeçalho com `align-items: center` (centralizado com “DANFSe v2.0”) e padding reduzido para compensar.
+3. **Barras de título** — removido `border-left: 4px solid #F97316`; mantido `#3B1E6D` preenchido com cantos superiores `4px 4px 0 0`. Nenhum título alterado (PRESTADOR, TOMADOR, SERVIÇO, TRIBUTAÇÃO, VALOR TOTAL, INFORMAÇÕES COMPLEMENTARES).
+4. **Rodapé executivo** — fundo `#3B1E6D` (mesmo tom dos títulos), filete superior laranja `2px`, texto branco/cinza-claro centralizado em 2 linhas: `TEXTO_RODAPE_DANFSE` (Conexão Express • Financeiro • site) e novo `TEXTO_RODAPE_DANFSE_AUXILIAR` (“Documento auxiliar — Representação gráfica do XML da NFS-e Nacional (Padrão RFB)”). A antiga faixa laranja grossa foi removida.
+5. **QR dinâmico por nota** — base por ambiente: `tpAmb=2`/homologação → `https://www.producaorestrita.nfse.gov.br/ConsultaPublica/?tpc=1&chave=…`; produção → `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=…` (chave vem de `dados.chaveAcesso`, já lida da Sefin em `NfseTab`).
+6. **Máscaras do tomador** — novos helpers puros `formatarDocumento` (CNPJ `00.000.000/0000-00` / CPF `000.000.000-00`), `formatarCep` (`00000-000`) e `formatarTelefone` (`(00) 0000-0000` / `(00) 00000-0000`, removendo DDI 55), aplicados a CNPJ, CEP e Telefone do Tomador. Fallback “—” quando não aplicável.
+
+### Arquivos
+- `src/components/fiscal/DanfsePrintTemplate.tsx` · `AGENTS.md`
+
+### Pendências
+1. (deploy) `git push` (Vercel) do frontend.
+2. (QA) Imprimir uma NFS-e e conferir: 1 página A4 com rodapé na base; logo maior; barras roxas sem ponta laranja; rodapé roxo com filete laranja e 2 linhas; QR apontando para o portal correto (produção x homologação); CNPJ/CEP/telefone do tomador mascarados.
+
+---
+
 ## MISSÃO NFS-E-PADRAO-002 — Defaults oficiais, códigos separados e regime tributário editável (2026-11-19)
 
 **Status:** ✅ Concluída (código + validação + deploy da Edge). `npx tsc --noEmit` 0 erros · `deno check` da edge ok · `npm run build` ok (35,78s) · **4 variantes de DPS validadas contra o XSD RTC oficial → VALIDACAO_OK** · Edge `nfse-assinar-transmitir` republicada. **Sem migration** (regime salvo no JSONB `metadata.nfse_nacional`).
