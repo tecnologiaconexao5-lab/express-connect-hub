@@ -183,11 +183,14 @@ async function baixarDanfseComLimite(
   material: { keyPem: string; chainPem: string },
   limiteMs: number,
 ): Promise<ResultadoDanfseOficial> {
+  // O download recebe um orcamento um pouco menor que o limite externo para
+  // que ele consiga devolver o detalhe de cada estrategia antes do race.
+  const orcamentoMs = Math.max(3000, limiteMs - 600);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       baixarDanfseOficialAdn(chaveAcesso, ambiente, material, {
-        timeoutMs: Math.min(8000, limiteMs),
+        timeoutMs: orcamentoMs,
       }),
       new Promise<ResultadoDanfseOficial>((resolve) => {
         timer = setTimeout(function() {
@@ -586,8 +589,9 @@ serve(async (req: Request) => {
         return respostaJson(
           {
             success: false,
-            error:
-              "Nao foi possivel baixar o PDF oficial agora. O ADN pode ainda nao disponibilizar o arquivo; tente novamente em instantes.",
+            error: download.status === 404
+              ? "O ADN respondeu HTTP 404: o DANFSe oficial nao esta disponivel para esta nota neste ambiente."
+              : "Nao foi possivel baixar o PDF oficial agora. O ADN pode ainda nao disponibilizar o arquivo; tente novamente em instantes.",
             detalhe: truncar(download.erro || "sem PDF", 300),
           },
           502,

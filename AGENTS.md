@@ -1,5 +1,42 @@
 # Summary
 
+## MISSÃO DANFSE-404-DIAG — Estratégias em paralelo, causa raiz (ADN HTTP 404) e resposta rápida (2026-11-22)
+
+**Status:** ✅ Concluída (código + validação + deploy + prova E2E). `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` ok · `npx tsc --noEmit` 0 erros · `npm run build` ok (38,65 s) · Edge `nfse-assinar-transmitir` **redeployada**. **Sem migration · sem alteração do `nfseDps.ts`, da DPS ou das regras da Sefin.**
+
+### Causa raiz (medida, não suposta)
+`POST /functions/v1/nfse-assinar-transmitir` com `{nfse_id:"6760542c-…", acao:"baixar_danfse"}` (usuário E2E real) devolvia **502 em 14.101 ms** com `detalhe:"tempo esgotado aguardando o DANFSe no ADN"` — o race de 12 s em `baixarDanfseComLimite` disparava antes de as estratégias terminarem. Motivo: `baixarDanfseOficialAdn` rodava proxy → `Deno.createHttpClient` → `node:https` **em sequência, cada uma com até 8 s**, e `node:https` pendura no runtime da Edge (sem resposta). Resultado: o detalhe real era descartado.
+
+Após instrumentar as estratégias (paralelas + detalhe agregado), a resposta real do ADN ficou visível:
+`deno-fetch HTTP 404 | proxy HTTP 404` → **o ADN responde HTTP 404** para o DANFSe (mTLS OK). Reproduzido nas **duas** NFS-e de homologação: nº 2 (`35503082231227975000180000000000000226110834762132`, 2,5 s) e nº 1 (`cc7d259b-…`, 0,77 s) → é **ambiental**: o ADN de produção restrita não serve o DANFSe dessas notas. Evento `DANFSE_OFICIAL_FALHA` mais recente agora grava `http_status: 404` (antes `0`).
+
+### O que mudou
+1. **`_shared/nfseAdn.ts`** — (a) as três estratégias passam a rodar **em paralelo** com orçamento compartilhado; a primeira que devolver PDF válido vence. (b) **Encerramento antecipado** quando duas rotas independentes já devolvem status HTTP real do ADN (caso 404/404) — não espera mais a terceira pendurar. (c) O erro agregado sempre lista cada estratégia (`deno-fetch … | proxy … | node-https …`) e propaga o último status definitivo. (d) Mensagem do endpoint do proxy desambiguada (`endpoint HTTP n` quando é falha do próprio proxy, distinta do status do ADN). (e) `resumoSeguro` com limite por parâmetro (120 chars por estratégia no agregado).
+2. **`nfse-assinar-transmitir/index.ts`** — (a) `baixarDanfseComLimite` entrega ao download um orçamento de `limiteMs − 600` (garante detalhe antes do race). (b) Falha com `status === 404` devolve mensagem precisa: *"O ADN respondeu HTTP 404: o DANFSe oficial nao esta disponivel para esta nota neste ambiente."* (demais casos mantêm a mensagem genérica).
+
+### Resultado medido (após deploy)
+| Nota | Antes | Depois |
+|------|-------|--------|
+| NFS-e 2 | 502 em **14.101 ms**, `detalhe:"tempo esgotado…"` | 502 em **2.514 ms**, `error:"…HTTP 404…"`, `detalhe:"deno-fetch HTTP 404 | proxy HTTP 404"` |
+| NFS-e 1 | — | 502 em **772 ms**, mesmo detalhe |
+
+### Arquivos
+- `supabase/functions/_shared/nfseAdn.ts` · `supabase/functions/nfse-assinar-transmitir/index.ts` · `AGENTS.md`
+
+### Validação
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0 (2×).
+- `npx tsc --noEmit` → 0 erros; `npm run build` → ok (38,65 s).
+- `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn" (2×).
+- Prova E2E com JWT real (`E2E_LIVE_*` do `.env`): respostas acima; `fiscal_events` confirmam `http_status: 404`.
+
+### Pendências
+1. (produto/QA) O 404 é do ADN em **homologação**; o download só pode ser comprovado ponta a ponta com uma NFS-e de **produção** (ou quando o ADN publicar o DANFSe da chave). Se a operação espera DANFSe em homologação, confirmar com o ADN/Sefin.
+2. (deploy) `git push` (Vercel não é afetado — mudança só na Edge, já publicada).
+3. (limpeza) Scripts de diagnóstico untracked (`scripts/_diag_adn_mtls.cjs`, `_diag_cert_cols.cjs`, `_diag_danfse_events.cjs`) e `deno.lock` permanecem fora do commit.
+4. (nota) `node-https` segue pendurando no runtime da Edge; com o paralelismo + encerramento antecipado ele não afeta mais a latência nem o diagnóstico.
+
+---
+
 ## MISSÃO DANFSE-PDF-OFICIAL-ADN — Download automático + sob demanda do PDF oficial (ADN) com persistência no Storage e botão de download direto (2026-11-21)
 
 **Status:** ✅ Concluída (código + validação + deploy da Edge). `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` ok · `npx tsc --noEmit` 0 erros · `npm run build` ok · Edge `nfse-assinar-transmitir` **deployada** (`Deployed Functions on project uwrvzsjtpgaifkktpepn`, assets incluem `_shared/nfseAdn.ts`). **Sem migration · sem alteração do `nfseDps.ts`, geração/assinatura da DPS ou regras da Sefin.**

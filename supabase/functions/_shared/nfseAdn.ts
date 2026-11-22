@@ -11,7 +11,10 @@
 //   NFSE_SEFIN_PROXY_URL / NFSE_SEFIN_PROXY_TOKEN  (proxy Vercel, opcional)
 //   NFSE_SEFIN_CA_PEM       (CA do servidor, opcional)
 //
-// Estrategia: proxy (se configurado) -> Deno.createHttpClient -> node:https.
+// Estrategia: proxy (se configurado), Deno.createHttpClient e node:https
+// executados EM PARALELO com um orcamento de tempo compartilhado; a primeira
+// resposta valida vence. O erro agregado sempre traz o resultado de cada
+// estrategia (sem certificado/senha).
 // Retorna apenas PDF valido (magic "%PDF"); nunca lanca excecao para o
 // chamador (erros sanitizados, sem certificado/senha).
 // ===================================================================
@@ -41,11 +44,11 @@ interface RespostaDanfseHttp {
 const TIMEOUT_PADRAO_MS = 9000;
 const LIMITE_PDF_BYTES = 12 * 1024 * 1024;
 
-function resumoSeguro(erro: unknown): string {
+function resumoSeguro(erro: unknown, limite = 280): string {
   const bruto = erro instanceof Error
     ? `${erro.name}: ${erro.message}`
     : String(erro);
-  return bruto.replace(/\s+/g, " ").slice(0, 280);
+  return bruto.replace(/\s+/g, " ").slice(0, limite);
 }
 
 function lerCaSefin(): string | undefined {
@@ -189,7 +192,7 @@ async function getComProxy(
       const detalhe = typeof json?.["error"] === "string"
         ? json["error"]
         : `HTTP ${resposta.status}`;
-      throw new Error(`proxy ${detalhe}`);
+      throw new Error(`endpoint ${detalhe}`);
     }
     if (
       !json || typeof json["status"] !== "number" ||
@@ -360,6 +363,11 @@ function getComNodeHttps(
 /**
  * Baixa o DANFSe oficial do ADN por mTLS. Nunca lanca: devolve ok=false
  * com um erro sanitizado quando todas as estrategias falham.
+ *
+ * As estrategias rodam em paralelo e compartilham o mesmo orcamento de
+ * tempo: a primeira que devolver um PDF valido encerra a corrida. Assim o
+ * chamador recebe o resultado real de cada estrategia (ou o timeout do
+ * orcamento) sem estourar o limite externo.
  */
 export async function baixarDanfseOficialAdn(
   chaveAcesso: string,
@@ -379,45 +387,97 @@ export async function baixarDanfseOficialAdn(
     };
   }
 
-  const timeoutMs = Math.max(3000, opcoes.timeoutMs ?? TIMEOUT_PADRAO_MS);
-  const detalhes: string[] = [];
+  const orcamentoMs = Math.max(3000, opcoes.timeoutMs ?? TIMEOUT_PADRAO_MS);
 
+  interface Tentativa {
+    nome: string;
+    rodar: (tempoMs: number) => Promise<RespostaDanfseHttp>;
+  }
+
+  const tentativas: Tentativa[] = [];
   const proxy = obterProxySefin();
   if (proxy) {
-    try {
-      const resposta = await getComProxy(url, material, proxy, timeoutMs);
-      const avaliado = avaliar(url, resposta);
-      if (avaliado.ok) return avaliado;
-      detalhes.push(`proxy ${avaliado.erro}`);
-    } catch (erro) {
-      detalhes.push(`proxy ${resumoSeguro(erro)}`);
+    tentativas.push({
+      nome: "proxy",
+      rodar: (tempoMs) => getComProxy(url, material, proxy, tempoMs),
+    });
+  }
+  tentativas.push({
+    nome: "deno-fetch",
+    rodar: (tempoMs) => getComDenoFetch(url, material, tempoMs),
+  });
+  tentativas.push({
+    nome: "node-https",
+    rodar: (tempoMs) => getComNodeHttps(new URL(url), material, tempoMs),
+  });
+
+  return await new Promise<ResultadoDanfseOficial>((resolve) => {
+    const detalhes: string[] = [];
+    let finalizado = false;
+    let pendentes = tentativas.length;
+    // Respostas HTTP reais do ADN (>=1) sao definitivas: duas rotas
+    // independentes concordando dispensam esperar a terceira pendurar.
+    let respostasDefinitivas = 0;
+    let statusDefinitivo = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const concluir = (resultado: ResultadoDanfseOficial) => {
+      if (finalizado) return;
+      finalizado = true;
+      if (timer !== undefined) clearTimeout(timer);
+      resolve(resultado);
+    };
+
+    const falhaAgregada = () => {
+      concluir({
+        ok: false,
+        status: statusDefinitivo,
+        bytes: null,
+        contentType: null,
+        erro: (detalhes.length
+          ? detalhes.join(" | ")
+          : "sem resposta do ADN").slice(0, 500),
+        url,
+      });
+    };
+
+    timer = setTimeout(() => {
+      if (!finalizado) {
+        detalhes.push(`orcamento de ${orcamentoMs}ms esgotado`);
+      }
+      falhaAgregada();
+    }, orcamentoMs);
+
+    const terminar = () => {
+      pendentes -= 1;
+      if (pendentes <= 0) falhaAgregada();
+    };
+
+    for (const tentativa of tentativas) {
+      Promise.resolve()
+        .then(() => tentativa.rodar(orcamentoMs))
+        .then((resposta) => {
+          if (finalizado) return;
+          const avaliado = avaliar(url, resposta);
+          if (avaliado.ok) {
+            concluir(avaliado);
+            return;
+          }
+          detalhes.push(`${tentativa.nome} ${avaliado.erro}`);
+          if (avaliado.status > 0) {
+            respostasDefinitivas += 1;
+            statusDefinitivo = avaliado.status;
+          }
+          if (respostasDefinitivas >= 2) {
+            falhaAgregada();
+            return;
+          }
+          terminar();
+        }, (erro) => {
+          if (finalizado) return;
+          detalhes.push(`${tentativa.nome} ${resumoSeguro(erro, 120)}`);
+          terminar();
+        });
     }
-  }
-
-  try {
-    const resposta = await getComDenoFetch(url, material, timeoutMs);
-    const avaliado = avaliar(url, resposta);
-    if (avaliado.ok) return avaliado;
-    detalhes.push(`deno-fetch ${avaliado.erro}`);
-  } catch (erro) {
-    detalhes.push(`deno-fetch ${resumoSeguro(erro)}`);
-  }
-
-  try {
-    const resposta = await getComNodeHttps(new URL(url), material, timeoutMs);
-    const avaliado = avaliar(url, resposta);
-    if (avaliado.ok) return avaliado;
-    detalhes.push(`node-https ${avaliado.erro}`);
-  } catch (erro) {
-    detalhes.push(`node-https ${resumoSeguro(erro)}`);
-  }
-
-  return {
-    ok: false,
-    status: 0,
-    bytes: null,
-    contentType: null,
-    erro: detalhes.join(" | ").slice(0, 500),
-    url,
-  };
+  });
 }
