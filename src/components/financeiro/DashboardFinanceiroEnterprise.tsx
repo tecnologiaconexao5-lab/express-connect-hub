@@ -23,33 +23,38 @@ interface KPICardProps {
   trend?: number;
   trendLabel?: string;
   size?: "lg" | "sm";
+  inverterTendencia?: boolean;
 }
 
-const KPICard = ({ title, value, subValue, icon: Icon, gradient, iconBg, trend, trendLabel, size = "sm" }: KPICardProps) => (
-  <div className={`relative group overflow-hidden rounded-xl border bg-card shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5 ${size === "lg" ? "p-6" : "p-5"}`}>
-    <div className={`absolute top-0 left-0 right-0 h-1 ${gradient}`} />
-    <div className="flex items-start justify-between">
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
-        <p className={`font-black tracking-tight text-foreground truncate ${size === "lg" ? "text-3xl" : "text-2xl"}`}>{value}</p>
-        {subValue && <p className="text-xs text-muted-foreground mt-1 font-medium">{subValue}</p>}
-        {trend !== undefined && (
-          <div className={`inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-xs font-bold ${
-            trend >= 0
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-          }`}>
-            {trend >= 0 ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {fmtPct(trend)} {trendLabel ?? "vs mês ant."}
-          </div>
-        )}
-      </div>
-      <div className={`flex-shrink-0 ml-3 p-3 rounded-xl ${iconBg} shadow-sm group-hover:scale-110 transition-transform duration-200`}>
-        <Icon className={`${size === "lg" ? "w-6 h-6" : "w-5 h-5"} text-white`} />
+const KPICard = ({ title, value, subValue, icon: Icon, gradient, iconBg, trend, trendLabel, size = "sm", inverterTendencia = false }: KPICardProps) => {
+  const alta = (trend ?? 0) >= 0;
+  const positivo = inverterTendencia ? (trend ?? 0) <= 0 : alta;
+  return (
+    <div className={`relative group overflow-hidden rounded-xl border bg-card shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5 ${size === "lg" ? "p-6" : "p-5"}`}>
+      <div className={`absolute top-0 left-0 right-0 h-1 ${gradient}`} />
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
+          <p className={`font-black tracking-tight text-foreground truncate ${size === "lg" ? "text-3xl" : "text-2xl"}`}>{value}</p>
+          {subValue && <p className="text-xs text-muted-foreground mt-1 font-medium">{subValue}</p>}
+          {trend !== undefined && (
+            <div className={`inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+              positivo
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+            }`}>
+              {alta ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {fmtPct(trend)} {trendLabel ?? "vs mês ant."}
+            </div>
+          )}
+        </div>
+        <div className={`flex-shrink-0 ml-3 p-3 rounded-xl ${iconBg} shadow-sm group-hover:scale-110 transition-transform duration-200`}>
+          <Icon className={`${size === "lg" ? "w-6 h-6" : "w-5 h-5"} text-white`} />
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default function DashboardFinanceiroEnterprise() {
   const [isLoading, setIsLoading] = useState(true);
@@ -382,6 +387,7 @@ export default function DashboardFinanceiroEnterprise() {
               iconBg="bg-gradient-to-br from-red-500 to-rose-700"
               trend={kpis.variacaoCusto}
               trendLabel="(↓ bom)"
+              inverterTendencia
               size="lg"
             />
             <KPICard
@@ -416,7 +422,7 @@ export default function DashboardFinanceiroEnterprise() {
             <KPICard
               title="A Pagar Geral"
               value={fmtFin(kpisSecundarios.aPagar7d)}
-              subValue="financeiro_pagar"
+              subValue="Contas a pagar gerais"
               icon={ArrowUpRight}
               gradient="bg-gradient-to-r from-orange-500 to-red-500"
               iconBg="bg-gradient-to-br from-orange-500 to-red-600"
@@ -424,7 +430,7 @@ export default function DashboardFinanceiroEnterprise() {
             <KPICard
               title="Repasses Prestadores"
               value={fmtFin(kpisSecundarios.repassesPendentes)}
-              subValue="pagamentos_prestadores"
+              subValue="Repasses a motoristas"
               icon={Truck}
               gradient="bg-gradient-to-r from-violet-500 to-purple-600"
               iconBg="bg-gradient-to-br from-violet-500 to-purple-700"

@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BarChart, Bar, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
+import { calcularStatusEfetivo, hojeSP } from "@/helpers/statusVencimento";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtFull = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -54,21 +55,46 @@ const TabFinanceiro = () => {
     faturamentoPrevisto: 0, pagamentoPrevisto: 0,
     osAguardandoFaturamento: 0, pagamentosPendentes: 0,
     recebimentosPendentes: 0,
+    inadimplenciaValor: 0, inadimplenciaQtd: 0,
   });
   const [vencimentos, setVencimentos] = useState<any[]>([]);
   const [composicao, setComposicao] = useState<any[]>([]);
 
   useEffect(() => {
+    let active = true;
+
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const [osData, receberData, pagarData, composicaoData] = await Promise.all([
-          supabase.from("ordens_servico").select("valor_cliente, custo_prestador, status_faturamento, status, created_at").gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59"),
-          supabase.from("financeiro_receber").select("valor, status, vencimento, descricao").gte("vencimento", filters.dataInicio).lte("vencimento", filters.dataFim + "T23:59:59").order("vencimento", { ascending: true }).limit(100),
-          supabase.from("financeiro_pagar").select("valor, status, vencimento, descricao").gte("vencimento", filters.dataInicio).lte("vencimento", filters.dataFim + "T23:59:59").order("vencimento", { ascending: true }).limit(100),
-          supabase.from("composicao_financeira_os").select("valor_cliente, custo_prestador, margem_bruta, margem_liquida").limit(100),
+        const [osRes, receberRes, pagarRes, composicaoRes] = await Promise.all([
+          supabase.from("ordens_servico")
+            .select("valor_cliente, custo_prestador, status_faturamento, status, created_at")
+            .eq("is_teste", false)
+            .gte("created_at", filters.dataInicio)
+            .lte("created_at", filters.dataFim + "T23:59:59"),
+          supabase.from("financeiro_receber")
+            .select("valor, status, vencimento, descricao, data_pagamento")
+            .eq("is_teste", false)
+            .order("vencimento", { ascending: true })
+            .limit(1000),
+          supabase.from("financeiro_pagar")
+            .select("valor, status, vencimento, descricao")
+            .eq("is_teste", false)
+            .order("vencimento", { ascending: true })
+            .limit(1000),
+          supabase.from("composicao_financeira_os")
+            .select("valor_cliente, valor_prestador, margem_bruta, margem_liquida")
+            .limit(100),
         ]);
 
-        const osItems = osData.data || [];
+        if (osRes.error) console.error("[TabFinanceiro] Falha ao consultar ordens_servico:", osRes.error.message);
+        if (receberRes.error) console.error("[TabFinanceiro] Falha ao consultar financeiro_receber:", receberRes.error.message);
+        if (pagarRes.error) console.error("[TabFinanceiro] Falha ao consultar financeiro_pagar:", pagarRes.error.message);
+        if (composicaoRes.error) console.error("[TabFinanceiro] Falha ao consultar composicao_financeira_os:", composicaoRes.error.message);
+
+        if (!active) return;
+
+        const osItems = osRes.data || [];
         const valorTotalOS = osItems.reduce((a, o) => a + (o.valor_cliente || 0), 0);
         const aFaturar = osItems.filter(o => o.status_faturamento === "a faturar").reduce((a, o) => a + (o.valor_cliente || 0), 0);
         const faturado = osItems.filter(o => o.status_faturamento === "faturada").reduce((a, o) => a + (o.valor_cliente || 0), 0);
@@ -78,48 +104,98 @@ const TabFinanceiro = () => {
         const pagamentoPrevisto = osNaoCanceladas.reduce((a, o) => a + (o.custo_prestador || 0), 0);
         const osAguardandoFaturamento = osItems.filter(o => !o.status_faturamento || o.status_faturamento !== "faturada").length;
 
-        const recItems = receberData.data || [];
-        const aReceber = recItems.filter(i => i.status === "aberto" || i.status === "a vencer").reduce((a, i) => a + (i.valor || 0), 0);
-        const recebido = recItems.filter(i => i.status === "pago" || i.status === "recebido").reduce((a, i) => a + (i.valor || 0), 0);
-        const recebimentosPendentes = aReceber;
+        const recTodos = receberRes.data || [];
+        const pagTodos = pagarRes.data || [];
 
-        const pagItems = pagarData.data || [];
-        const aPagar = pagItems.filter(i => i.status === "aberto" || i.status === "a vencer").reduce((a, i) => a + (i.valor || 0), 0);
-        const pago = pagItems.filter(i => i.status === "pago" || i.status === "quitado").reduce((a, i) => a + (i.valor || 0), 0);
-        const pagamentosPendentes = aPagar;
+        const dataCurta = (valor: string | null | undefined): string =>
+          valor ? String(valor).slice(0, 10) : "";
+        const dentroDoPeriodo = (vencimento: string | null | undefined): boolean => {
+          const data = dataCurta(vencimento);
+          return !!data && data >= filters.dataInicio && data <= filters.dataFim;
+        };
+        const statusReceber = (item: { status?: string | null; vencimento?: string | null; data_pagamento?: string | null }) =>
+          calcularStatusEfetivo({
+            statusPersistido: item.status,
+            dataVencimento: dataCurta(item.vencimento) || null,
+            dataPagamento: dataCurta(item.data_pagamento) || null,
+          });
+        const statusPagar = (item: { status?: string | null; vencimento?: string | null }) =>
+          calcularStatusEfetivo({
+            statusPersistido: item.status,
+            dataVencimento: dataCurta(item.vencimento) || null,
+          });
 
-        setFinanceiro({ aFaturar, faturado, aReceber, recebido, aPagar, pago, totalOS: osItems.length, valorTotalOS, faturamentoPrevisto, pagamentoPrevisto, osAguardandoFaturamento, pagamentosPendentes, recebimentosPendentes });
+        const EM_ABERTO = new Set(["a_vencer", "vence_hoje", "atrasado"]);
+
+        const aReceber = recTodos
+          .filter(i => dentroDoPeriodo(i.vencimento) && EM_ABERTO.has(statusReceber(i)))
+          .reduce((a, i) => a + (i.valor || 0), 0);
+        const recebido = recTodos
+          .filter(i => dentroDoPeriodo(i.vencimento) && statusReceber(i) === "pago")
+          .reduce((a, i) => a + (i.valor || 0), 0);
+        const aPagar = pagTodos
+          .filter(i => dentroDoPeriodo(i.vencimento) && EM_ABERTO.has(statusPagar(i)))
+          .reduce((a, i) => a + (i.valor || 0), 0);
+        const pago = pagTodos
+          .filter(i => dentroDoPeriodo(i.vencimento) && statusPagar(i) === "pago")
+          .reduce((a, i) => a + (i.valor || 0), 0);
+
+        // Inadimplência no mesmo critério da Gestão Financeira: todo título
+        // vencido (status efetivo "atrasado"), independentemente do período.
+        const vencidos = recTodos.filter(i => statusReceber(i) === "atrasado");
+        const inadimplenciaValor = vencidos.reduce((a, i) => a + (i.valor || 0), 0);
+        const inadimplenciaQtd = vencidos.length;
+
+        setFinanceiro({
+          aFaturar, faturado, aReceber, recebido, aPagar, pago,
+          totalOS: osItems.length, valorTotalOS, faturamentoPrevisto, pagamentoPrevisto,
+          osAguardandoFaturamento, pagamentosPendentes: aPagar, recebimentosPendentes: aReceber,
+          inadimplenciaValor, inadimplenciaQtd,
+        });
 
         // Próximos vencimentos (a receber + a pagar, ordenados)
-        const hoje = new Date().toISOString().split("T")[0];
-        const vcRec = recItems.filter(i => i.status !== "pago" && i.status !== "recebido" && i.vencimento >= hoje).slice(0, 5).map(i => ({ ...i, tipo: "receber" }));
-        const vcPag = pagItems.filter(i => i.status !== "pago" && i.status !== "quitado" && i.vencimento >= hoje).slice(0, 5).map(i => ({ ...i, tipo: "pagar" }));
+        const hoje = hojeSP();
+        const proximo = (vencimento: string | null | undefined, statusEfetivo: string): boolean => {
+          const data = dataCurta(vencimento);
+          return !!data && data >= hoje && dentroDoPeriodo(vencimento) &&
+            !["pago", "cancelado", "renegociado"].includes(statusEfetivo);
+        };
+        const vcRec = recTodos
+          .filter(i => proximo(i.vencimento, statusReceber(i)))
+          .slice(0, 5)
+          .map(i => ({ ...i, tipo: "receber" }));
+        const vcPag = pagTodos
+          .filter(i => proximo(i.vencimento, statusPagar(i)))
+          .slice(0, 5)
+          .map(i => ({ ...i, tipo: "pagar" }));
         const vcAll = [...vcRec, ...vcPag].sort((a, b) => (a.vencimento ?? "").localeCompare(b.vencimento ?? "")).slice(0, 8);
         setVencimentos(vcAll);
 
-        // Composição para gráfico
-        if (composicaoData.data && composicaoData.data.length > 0) {
-          setComposicao(composicaoData.data.slice(0, 12).map((c, i) => ({
+        // Composição para gráfico (coluna real: valor_prestador)
+        if (composicaoRes.data && composicaoRes.data.length > 0) {
+          setComposicao(composicaoRes.data.slice(0, 12).map((c, i) => ({
             id: `OS ${i + 1}`,
             receita: c.valor_cliente || 0,
-            custo: c.custo_prestador || 0,
+            custo: c.valor_prestador || 0,
             margem: c.margem_bruta || 0,
           })));
         }
       } catch (err) {
         console.error("[TabFinanceiro]", err);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchData();
-  }, []);
+    return () => { active = false; };
+  }, [filters.dataInicio, filters.dataFim]);
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   const lucroB = financeiro.recebido - financeiro.pago;
   const margemPct = financeiro.recebido > 0 ? ((lucroB / financeiro.recebido) * 100) : 0;
-  const inadimplencia = financeiro.aReceber > 0 ? ((financeiro.aReceber / (financeiro.aReceber + financeiro.recebido)) * 100) : 0;
+  const carteira = financeiro.aReceber + financeiro.recebido;
+  const inadimplenciaPct = carteira > 0 ? ((financeiro.inadimplenciaValor / carteira) * 100) : 0;
   const saldoProjetado = financeiro.aReceber - financeiro.aPagar;
   const custoMedioOS = financeiro.totalOS > 0 ? financeiro.valorTotalOS / financeiro.totalOS : 0;
 
@@ -171,7 +247,14 @@ const TabFinanceiro = () => {
         <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2"><TrendingUp className="w-3.5 h-3.5 text-primary" />Gestão Financeira</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard title="Custo Médio por OS" value={fmt(custoMedioOS)} icon={CreditCard} colorClass="text-blue-500" sub={`${financeiro.totalOS} OS no período`} />
-          <KpiCard title="Inadimplência" value={`${inadimplencia.toFixed(1)}%`} icon={AlertTriangle} colorClass={inadimplencia > 20 ? "text-rose-500" : "text-amber-500"} trend={inadimplencia > 20 ? "down" : "up"} />
+          <KpiCard
+            title="Inadimplência"
+            value={fmt(financeiro.inadimplenciaValor)}
+            icon={AlertTriangle}
+            colorClass={financeiro.inadimplenciaValor > 0 ? "text-rose-500" : "text-emerald-500"}
+            sub={`${financeiro.inadimplenciaQtd} título(s) vencido(s) · ${inadimplenciaPct.toFixed(1)}% da carteira`}
+            trend={financeiro.inadimplenciaValor > 0 ? "down" : "up"}
+          />
           <KpiCard title="Saldo Projetado" value={fmt(saldoProjetado)} icon={TrendingUp} colorClass={saldoProjetado >= 0 ? "text-emerald-500" : "text-rose-500"} sub="receber - pagar" />
           <KpiCard title="Faturado" value={fmt(financeiro.faturado)} icon={CheckCircle2} colorClass="text-primary" sub="NF emitida" />
         </div>

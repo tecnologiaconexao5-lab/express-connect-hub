@@ -90,6 +90,22 @@ const timeAgo = (timestamp: string): string => {
   return formatarDataBR(timestamp).slice(0, 5);
 };
 
+/** Janela da timeline ao vivo (evita registros históricos de 130+ dias). */
+const JANELA_TIMELINE_DIAS = 30;
+
+/** Data civil (YYYY-MM-DD) em America/Sao_Paulo a partir de um timestamp. */
+const dataSP = (valor?: string | null): string => {
+  if (!valor) return "";
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(data);
+};
+
 interface FiltrosMapaProps {
   mapFilter: string;
   markers: MapLocation[];
@@ -436,7 +452,7 @@ const TorreControle = () => {
       const agAceiteAloc = alocStatsTipado.filter((a) => a.status === "aguardando_aceite").length;
       const ocorrAloc = alocStatsTipado.filter((a) => a.status === "ocorrencia").length;
       const concluidasHojeAloc = alocStatsTipado.filter((a) =>
-        a.status === "concluida" && (a.data_finalizacao || "").startsWith(hoje)
+        a.status === "concluida" && dataSP(a.data_finalizacao) === hoje
       ).length;
 
       const emRotaOS = listaOS.filter(o =>
@@ -455,7 +471,10 @@ const TorreControle = () => {
         aguardandoAceite: Math.max(agAceiteAloc, aguardandoAceiteOS),
         comOcorrencia: Math.max(ocorrAloc, comOcorrenciaOS),
         atrasadas: listaOS.filter(o => isOSAtrasada(o.previsaoTermino, o.status)).length || 0,
-        concluidasHoje: Math.max(concluidasHojeAloc, listaOS.filter(o => o.status === "finalizada").length),
+        concluidasHoje: Math.max(
+          concluidasHojeAloc,
+          listaOS.filter(o => o.status === "finalizada" && dataSP(o.updated_at) === hoje).length,
+        ),
         semComprovante: totalSemComprovante ?? 0,
         emRisco: listaOS.filter(o => calcularRiscoOperacional(o.previsaoTermino, o.status)).length || 0,
         semPrevisao: listaOS.filter(o => !o.previsaoTermino && !isOSConcluida(o.status)).length || 0,
@@ -477,6 +496,9 @@ const TorreControle = () => {
     setTimelineLoading(true);
     try {
       const events: TimelineEvent[] = [];
+      const desdeTimeline = new Date(
+        Date.now() - JANELA_TIMELINE_DIAS * 24 * 60 * 60 * 1000,
+      ).toISOString();
 
       // M104: Event Bus como fonte PRIMÁRIA de eventos operacionais
       const { data: eventosOficiais } = await supabase
@@ -496,6 +518,7 @@ const TorreControle = () => {
           "portal.ocorrencia.aberta",
           ...APP_EVENT_TYPES,
         ])
+        .gte("created_at", desdeTimeline)
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -550,9 +573,16 @@ const TorreControle = () => {
             sev = "baixa";
           }
 
-          const descricao = isApp
-            ? `[App] ${eventTypeToLabel(ev.event_type)}`
-            : `[Event Bus] ${ev.event_type.replace(/\./g, " ")} — ${p.cliente_nome || p.os_numero || "—"}`;
+          const rotulo = String(ev.event_type) === "pod_sent"
+            ? "Comprovante POD enviado"
+            : eventTypeToLabel(String(ev.event_type));
+          const referencia = p.os_numero || ev.entity_number || m.os_numero || "";
+          const nomeClienteEvento = p.cliente_nome || m.cliente_nome || "";
+          const descricao = [
+            rotulo,
+            referencia ? `OS ${referencia}` : "",
+            nomeClienteEvento,
+          ].filter(Boolean).join(" — ");
 
           events.push({
             id: `eb-${ev.id}`,
@@ -573,6 +603,7 @@ const TorreControle = () => {
       const { data: ocData } = await supabase
         .from("ocorrencias")
         .select("id, created_at, tipo, severidade, ordens_servico(numero, cliente, prestador)")
+        .gte("created_at", desdeTimeline)
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -595,6 +626,7 @@ const TorreControle = () => {
       const { data: escData } = await supabase
         .from("escalonamentos_humanos")
         .select("id, titulo, descricao, prioridade, created_at")
+        .gte("created_at", desdeTimeline)
         .order("created_at", { ascending: false })
         .limit(50);
 

@@ -10,6 +10,7 @@ import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
 const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtN = (v: number) => v.toLocaleString("pt-BR");
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ttStyle = { backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))", borderRadius: "8px", fontSize: "12px" };
 
@@ -87,6 +88,30 @@ const TabExecutivo = () => {
 
         if (osData?.data) {
           const items = osData.data;
+
+          // Resolve UUIDs de cliente em lote para exibir nome no gráfico
+          // "Top 5 Clientes" (nunca o UUID bruto).
+          const idsClientes = Array.from(new Set(
+            items
+              .map((o) => o.cliente)
+              .filter((valor): valor is string => typeof valor === "string" && UUID_REGEX.test(valor)),
+          ));
+          const nomesClientes: Record<string, string> = {};
+          if (idsClientes.length > 0) {
+            const { data: nomes, error: nomesError } = await supabase
+              .from("clientes")
+              .select("id, nome_fantasia, razao_social")
+              .in("id", idsClientes);
+            if (nomesError) {
+              console.error("[TabExecutivo] Falha ao resolver nomes de clientes:", nomesError.message);
+            } else {
+              for (const cliente of nomes || []) {
+                nomesClientes[cliente.id] = cliente.nome_fantasia || cliente.razao_social || cliente.id;
+              }
+            }
+          }
+          if (!active) return;
+
           setOsTotal(items.length);
           const fin = items.filter(o => o.status === "finalizada").length;
           setOsFinalizadas(fin);
@@ -110,7 +135,10 @@ const TabExecutivo = () => {
           // Top 5 clientes
           const cv: Record<string, number> = {};
           items.forEach(o => { const c = o.cliente || "Sem cliente"; cv[c] = (cv[c] || 0) + (o.valor_cliente || 0); });
-          setClientesTop(Object.entries(cv).map(([cliente, valor]) => ({ cliente, valor })).sort((a, b) => b.valor - a.valor).slice(0, 5));
+          setClientesTop(Object.entries(cv).map(([cliente, valor]) => ({
+            cliente: nomesClientes[cliente] || (UUID_REGEX.test(cliente) ? "Cliente não identificado" : cliente),
+            valor,
+          })).sort((a, b) => b.valor - a.valor).slice(0, 5));
 
           // Evolução mensal (últimos 6 meses)
           const mesMap: Record<string, { r: number; c: number }> = {};

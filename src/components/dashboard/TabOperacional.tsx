@@ -40,6 +40,8 @@ const MetricRow = ({ label, value, color }: { label: string; value: string; colo
 
 function hoje() { return new Date().toISOString().split("T")[0]; }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const TabOperacional = () => {
   const navigate = useNavigate();
   const { filters } = useDashboardFilters();
@@ -55,6 +57,7 @@ const TabOperacional = () => {
   const [osPorStatus, setOsPorStatus] = useState<{ nome: string; qtd: number }[]>([]);
   const [osPorDia, setOsPorDia] = useState<{ dia: string; os: number }[]>([]);
   const [osRecentes, setOsRecentes] = useState<any[]>([]);
+  const [clienteNomes, setClienteNomes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
@@ -68,7 +71,7 @@ const TabOperacional = () => {
 
         const results = await Promise.allSettled([
           supabase.from("ordens_servico")
-            .select("id, status, numero, created_at, data_programada, cliente, veiculo_tipo")
+            .select("id, status, numero, created_at, data_programada, cliente, cliente_id, veiculo_tipo")
             .gte("created_at", filters.dataInicio)
             .lte("created_at", filters.dataFim + "T23:59:59")
             .order("created_at", { ascending: false })
@@ -92,6 +95,31 @@ const TabOperacional = () => {
 
         if (osResult?.data) {
           const items = osResult.data;
+
+          // Resolve os UUIDs de cliente em lote (Razão Social / Nome Fantasia),
+          // evitando exibir UUID bruto na tabela "Últimas Ordens de Serviço".
+          const idsClientes = Array.from(new Set(
+            items
+              .flatMap((o) => [o.cliente, o.cliente_id])
+              .filter((valor): valor is string => typeof valor === "string" && UUID_REGEX.test(valor)),
+          ));
+          if (idsClientes.length > 0) {
+            const { data: nomes, error: nomesError } = await supabase
+              .from("clientes")
+              .select("id, nome_fantasia, razao_social")
+              .in("id", idsClientes);
+            if (nomesError) {
+              console.error("[TabOperacional] Falha ao resolver nomes de clientes:", nomesError.message);
+            } else {
+              const mapa: Record<string, string> = {};
+              for (const cliente of nomes || []) {
+                mapa[cliente.id] = cliente.nome_fantasia || cliente.razao_social || cliente.id;
+              }
+              if (active) setClienteNomes(mapa);
+            }
+          }
+          if (!active) return;
+
           const total = items.length;
           const pendentes = items.filter(o => o.status === "pendente").length;
           const rascunho = items.filter(o => o.status === "rascunho").length;
@@ -154,6 +182,13 @@ const TabOperacional = () => {
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   const motoristasEmViagem = escalaStats.emExecucao;
+
+  const rotuloCliente = (os: { cliente?: string | null; cliente_id?: string | null }): string => {
+    const id = os.cliente || os.cliente_id || "";
+    if (id && clienteNomes[id]) return clienteNomes[id];
+    if (id) return "Cliente não identificado";
+    return "—";
+  };
 
   return (
     <div className="space-y-6">
@@ -261,7 +296,7 @@ const TabOperacional = () => {
                 return (
                   <TableRow key={o.numero || o.id} className="hover:bg-muted/20 cursor-pointer transition" onClick={() => navigate("/operacao?tab=os")}>
                     <TableCell className="text-xs font-semibold">{o.numero || "—"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{o.cliente || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{rotuloCliente(o)}</TableCell>
                     <TableCell className="text-xs">{o.veiculo_tipo || "—"}</TableCell>
                     <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${badgeClass}`}>{o.status?.replace(/_/g, " ")}</span></TableCell>
                     <TableCell className="text-xs text-muted-foreground">{o.created_at?.split("T")[0]}</TableCell>
