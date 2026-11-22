@@ -1,5 +1,32 @@
 # Summary
 
+## MISSÃO DANFSE-PDF-OFICIAL-ADN — Download automático + sob demanda do PDF oficial (ADN) com persistência no Storage e botão de download direto (2026-11-21)
+
+**Status:** ✅ Concluída (código + validação + deploy da Edge). `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` ok · `npx tsc --noEmit` 0 erros · `npm run build` ok · Edge `nfse-assinar-transmitir` **deployada** (`Deployed Functions on project uwrvzsjtpgaifkktpepn`, assets incluem `_shared/nfseAdn.ts`). **Sem migration · sem alteração do `nfseDps.ts`, geração/assinatura da DPS ou regras da Sefin.**
+
+### O que mudou
+1. **NOVO `supabase/functions/_shared/nfseAdn.ts`** — download do DANFSe oficial do Ambiente Nacional (ADN) via mTLS com o certificado A1 do emitente. Endpoints por ambiente (override por secrets `NFSE_ADN_URL`/`NFSE_ADN_URL_PRODUCAO`/`NFSE_ADN_URL_HOMOLOGACAO`): produção `https://adn.nfse.gov.br/danfse/{chave}`; homologação `https://adn.producaorestrita.nfse.gov.br/danfse/{chave}`. Estratégia: proxy Vercel (se configurado) → `Deno.createHttpClient` → `node:https`; validação estrita de magic `%PDF`, limite 12 MB, timeout 9 s, erros sanitizados (sem certificado/senha); exporta `baixarDanfseOficialAdn` e `urlDanfseOficial` (chave 44–60 dígitos).
+2. **`supabase/functions/nfse-assinar-transmitir/index.ts`** — (a) após autorização da DPS, chamada **best-effort** de `baixarDanfseOficialAdn` (linha ~189) que persiste em `storage` bucket `fiscal-documentos` (`nfse/{chave}-oficial.pdf`), grava `metadata.pdf_oficial_path` + `documentos_storage.danfse_oficial`/`danfse_pdf` — **falha/timeout nunca derruba a emissão** (apenas log); (b) nova `acao === "baixar_danfse" | "baixar_danfse_oficial"` (linhas 316–320) que busca o PDF sob demanda e devolve `{ ok, base64, contentType, filename }`.
+3. **`api/nfse-sefin-proxy.ts`** — aceita **GET** restrito a paths `/danfse/` (linhas 329–331, erro `"GET permitido apenas em /danfse/."`) mantendo POST para a Sefin; binário com `responseEncoding: "base64"` já existente (linhas 30–31/207/295) e `node:http(s).request` genérico com `responseEncoding` (linha 297).
+4. **`src/components/fiscal/NfseTab.tsx`** — botão antigo "PDF Oficial (Sefin)" virou **"Baixar DANFSe Oficial"** (`Loader2` + `abrindoPdfOficialId`, `disabled={pdfOficialDisabled || abrindoPdfOficialId === selectedNfse.id}`, guard `if (abrindoPdfOficialId) return`). Fluxo de `baixarPdfOficial` (linha 1561): **storage-first** (`pdf_url` → `metadata.pdf_oficial_path` → `documentos_storage.danfse_oficial/danfse_pdf`) → fallback Edge Function `nfse-assinar-transmitir` com `{ nfse_id, acao: "baixar_danfse" }` (linha 1596) → `baixarArquivo(blob, nomeArquivoDanfseOficial(nfse))` (linha 1636) com nome amigável **`DANFSe-Oficial-NFSe-{numero}.pdf`** (`nomeArquivoDanfseOficial`, linha 1553). Novo tipo `RespostaPdfOficial` (linha 486) com parsing `base64`/`contentType`/`filename`.
+5. **Ambiente** — resolvido por `meta.emissao.ambiente` → `isProducao` (`"producao"`/`"1"`), mesmo padrão do QR do DANFSe.
+
+### Arquivos
+- `supabase/functions/_shared/nfseAdn.ts` (NOVO) · `supabase/functions/nfse-assinar-transmitir/index.ts` · `api/nfse-sefin-proxy.ts` · `src/components/fiscal/NfseTab.tsx` · `AGENTS.md`
+
+### Validação
+- `npx deno check --node-modules-dir=auto supabase/functions/nfse-assinar-transmitir/index.ts` → exit 0.
+- `npx tsc --noEmit` → 0 erros; `npm run build` → ok (apenas avisos pré-existentes).
+- `npx supabase functions deploy nfse-assinar-transmitir --project-ref uwrvzsjtpgaifkktpepn` → "Deployed Functions on project uwrvzsjtpgaifkktpepn" (bundle com `_shared/nfseAdn.ts`).
+- Proxy Vercel verificado: GET + `responseEncoding: "base64"` + guarda `/danfse/` presentes.
+
+### Pendências
+1. (deploy) `git push` (Vercel) para publicar `NfseTab.tsx` e `api/nfse-sefin-proxy.ts`.
+2. (QA) Emitir NFS-e → conferir PDF oficial salvo em `fiscal-documentos` + `metadata.pdf_oficial_path`/`documentos_storage.danfse_oficial`; clicar "Baixar DANFSe Oficial" → arquivo `DANFSe-Oficial-NFSe-*.pdf` baixa (storage-first e fallback via Edge); nota antiga sem PDF → fallback sob demanda; falha do ADN → emissão segue normal.
+3. (nota) Secrets opcionais no Supabase: `NFSE_ADN_URL*`, `NFSE_SEFIN_PROXY_URL`/`NFSE_SEFIN_PROXY_TOKEN`, `NFSE_SEFIN_CA_PEM` — defaults públicos funcionam sem eles.
+
+---
+
 ## MISSÃO DANFSE-LAYOUT-FINAL — Folha única A4, logo ampliado, barras sem filete laranja, rodapé executivo, QR por ambiente e máscaras do tomador (2026-11-21)
 
 **Status:** ✅ Concluída (código + validação). `npx tsc --noEmit` 0 erros · `npm run build` ok (48,98s). **Sem migration · sem alteração de lógica fiscal, XML da DPS ou regras da Sefin** — mudanças exclusivas do template de impressão.

@@ -29,6 +29,8 @@ import type { MaterialCertificado } from "../_shared/nfsePfx.ts";
 import { assinarDpsXml } from "../_shared/nfseXmlSign.ts";
 import { transmitirParaSefin } from "../_shared/nfseSefin.ts";
 import type { RespostaSefin } from "../_shared/nfseSefin.ts";
+import { baixarDanfseOficialAdn } from "../_shared/nfseAdn.ts";
+import type { ResultadoDanfseOficial } from "../_shared/nfseAdn.ts";
 
 const BUCKET_CERTIFICADOS = "certificados-fiscais";
 const BUCKET_DOCUMENTOS = "fiscal-documentos";
@@ -171,6 +173,65 @@ async function atualizarRascunho(
   }
 }
 
+/**
+ * Baixa o DANFSe oficial com um limite total rigido, para nunca atrasar
+ * a resposta da emissao. Retorna ok=false (sem lancar) em timeout/falha.
+ */
+async function baixarDanfseComLimite(
+  chaveAcesso: string,
+  ambiente: string,
+  material: { keyPem: string; chainPem: string },
+  limiteMs: number,
+): Promise<ResultadoDanfseOficial> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      baixarDanfseOficialAdn(chaveAcesso, ambiente, material, {
+        timeoutMs: Math.min(8000, limiteMs),
+      }),
+      new Promise<ResultadoDanfseOficial>((resolve) => {
+        timer = setTimeout(function() {
+          resolve({
+            ok: false,
+            status: 0,
+            bytes: null,
+            contentType: null,
+            erro: "tempo esgotado aguardando o DANFSe no ADN",
+            url: "",
+          });
+        }, limiteMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function caminhoPdfOficialSalvo(
+  admin: AdminClient,
+  rascunho: Record<string, unknown>,
+  meta: Record<string, unknown>,
+): Promise<string | null> {
+  const documentos = objeto(meta.documentos_storage) ?? {};
+  const candidatos = [
+    texto(meta.pdf_oficial_path),
+    texto(documentos.danfse_oficial),
+    texto(documentos.danfse_pdf),
+    texto(documentos.nfse_pdf),
+    texto(rascunho.pdf_url),
+  ].filter((valor): valor is string => Boolean(valor));
+
+  for (const candidato of candidatos) {
+    if (/^https?:\/\//i.test(candidato)) continue;
+    const caminho = candidato.replace(/^fiscal-documentos\//, "");
+    const { error } = await admin.storage
+      .from(BUCKET_DOCUMENTOS)
+      .createSignedUrl(caminho, 60);
+    if (!error) return caminho;
+  }
+  return null;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -240,7 +301,7 @@ serve(async (req: Request) => {
     }
 
     // ---------- 2) Payload ----------
-    let body: { nfse_id?: string } | null = null;
+    let body: { nfse_id?: string; acao?: string } | null = null;
     try {
       body = await req.json();
     } catch {
@@ -251,6 +312,12 @@ serve(async (req: Request) => {
     if (!UUID_RE.test(nfseId)) {
       return respostaJson({ success: false, error: "nfse_id invalido." }, 400);
     }
+
+    // acao "baixar_danfse": busca/entrega o PDF oficial sob demanda
+    // (nao transmite nada). Sem acao: fluxo normal de emissao.
+    const acao = String(body?.acao || "emitir").trim().toLowerCase();
+    const baixarDanfse = acao === "baixar_danfse" ||
+      acao === "baixar_danfse_oficial";
 
     // ---------- 3) Rascunho ----------
     const { data: rascunho, error: draftError } = await admin
@@ -274,17 +341,19 @@ serve(async (req: Request) => {
     }
 
     const statusAtual = String(rascunho.status || "").toLowerCase();
-    if (statusAtual === "emitida") {
-      return respostaJson(
-        { success: false, error: "Esta NFS-e ja foi emitida." },
-        409,
-      );
-    }
-    if (statusAtual === "processando") {
-      return respostaJson(
-        { success: false, error: "Esta NFS-e ja esta em processamento." },
-        409,
-      );
+    if (!baixarDanfse) {
+      if (statusAtual === "emitida") {
+        return respostaJson(
+          { success: false, error: "Esta NFS-e ja foi emitida." },
+          409,
+        );
+      }
+      if (statusAtual === "processando") {
+        return respostaJson(
+          { success: false, error: "Esta NFS-e ja esta em processamento." },
+          409,
+        );
+      }
     }
 
     const meta = objeto(rascunho.metadata) ?? {};
@@ -449,6 +518,148 @@ serve(async (req: Request) => {
         },
         422,
       );
+    }
+
+    // ---------- 5.1) DANFSe oficial sob demanda ----------
+    if (baixarDanfse) {
+      const metaEmissao = objeto(meta.emissao) ?? {};
+      const chaveAcesso = somenteDigitos(
+        rascunho.chave_acesso || metaEmissao["chave_acesso"],
+      );
+      if (!chaveAcesso) {
+        return respostaJson(
+          {
+            success: false,
+            error:
+              "NFS-e sem chave de acesso autorizada. O PDF oficial so existe apos a emissao.",
+          },
+          422,
+        );
+      }
+
+      const caminhoSalvo = await caminhoPdfOficialSalvo(admin, rascunho, meta);
+      if (caminhoSalvo) {
+        const { data: signed } = await admin.storage
+          .from(BUCKET_DOCUMENTOS)
+          .createSignedUrl(caminhoSalvo, 3600);
+        if (signed?.signedUrl) {
+          await registrarEvento(
+            admin,
+            nfseId,
+            "DANFSE_OFICIAL_ENTREGUE",
+            "PDF oficial recuperado do Storage.",
+            { chave_acesso: chaveAcesso, caminho: caminhoSalvo },
+          );
+          return respostaJson({
+            success: true,
+            status: "emitida",
+            chave_acesso: chaveAcesso,
+            pdf_oficial_path: caminhoSalvo,
+            links: { xml: null, pdf: signed.signedUrl },
+          });
+        }
+      }
+
+      const download = await baixarDanfseComLimite(
+        chaveAcesso,
+        ambiente,
+        { keyPem: material.keyPem, chainPem: material.chainPem },
+        12000,
+      );
+
+      if (!download.ok || !download.bytes) {
+        console.warn(
+          "[nfse-assinar-transmitir] Aviso: DANFSe oficial indisponivel sob demanda:",
+          truncar(download.erro || "sem PDF", 300),
+        );
+        await registrarEvento(
+          admin,
+          nfseId,
+          "DANFSE_OFICIAL_FALHA",
+          download.erro || "Falha ao baixar o DANFSe oficial.",
+          {
+            ambiente,
+            chave_acesso: chaveAcesso,
+            http_status: download.status,
+          },
+        );
+        return respostaJson(
+          {
+            success: false,
+            error:
+              "Nao foi possivel baixar o PDF oficial agora. O ADN pode ainda nao disponibilizar o arquivo; tente novamente em instantes.",
+            detalhe: truncar(download.erro || "sem PDF", 300),
+          },
+          502,
+        );
+      }
+
+      const caminho = `nfse/${chaveAcesso}-oficial.pdf`;
+      const { error: uploadError } = await admin.storage
+        .from(BUCKET_DOCUMENTOS)
+        .upload(
+          caminho,
+          new Blob([new Uint8Array(download.bytes)], {
+            type: "application/pdf",
+          }),
+          { contentType: "application/pdf", upsert: true },
+        );
+
+      if (uploadError) {
+        console.error(
+          "[nfse-assinar-transmitir] Falha ao arquivar DANFSe oficial:",
+          uploadError.message,
+        );
+        return respostaJson(
+          {
+            success: false,
+            error: "Falha ao arquivar o PDF oficial no Storage.",
+          },
+          500,
+        );
+      }
+
+      const baixadoEm = new Date().toISOString();
+      await atualizarRascunho(
+        admin,
+        nfseId,
+        { pdf_url: caminho },
+        meta,
+        {
+          pdf_oficial_path: caminho,
+          pdf_oficial: {
+            caminho,
+            ambiente,
+            http_status: download.status,
+            bytes: download.bytes.length,
+            baixado_em: baixadoEm,
+          },
+          documentos_storage: {
+            ...(objeto(meta.documentos_storage) ?? {}),
+            danfse_oficial: caminho,
+          },
+        },
+      );
+
+      const { data: signedFinal } = await admin.storage
+        .from(BUCKET_DOCUMENTOS)
+        .createSignedUrl(caminho, 3600);
+
+      await registrarEvento(
+        admin,
+        nfseId,
+        "DANFSE_OFICIAL_ARQUIVADO",
+        "PDF oficial baixado do ADN e arquivado no Storage.",
+        { chave_acesso: chaveAcesso, caminho, bytes: download.bytes.length },
+      );
+
+      return respostaJson({
+        success: true,
+        status: "emitida",
+        chave_acesso: chaveAcesso,
+        pdf_oficial_path: caminho,
+        links: { xml: null, pdf: signedFinal?.signedUrl ?? null },
+      });
     }
 
     // ---------- 6) DPS ----------
@@ -679,10 +890,77 @@ serve(async (req: Request) => {
         }
       }
 
+      // PDF oficial: tenta baixar do ADN logo apos a autorizacao. Falha/timeout
+      // NAO derruba a emissao — fica registrado para nova tentativa sob demanda.
+      const chaveAcessoOficial = somenteDigitos(resposta.chaveAcesso);
+      let pdfOficialPath: string | null = null;
+      let pdfOficialInfo: Record<string, unknown> | null = null;
+      if (chaveAcessoOficial) {
+        try {
+          const download = await baixarDanfseComLimite(
+            chaveAcessoOficial,
+            ambiente,
+            { keyPem: material.keyPem, chainPem: material.chainPem },
+            12000,
+          );
+
+          if (download.ok && download.bytes) {
+            const caminho = `nfse/${chaveAcessoOficial}-oficial.pdf`;
+            const { error: uploadError } = await admin.storage
+              .from(BUCKET_DOCUMENTOS)
+              .upload(
+                caminho,
+                new Blob([new Uint8Array(download.bytes)], {
+                  type: "application/pdf",
+                }),
+                { contentType: "application/pdf", upsert: true },
+              );
+
+            if (uploadError) {
+              console.warn(
+                "[nfse-assinar-transmitir] Aviso: DANFSe oficial nao arquivada:",
+                uploadError.message,
+              );
+              pdfOficialInfo = {
+                erro: "upload_falhou",
+                detalhe: truncar(uploadError.message, 200),
+              };
+            } else {
+              pdfOficialPath = caminho;
+              pdfOficialInfo = {
+                caminho,
+                ambiente,
+                http_status: download.status,
+                bytes: download.bytes.length,
+                baixado_em: new Date().toISOString(),
+              };
+            }
+          } else {
+            console.warn(
+              "[nfse-assinar-transmitir] Aviso: DANFSe oficial indisponivel:",
+              truncar(download.erro || "sem PDF", 300),
+            );
+            pdfOficialInfo = {
+              erro: "download_falhou",
+              detalhe: truncar(download.erro || "sem PDF", 300),
+              http_status: download.status,
+            };
+          }
+        } catch (erro) {
+          pdfOficialInfo = {
+            erro: "excecao",
+            detalhe: truncar(
+              erro instanceof Error ? erro.message : String(erro),
+              300,
+            ),
+          };
+        }
+      }
+
       const numeroOficial = resposta.numero ||
         (rascunho.numero ? String(rascunho.numero) : null);
       const xmlUrl = resposta.xmlUrl || retornoPath;
-      const pdfUrl = resposta.pdfUrl;
+      const pdfUrl = pdfOficialPath || resposta.pdfUrl;
       const emitidoEm = new Date().toISOString();
 
       try {
@@ -718,10 +996,15 @@ serve(async (req: Request) => {
               retorno: resposta.corpoResumo,
             },
             rejeicao: null,
+            ...(pdfOficialPath
+              ? { pdf_oficial_path: pdfOficialPath }
+              : {}),
+            pdf_oficial: pdfOficialInfo,
             documentos_storage: {
               ...(objeto(meta.documentos_storage) ?? {}),
               nfse_dps: uploadAssinadoError ? null : assinadoPath,
               nfse_retorno: retornoPath,
+              ...(pdfOficialPath ? { danfse_oficial: pdfOficialPath } : {}),
             },
           },
         );
@@ -761,6 +1044,20 @@ serve(async (req: Request) => {
         links.pdf = data?.signedUrl ?? null;
       }
 
+      if (!pdfOficialPath && chaveAcessoOficial) {
+        await registrarEvento(
+          admin,
+          nfseId,
+          "DANFSE_OFICIAL_FALHA",
+          "PDF oficial nao baixado na emissao; disponivel sob demanda.",
+          {
+            ambiente,
+            chave_acesso: chaveAcessoOficial,
+            detalhe: texto(pdfOficialInfo?.["detalhe"]),
+          },
+        );
+      }
+
       await registrarEvento(
         admin,
         nfseId,
@@ -792,6 +1089,7 @@ serve(async (req: Request) => {
         numero: numeroOficial,
         chave_acesso: resposta.chaveAcesso,
         protocolo: resposta.protocolo,
+        pdf_oficial_path: pdfOficialPath,
         links,
       });
     }

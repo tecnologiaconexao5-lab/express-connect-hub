@@ -27,6 +27,8 @@ interface ProxyPayload {
   cert?: unknown;
   key?: unknown;
   ca?: unknown;
+  /** "base64" devolve o corpo binario (ex.: PDF do DANFSe) em base64. */
+  responseEncoding?: unknown;
 }
 
 interface RespostaProxy {
@@ -137,11 +139,13 @@ function headersResposta(
 
 function requisitarSefin(
   url: URL,
+  metodo: "GET" | "POST",
   corpo: string,
   cert: string,
   key: string,
   ca: string,
   headers: Record<string, string>,
+  binario: boolean,
 ): Promise<RespostaProxy> {
   return new Promise((resolve, reject) => {
     let finalizado = false;
@@ -163,16 +167,17 @@ function requisitarSefin(
 
     try {
       const corpoBuffer = Buffer.from(corpo, "utf8");
+      const temCorpo = metodo === "POST" && corpoBuffer.length > 0;
 
       const opcoes = {
         protocol: url.protocol,
         hostname: url.hostname,
         port: url.port ? Number(url.port) : 443,
         path: `${url.pathname || "/"}${url.search}`,
-        method: "POST",
+        method: metodo,
         headers: {
           ...headers,
-          "Content-Length": String(corpoBuffer.length),
+          ...(temCorpo ? { "Content-Length": String(corpoBuffer.length) } : {}),
         },
         cert,
         key,
@@ -184,16 +189,23 @@ function requisitarSefin(
       requisicao = https.request(opcoes, (resposta) => {
         const status = resposta.statusCode ?? 0;
         let corpoResposta = "";
+        const partes: Buffer[] = [];
 
-        resposta.setEncoding("utf8");
+        if (!binario) resposta.setEncoding("utf8");
         resposta.on("data", function(parte) {
-          corpoResposta += parte;
+          if (binario) {
+            partes.push(Buffer.isBuffer(parte) ? parte : Buffer.from(parte));
+          } else {
+            corpoResposta += parte;
+          }
         });
         resposta.on("end", function() {
           sucesso({
             status,
             headers: headersResposta(resposta.headers),
-            body: corpoResposta,
+            body: binario
+              ? Buffer.concat(partes).toString("base64")
+              : corpoResposta,
           });
         });
         resposta.on("error", function(erro) {
@@ -222,7 +234,7 @@ function requisitarSefin(
         }
       });
 
-      requisicao.write(corpoBuffer);
+      if (temCorpo) requisicao.write(corpoBuffer);
       requisicao.end();
     } catch (erro) {
       falhar(erro);
@@ -273,19 +285,28 @@ export default async function handler(
   }
 
   const urlTexto = texto(payload.url);
-  const metodo = texto(payload.method) || "POST";
+  const metodo = (texto(payload.method).toUpperCase() || "POST") as
+    | "GET"
+    | "POST";
   const body = texto(payload.body);
   const cert = texto(payload.cert);
   const key = texto(payload.key);
   const ca = texto(payload.ca);
+  const binario = texto(payload.responseEncoding).toLowerCase() === "base64";
 
-  if (metodo !== "POST") {
-    responderJson(res, 400, { error: "method deve ser POST." });
+  if (metodo !== "POST" && metodo !== "GET") {
+    responderJson(res, 400, { error: "method deve ser POST ou GET." });
     return;
   }
-  if (!urlTexto || !body || !cert || !key) {
+  if (!urlTexto || !cert || !key) {
     responderJson(res, 400, {
-      error: "url, body, cert e key sao obrigatorios.",
+      error: "url, cert e key sao obrigatorios.",
+    });
+    return;
+  }
+  if (metodo === "POST" && !body) {
+    responderJson(res, 400, {
+      error: "body e obrigatorio para method POST.",
     });
     return;
   }
@@ -304,14 +325,24 @@ export default async function handler(
     return;
   }
 
+  // GET e restrito ao download do DANFSe oficial no ADN.
+  if (metodo === "GET" && !destino.pathname.toLowerCase().startsWith("/danfse/")) {
+    responderJson(res, 400, {
+      error: "GET permitido apenas em /danfse/.",
+    });
+    return;
+  }
+
   try {
     const resposta = await requisitarSefin(
       destino,
+      metodo,
       body,
       cert,
       key,
       ca,
       headersRepasse(payload.headers),
+      binario,
     );
     responderJson(res, 200, resposta);
   } catch (erro) {

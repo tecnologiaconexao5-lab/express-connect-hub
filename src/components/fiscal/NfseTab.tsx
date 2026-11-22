@@ -483,6 +483,14 @@ type RespostaTransmissao = {
   } | null;
 };
 
+type RespostaPdfOficial = {
+  success?: boolean;
+  error?: string;
+  detalhe?: string | null;
+  pdf_oficial_path?: string | null;
+  links?: { xml?: string | null; pdf?: string | null } | null;
+};
+
 function mensagemTransmissao(
   payload: RespostaTransmissao | null,
   fallback: string,
@@ -1542,70 +1550,111 @@ export default function NfseTab() {
     }
   };
 
-  const abrirPdfOficial = async function(nfse: FiscalNfse) {
+  const nomeArquivoDanfseOficial = function(nfse: FiscalNfse): string {
+    const numero = String(nfse.numero || nfse.id || "").trim() || "sem-numero";
+    const seguro = numero.replace(/[\\/:*?"<>|]+/g, "-");
+    return `DANFSe-Oficial-NFSe-${seguro}.pdf`;
+  };
+
+  // Baixa o PDF oficial da DANFSe: Storage (se ja arquivado) ou Edge Function
+  // (busca no ADN via mTLS e arquiva sob demanda). Nunca abre consultapublica.
+  const baixarPdfOficial = async function(nfse: FiscalNfse) {
     if (abrindoPdfOficialId) return;
 
-    const meta = nfse.metadata || {};
-    const documentos = meta.documentos_storage || {};
+    const meta = (nfse.metadata || {}) as Record<string, any>;
+    const documentos = (meta.documentos_storage || {}) as Record<string, string>;
     const referencia = String(
-      nfse.pdf_url || documentos.danfse_pdf || documentos.nfse_pdf || "",
+      nfse.pdf_url || meta.pdf_oficial_path || documentos.danfse_oficial ||
+        documentos.danfse_pdf || documentos.nfse_pdf || "",
     );
     const status = String(nfse.status || "").toLowerCase();
+    const chave = String(nfse.chave_acesso || meta?.emissao?.chave_acesso || "");
 
-    if (referencia) {
-      if (/^https?:\/\//i.test(referencia)) {
-        window.open(referencia, "_blank", "noopener,noreferrer");
-        return;
+    setAbrindoPdfOficialId(nfse.id);
+    try {
+      let urlPdf: string | null = null;
+
+      if (referencia) {
+        if (/^https?:\/\//i.test(referencia)) {
+          urlPdf = referencia;
+        } else {
+          const caminho = referencia.replace(/^fiscal-documentos\//, "");
+          const { data, error } = await supabase.storage
+            .from("fiscal-documentos")
+            .createSignedUrl(caminho, 120);
+          if (!error && data?.signedUrl) urlPdf = data.signedUrl;
+        }
       }
 
-      // Abre a aba antes do await para nao ser bloqueada como pop-up.
-      const janela = window.open("", "_blank");
-      setAbrindoPdfOficialId(nfse.id);
+      if (!urlPdf) {
+        if (status !== "emitida" || !chave) {
+          throw new Error("PDF oficial disponivel apos a emissao na Sefin.");
+        }
+
+        const { data, error } = await supabase.functions.invoke(
+          "nfse-assinar-transmitir",
+          { body: { nfse_id: nfse.id, acao: "baixar_danfse" } },
+        );
+
+        let payload = (data ?? null) as RespostaPdfOficial | null;
+
+        if (error) {
+          const contexto = (error as { context?: unknown }).context;
+          if (contexto instanceof Response) {
+            const corpo = await contexto.json().catch(function() { return null; });
+            payload = (corpo ?? payload) as RespostaPdfOficial | null;
+          }
+        }
+
+        if (!payload?.success) {
+          throw new Error(
+            payload?.error ||
+              error?.message ||
+              "Nao foi possivel baixar o PDF oficial agora.",
+          );
+        }
+
+        urlPdf = payload.links?.pdf || null;
+        if (!urlPdf) {
+          throw new Error("PDF oficial ainda nao disponivel no ADN.");
+        }
+
+        // Reflete pdf_url/metadata atualizados pela Edge Function.
+        const { data: atualizada } = await supabase
+          .from("fiscal_nfse")
+          .select("*")
+          .eq("id", nfse.id)
+          .maybeSingle();
+        if (atualizada) setSelectedNfse(atualizada);
+        await fetchNfses();
+      }
 
       try {
-        const caminho = referencia.replace(/^fiscal-documentos\//, "");
-        const { data, error } = await supabase.storage
-          .from("fiscal-documentos")
-          .createSignedUrl(caminho, 60);
-
-        if (error || !data?.signedUrl) {
-          throw new Error("PDF oficial nao encontrado no Storage.");
+        const resposta = await fetch(urlPdf);
+        if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+        const blob = await resposta.blob();
+        baixarArquivo(blob, nomeArquivoDanfseOficial(nfse));
+        toast.success("PDF oficial da DANFSe baixado.");
+      } catch {
+        // CORS/URL externa: abre em nova aba como fallback.
+        const aberta = window.open(urlPdf, "_blank", "noopener,noreferrer");
+        if (aberta) {
+          toast.success("Abrindo o PDF oficial da DANFSe...");
+        } else {
+          toast.error("Permita pop-ups para abrir o PDF oficial.");
         }
-
-        if (janela) janela.location.replace(data.signedUrl);
-        else {
-          const aberta = window.open(
-            data.signedUrl,
-            "_blank",
-            "noopener,noreferrer",
-          );
-          if (!aberta) toast.error("Permita pop-ups para abrir o PDF oficial.");
-        }
-      } catch (erro: unknown) {
-        if (janela) janela.close();
-        console.error(
-          "[NfseTab] Erro ao abrir PDF oficial:",
-          erro instanceof Error ? erro.message : String(erro),
-        );
-        toast.error(
-          erro instanceof Error ? erro.message : "Falha ao abrir o PDF oficial.",
-        );
-      } finally {
-        setAbrindoPdfOficialId(null);
       }
-      return;
-    }
-
-    if (status === "emitida" && nfse.chave_acesso) {
-      window.open(
-        `https://www.nfse.gov.br/consultapublica?chave=${encodeURIComponent(String(nfse.chave_acesso))}`,
-        "_blank",
-        "noopener,noreferrer",
+    } catch (erro: unknown) {
+      console.error(
+        "[NfseTab] Erro ao baixar PDF oficial:",
+        erro instanceof Error ? erro.message : String(erro),
       );
-      return;
+      toast.error(
+        erro instanceof Error ? erro.message : "Falha ao baixar o PDF oficial.",
+      );
+    } finally {
+      setAbrindoPdfOficialId(null);
     }
-
-    toast.error("PDF oficial disponivel apos a emissao na Sefin.");
   };
 
   const fetchHistorico = async function(nfseId: string) {
@@ -2513,7 +2562,8 @@ export default function NfseTab() {
 
     const documentosStorage = metaDetalhe.documentos_storage || {};
     const pdfRef = String(
-      selectedNfse.pdf_url || documentosStorage.danfse_pdf ||
+      selectedNfse.pdf_url || metaDetalhe.pdf_oficial_path ||
+        documentosStorage.danfse_oficial || documentosStorage.danfse_pdf ||
         documentosStorage.nfse_pdf || "",
     );
     const pdfBloqueado =
@@ -2525,7 +2575,7 @@ export default function NfseTab() {
       ? "Disponível após a emissão oficial na Sefin"
       : !temPdfOficial
       ? "PDF oficial ainda não disponível"
-      : "Abrir PDF oficial da Sefin";
+      : "Baixar o PDF oficial da DANFSe (fonte ADN)";
 
     return (
       <div className="space-y-4">
@@ -2768,14 +2818,14 @@ export default function NfseTab() {
               <Button
                 variant="outline"
                 className="w-full justify-start"
-                onClick={function() { void abrirPdfOficial(selectedNfse); }}
+                onClick={function() { void baixarPdfOficial(selectedNfse); }}
                 disabled={pdfOficialDisabled || abrindoPdfOficialId === selectedNfse.id}
                 title={pdfOficialTitle}
               >
                 {abrindoPdfOficialId === selectedNfse.id
                   ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   : <FileText className="w-4 h-4 mr-2" />}
-                PDF Oficial (Sefin)
+                Baixar DANFSe Oficial
               </Button>
               <Button
                 variant="outline"
