@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR, TIPO_VEICULO_LABEL, normalizarStatusPrestador, statusAliases } from "./types";
+import { formatarCpfCnpj, formatarTelefone } from "@/lib/formatacaoCadastros";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { fromPrestadorRow, PrestadorRow } from "@/lib/dbMappers";
@@ -503,10 +504,10 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                         <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">
                           {p.nomeCompleto || "Nome não informado"}
                         </span>
-                        <span className="text-[10px] text-muted-foreground font-medium">{p.cpfCnpj || "—"}</span>
+                        <span className="text-[10px] text-muted-foreground font-medium">{p.cpfCnpj ? formatarCpfCnpj(p.cpfCnpj) : "—"}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs font-medium text-muted-foreground">{p.telefone || p.whatsapp || "—"}</TableCell>
+                    <TableCell className="text-xs font-medium text-muted-foreground">{p.telefone || p.whatsapp ? formatarTelefone(p.telefone || p.whatsapp) : "—"}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={`text-[9px] uppercase font-bold px-2 ${TIPO_PARCEIRO_COR[p.tipoParceiro as keyof typeof TIPO_PARCEIRO_COR] || "bg-gray-100 text-gray-600"}`}>
                         {TIPO_PARCEIRO_LABEL[p.tipoParceiro as keyof typeof TIPO_PARCEIRO_LABEL] || "—"}
@@ -559,7 +560,7 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                         <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setDeletePrestador(p); }}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); const text = `${p.nomeCompleto}\n${p.cpfCnpj}\n${p.telefone || p.whatsapp}\n${getVeiculoDisplay(p)}`; copyToClipboard(text, p.id); }}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); const text = `${p.nomeCompleto}\n${formatarCpfCnpj(p.cpfCnpj)}\n${formatarTelefone(p.telefone || p.whatsapp)}\n${getVeiculoDisplay(p)}`; copyToClipboard(text, p.id); }}>
                           {copiedId === p.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                         </Button>
                       </div>
@@ -630,12 +631,12 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xl font-bold text-foreground leading-tight">{quickViewPrestador.nomeCompleto}</h3>
-                      <Badge className={`${STATUS_COR[quickViewPrestador.status as keyof typeof STATUS_COR]} px-3 py-0.5 text-[10px] uppercase`}>
-                        {STATUS_LABEL[quickViewPrestador.status as keyof typeof STATUS_LABEL]}
+                      <Badge className={`${STATUS_COR[normalizarStatusPrestador(quickViewPrestador.status)] || "bg-gray-100 text-gray-600"} px-3 py-0.5 text-[10px] uppercase`}>
+                        {STATUS_LABEL[normalizarStatusPrestador(quickViewPrestador.status)] || "—"}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground font-medium mt-1">
-                      {quickViewPrestador.cpfCnpj} • {quickViewPrestador.endereco?.cidade || "Cidade não inf."}/{quickViewPrestador.endereco?.estado || ""} • {calculateAge(quickViewPrestador.dataNascimento)} anos
+                      {formatarCpfCnpj(quickViewPrestador.cpfCnpj) || "—"} • {quickViewPrestador.endereco?.cidade || "Cidade não inf."}/{quickViewPrestador.endereco?.estado || ""} • {calculateAge(quickViewPrestador.dataNascimento)} anos
                     </p>
                   </div>
                 </div>
@@ -647,7 +648,7 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                     <div className="space-y-1">
                       <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Contatos</Label>
                       <p className="text-sm font-bold flex items-center gap-1.5">
-                        {quickViewPrestador.telefone || quickViewPrestador.whatsapp || "Não informado"}
+                        {quickViewPrestador.telefone || quickViewPrestador.whatsapp ? formatarTelefone(quickViewPrestador.telefone || quickViewPrestador.whatsapp) : "Não informado"}
                       </p>
                       {quickViewPrestador.email && <p className="text-[11px] text-muted-foreground">{quickViewPrestador.email}</p>}
                     </div>

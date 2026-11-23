@@ -18,6 +18,7 @@ import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader
 import { verificarReferenciasCliente } from "@/helpers/clienteReferencias";
 import { formatarDataBR } from "@/lib/formatDates";
 import { normalizarStatusCliente, rotuloStatusCliente } from "@/lib/clienteStatus";
+import { capitalizarStatus, formatarCpfCnpj, formatarTelefone } from "@/lib/formatacaoCadastros";
 import { SafeImage } from "@/components/ui/safe-image";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -415,7 +416,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {c.cnpj || "—"}
+                          {c.cnpj ? formatarCpfCnpj(c.cnpj) : "—"}
                           {c.cnpj && (
                             <Button 
                               variant="ghost" 
@@ -434,7 +435,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {c.telefone || "—"}
+                          {c.telefone ? formatarTelefone(c.telefone) : "—"}
                           {c.telefone && (
                             <Button 
                               variant="ghost" 
@@ -484,7 +485,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                       </TableCell>
                       <TableCell>
                         <Badge className={classeBadgeStatus(c.status)} title={statusCodigo === "pre-cadastro" ? "Gerado pela Cotação Express — complete o cadastro e altere para Ativo" : undefined}>
-                          {c.status || "Ativo"}
+                          {capitalizarStatus(c.status) || "Ativo"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -574,7 +575,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                   )}
                   <div className="flex items-center gap-2 mt-1">
                     <Badge className={`border ${classeBadgeStatus(quickViewCliente.status)}`}>
-                      {quickViewCliente.status || "Ativo"}
+                      {capitalizarStatus(quickViewCliente.status) || "Ativo"}
                     </Badge>
                     {quickViewCliente.segmento && <Badge variant="outline">{quickViewCliente.segmento}</Badge>}
                   </div>
@@ -598,7 +599,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                 <div>
                   <p className="text-muted-foreground text-xs">CNPJ/CPF</p>
                   <div className="flex items-center gap-1">
-                    <p className="font-mono">{quickViewCliente.cnpj || "—"}</p>
+                    <p className="font-mono">{formatarCpfCnpj(quickViewCliente.cnpj) || "—"}</p>
                     {quickViewCliente.cnpj && (
                       <Button 
                         variant="ghost" 
@@ -617,7 +618,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                 <div>
                   <p className="text-muted-foreground text-xs">Telefone</p>
                   <div className="flex items-center gap-1">
-                    <p className="font-medium">{quickViewCliente.telefone || "—"}</p>
+                    <p className="font-medium">{formatarTelefone(quickViewCliente.telefone) || "—"}</p>
                     {quickViewCliente.telefone && (
                       <Button 
                         variant="ghost" 

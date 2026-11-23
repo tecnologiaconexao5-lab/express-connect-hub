@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, Bike, Car, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles, X } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, Bike, Car, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles, X, ClipboardList, Activity, XCircle, type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,40 @@ import { buscarTabelaPrestador } from "@/services/precificacao/buscarTabelasServ
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
 type OSComDataCriacao = OrdemServico & { createdAt?: string };
+
+// ── Barra executiva de KPIs (filtros rápidos) ───────────────────────────────
+type KpiExecutivo = "total" | "analise" | "andamento" | "sla" | "finalizadas_hoje" | "canceladas";
+
+const STATUS_ANALISE_KPI = ["em_analise", "pendente"];
+const STATUS_ANDAMENTO_KPI = ["em_andamento", "em_rota", "em_entrega", "em_coleta", "carregando"];
+const STATUS_CANCELADAS_KPI = ["cancelada", "cancelado"];
+// Espelha STATUS_SLA_PENDENTE (osAlocacaoPendenteService) para o filtro no backend.
+const STATUS_SLA_PENDENTE_KPI = ["pendente", "aguardando_programacao", "enviado", "em_analise"];
+
+const KPI_EXECUTIVO: Array<{ key: KpiExecutivo; label: string; badge: string; icon: LucideIcon; alerta?: boolean }> = [
+  { key: "total", label: "Total de OS", badge: "Geral", icon: ClipboardList },
+  { key: "analise", label: "Em Análise", badge: "Fila", icon: Clock },
+  { key: "andamento", label: "Em Andamento", badge: "Em fluxo", icon: Activity },
+  { key: "sla", label: "Atrasadas / Risco SLA", badge: "Alerta", icon: AlertTriangle, alerta: true },
+  { key: "finalizadas_hoje", label: "Finalizadas Hoje", badge: "Hoje", icon: CheckCircle2 },
+  { key: "canceladas", label: "Canceladas", badge: "Encerradas", icon: XCircle },
+];
+
+/** Data civil (YYYY-MM-DD) em America/Sao_Paulo. */
+const dataSP = (valor?: string | null): string => {
+  if (!valor) return "";
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(data);
+};
+
+const inicioHojeSPISO = (): string => new Date(`${hojeISOSP()}T00:00:00-03:00`).toISOString();
+const fimHojeSPISO = (): string => new Date(`${hojeISOSP()}T23:59:59.999-03:00`).toISOString();
 
 /** Ícone do veículo conforme o tipo (moto ≠ caminhão) na listagem. */
 const IconeVeiculo = ({ tipo }: { tipo?: string | null }) => {
@@ -112,6 +146,11 @@ const OrdensServicoLista = () => {
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
+  const [kpiAtivo, setKpiAtivo] = useState<KpiExecutivo | null>("total");
+  const [somenteRiscoSla, setSomenteRiscoSla] = useState(false);
+  const [kpiCounts, setKpiCounts] = useState<Record<KpiExecutivo, number>>({
+    total: 0, analise: 0, andamento: 0, sla: 0, finalizadas_hoje: 0, canceladas: 0,
+  });
   
   // Rastreamento
   const [showRastreamento, setShowRastreamento] = useState(false);
@@ -196,6 +235,7 @@ const OrdensServicoLista = () => {
     }
     if (searchParams.get("status")) {
       setFiltroStatus(searchParams.get("status") || "todos");
+      setKpiAtivo(null);
     }
     // Deep-link: abrir OS específica pelo ID (?os=<id>)
     const osId = searchParams.get("os");
@@ -236,6 +276,41 @@ const OrdensServicoLista = () => {
   }, [searchParams]);
 
 
+  /** Contadores da barra executiva (independentes dos filtros manuais). */
+  const carregarKpiCounts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("ordens_servico")
+        .select("status, created_at, updated_at, previsao_termino")
+        .limit(1000);
+      if (error) {
+        console.error("[OrdensServicoLista] Falha ao carregar KPIs:", error.message);
+        return;
+      }
+      const hoje = hojeISOSP();
+      const agora = Date.now();
+      const counts: Record<KpiExecutivo, number> = {
+        total: 0, analise: 0, andamento: 0, sla: 0, finalizadas_hoje: 0, canceladas: 0,
+      };
+      const linhas = data || [];
+      counts.total = linhas.length;
+      for (const linha of linhas) {
+        const status = String(linha.status || "").toLowerCase().trim();
+        if (STATUS_ANALISE_KPI.includes(status)) counts.analise += 1;
+        if (STATUS_ANDAMENTO_KPI.includes(status)) counts.andamento += 1;
+        if (STATUS_CANCELADAS_KPI.includes(status)) counts.canceladas += 1;
+        if (status === "finalizada" && dataSP(linha.updated_at) === hoje) counts.finalizadas_hoje += 1;
+        const encerrada = status === "finalizada" || status === "cancelada";
+        const atrasada = !encerrada && !!linha.previsao_termino &&
+          new Date(linha.previsao_termino).getTime() < agora;
+        if (atrasada || emRiscoSlaPendente(status, linha.created_at)) counts.sla += 1;
+      }
+      setKpiCounts(counts);
+    } catch (e) {
+      console.error("[OrdensServicoLista] Erro ao carregar KPIs:", e);
+    }
+  };
+
   const fetchOrdens = async (paginaSolicitada?: number) => {
     try {
       setIsLoading(true);
@@ -245,9 +320,15 @@ const OrdensServicoLista = () => {
 
       const termoBusca = buscaAplicada.replace(/[%,()*]/g, " ").trim();
       const statusFiltrados =
-        filtroStatus !== "todos"
-          ? statusesOSParaGlobalFiltro(filtroStatus as StatusGlobal)
-          : null;
+        kpiAtivo === "analise"
+          ? STATUS_ANALISE_KPI
+          : kpiAtivo === "andamento"
+            ? STATUS_ANDAMENTO_KPI
+            : kpiAtivo === "canceladas"
+              ? STATUS_CANCELADAS_KPI
+              : filtroStatus !== "todos"
+                ? statusesOSParaGlobalFiltro(filtroStatus as StatusGlobal)
+                : null;
 
       // Filtro de cliente por nome → ids (aplicado no backend).
       let clientesFiltroIds: string[] | null = null;
@@ -307,6 +388,30 @@ const OrdensServicoLista = () => {
         .select("*, clientes(nome_fantasia, razao_social, status, origem_comercial)", { count: "exact" });
 
       if (statusFiltrados) query = query.in("status", statusFiltrados);
+
+      // KPI "Finalizadas Hoje": finalizadas na data de hoje em America/Sao_Paulo.
+      if (kpiAtivo === "finalizadas_hoje") {
+        query = query
+          .eq("status", "finalizada")
+          .gte("updated_at", inicioHojeSPISO())
+          .lte("updated_at", fimHojeSPISO());
+      }
+
+      // KPI "Atrasadas / Risco SLA": prazo vencido OU pendente há mais de 2h.
+      if (somenteRiscoSla) {
+        const agoraISO = new Date().toISOString();
+        const limiteRiscoISO = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+        const condicoesSla = [
+          `previsao_termino.lt.${agoraISO}`,
+          ...STATUS_SLA_PENDENTE_KPI.map(
+            (status) => `and(created_at.lt.${limiteRiscoISO},status.eq.${status})`,
+          ),
+        ];
+        query = query
+          .not("status", "in", "(finalizada,cancelada)")
+          .or(condicoesSla.join(","));
+      }
+
       if (clientesFiltroIds) query = query.in("cliente", clientesFiltroIds);
       if (filtroTipo !== "todos") query = query.eq("tipo_operacao", filtroTipo);
       if (filtroTipoVeiculo !== "todos") query = query.ilike("veiculo_tipo", filtroTipoVeiculo);
@@ -461,6 +566,7 @@ const OrdensServicoLista = () => {
       setOrdens([]);
     } finally {
       setIsLoading(false);
+      void carregarKpiCounts();
     }
   };
 
@@ -477,6 +583,8 @@ const OrdensServicoLista = () => {
     dataFim,
     somenteSemPrestador ? "1" : "0",
     buscaAplicada,
+    kpiAtivo ?? "",
+    somenteRiscoSla ? "1" : "0",
   ].join("\u0001");
   const filtrosKeyAnterior = useRef(filtrosKey);
 
@@ -490,6 +598,13 @@ const OrdensServicoLista = () => {
     void fetchOrdens();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, filtrosKey]);
+
+  const aplicarKpiExecutivo = (key: KpiExecutivo) => {
+    setKpiAtivo(key);
+    setFiltroStatus("todos");
+    setSomenteRiscoSla(key === "sla");
+    setPage(1);
+  };
 
   const handleSalvar = () => {
     setModoForm(null);
@@ -920,12 +1035,50 @@ const OrdensServicoLista = () => {
         </div>
       </div>
 
+      {/* Barra executiva — 6 KPIs clicáveis (filtram a tabela imediatamente) */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+        {KPI_EXECUTIVO.map(({ key, label, badge, icon: Icon, alerta }) => {
+          const ativo = kpiAtivo === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => aplicarKpiExecutivo(key)}
+              aria-pressed={ativo}
+              className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${
+                ativo
+                  ? alerta
+                    ? "border-rose-300 bg-rose-50 ring-2 ring-rose-200 shadow-sm"
+                    : "border-violet-400 bg-violet-50 ring-2 ring-violet-200 shadow-sm"
+                  : "border-border bg-card hover:border-violet-200 hover:bg-violet-50/40"
+              }`}
+            >
+              <span className={`absolute inset-x-0 top-0 h-0.5 ${alerta ? "bg-rose-500" : ativo ? "bg-violet-500" : "bg-violet-200"}`} />
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
+                  <p className="mt-1 text-2xl font-black leading-none text-foreground">{kpiCounts[key]}</p>
+                </div>
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${alerta ? "bg-rose-100 text-rose-600" : "bg-violet-100 text-violet-700"}`}>
+                  <Icon className="h-4 w-4" />
+                </span>
+              </div>
+              <span className={`mt-2 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                alerta ? "border-rose-200 bg-rose-50 text-rose-600" : "border-violet-200 bg-violet-50 text-violet-700"
+              }`}>
+                {badge}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {showFiltros && (
         <Card className="border-orange-100 shadow-sm animate-in slide-in-from-top duration-200">
           <CardContent className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-1.5">
               <Label className="text-[10px] uppercase font-bold text-muted-foreground">Status</Label>
-              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+              <Select value={filtroStatus} onValueChange={(v) => { setFiltroStatus(v); setKpiAtivo(v === "todos" ? "total" : null); setSomenteRiscoSla(false); }}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Todos os Status" />
                 </SelectTrigger>
@@ -1034,6 +1187,8 @@ const OrdensServicoLista = () => {
             <div className="flex items-end">
               <Button variant="ghost" size="sm" className="text-xs text-orange-600 h-9" onClick={() => {
                 setFiltroStatus("todos");
+                setKpiAtivo("total");
+                setSomenteRiscoSla(false);
                 setFiltroCliente("todos");
                 setFiltroPeriodo("todos");
                 setFiltroTipo("todos");
