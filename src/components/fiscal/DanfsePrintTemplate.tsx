@@ -34,6 +34,8 @@ export interface DanfseEmitente {
 export interface DanfsePrintDados {
   logoUrl: string;
   numero: string;
+  /** Nome base usado como título do documento / "Salvar como PDF". */
+  nomeArquivo?: string;
   chaveAcesso: string;
   competencia: string;
   emissao: string;
@@ -663,13 +665,13 @@ export function DanfsePrintTemplate({ dados }: { dados: DanfsePrintDados }) {
 /** HTML standalone da DANFSe (sem Tailwind, pronto para janela de impressão). */
 export function montarHtmlDanfse(dados: DanfsePrintDados): string {
   const corpo = renderToStaticMarkup(<DanfsePrintTemplate dados={dados} />);
-  const titulo = String(dados.numero || "").replace(/[<>&"]/g, "");
+  const titulo = String(dados.nomeArquivo || `DANFSe ${dados.numero || ""}`).replace(/[<>&"]/g, "");
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DANFSe ${titulo}</title>
+  <title>${titulo}</title>
   <style>${CSS_DANFSE}</style>
 </head>
 <body>${corpo}</body>

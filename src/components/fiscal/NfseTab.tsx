@@ -19,6 +19,7 @@ import { abrirImpressaoDanfse } from "@/components/fiscal/DanfsePrintTemplate";
 import type { DanfsePrintDados } from "@/components/fiscal/DanfsePrintTemplate";
 import { gerarXmlDpsNacional } from "@/services/fiscal/nfseEmissaoService";
 import type { DpsPayload, FiscalCompanySettings } from "@/services/fiscal/nfseEmissaoService";
+import { nomeArquivoNfse, nomeBaseNfse } from "@/services/fiscal/nfseFilename";
 import type { FiscalNfse } from "@/types/fiscal";
 import { carregarConfiguracaoSistema } from "@/services/configuracoesService";
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
@@ -1362,7 +1363,9 @@ export default function NfseTab() {
 
     return {
       logoUrl: urlLogoAbsoluta(logoEmitenteUrl),
-      numero: String(nfse.numero || "—"),
+      numero: String(nfse.numero || "-"),
+      // Título usado pelo navegador ao "Salvar como PDF" (sem extensão).
+      nomeArquivo: nomeBaseNfse(nfse, { tomadorNome: tomadorNome, valor: liquido }),
       chaveAcesso: String(nfse.chave_acesso || meta.emissao?.chave_acesso || ""),
       competencia: formatarCompetenciaDanfse(meta.competencia, nfse.created_at),
       emissao: formatarDataHoraDanfse(nfse.data_emissao || nfse.created_at),
@@ -1522,7 +1525,7 @@ export default function NfseTab() {
           throw new Error("Falha ao baixar o XML do Storage.");
         }
 
-        baixarArquivo(await resposta.blob(), `NFS-e-${nfse.numero || nfse.id}.xml`);
+        baixarArquivo(await resposta.blob(), nomeArquivoNfse(nfse, "xml"));
         toast.success("XML baixado.");
         return;
       }
@@ -1532,7 +1535,7 @@ export default function NfseTab() {
         const xml = gerarXmlDoRascunho(nfse);
         baixarArquivo(
           new Blob([xml], { type: "application/xml" }),
-          `DPS-${nfse.numero || nfse.id}.xml`,
+          nomeArquivoNfse(nfse, "xml"),
         );
         toast.success("XML da DPS (rascunho) gerado.");
         return;
@@ -1551,9 +1554,7 @@ export default function NfseTab() {
   };
 
   const nomeArquivoDanfseOficial = function(nfse: FiscalNfse): string {
-    const numero = String(nfse.numero || nfse.id || "").trim() || "sem-numero";
-    const seguro = numero.replace(/[\\/:*?"<>|]+/g, "-");
-    return `DANFSe-Oficial-NFSe-${seguro}.pdf`;
+    return nomeArquivoNfse(nfse, "pdf");
   };
 
   // Baixa o PDF oficial da DANFSe: Storage (se ja arquivado) ou Edge Function

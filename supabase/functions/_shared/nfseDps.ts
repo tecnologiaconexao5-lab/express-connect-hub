@@ -255,6 +255,11 @@ export function gerarXmlDpsNacional(
       .startsWith("prod")
     ? "1"
     : "2";
+
+  // E1235: o XSD de PRODUÇÃO não possui <finNFSe> em <infDPS>
+  // (sequência esperada: tpEmit? -> cLocEmi). A tag permanece apenas
+  // no layout de homologação/produção restrita.
+  const blocoFinNFSe = tpAmb === "2" ? `\n    <finNFSe>0</finNFSe>` : "";
   const opSimpNac = mapearOpSimpNac(empresa);
   // E0166: para optante do Simples Nacional ME/EPP (opSimpNac = 3) o
   // <regApTribSN> é obrigatório. Valor lido do emitente (1/2/3); fallback 1.
@@ -341,6 +346,13 @@ export function gerarXmlDpsNacional(
     ? `\n        <cNBS>${digitosNbs}</cNBS>`
     : "";
 
+  // E1235: no XSD de PRODUÇÃO (v1.01) a ordem de <cServ> é
+  // cTribNac -> cTribMun? -> xDescServ -> cNBS? -> cIntContrib?.
+  // No layout de homologação (RTC 20261020) o cNBS vem antes do xDescServ.
+  const blocoCServOrdenado = tpAmb === "2"
+    ? `${blocoCNbs}\n        <xDescServ>${escaparXml(descricaoServico)}</xDescServ>`
+    : `\n        <xDescServ>${escaparXml(descricaoServico)}</xDescServ>${blocoCNbs}`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <DPS xmlns="${NAMESPACE_DPS}" versao="${VERSAO_DPS}">
   <infDPS Id="${idDps}">
@@ -350,8 +362,7 @@ export function gerarXmlDpsNacional(
     <serie>${serieValor}</serie>
     <nDPS>${nDPS}</nDPS>
     <dCompet>${dCompet}</dCompet>
-    <tpEmit>${tpEmit}</tpEmit>
-    <finNFSe>0</finNFSe>
+    <tpEmit>${tpEmit}</tpEmit>${blocoFinNFSe}
     <cLocEmi>${cLocEmi}</cLocEmi>
     <prest>
       <CNPJ>${cnpjPrestador}</CNPJ>${blocoImPrestador}${blocoNomePrestador}${blocoEndPrestador}${blocoEmailPrestador}
@@ -369,8 +380,7 @@ export function gerarXmlDpsNacional(
         <cLocPrestacao>${municipioPrestacao}</cLocPrestacao>
       </locPrest>
       <cServ>
-        <cTribNac>${cTribNac}</cTribNac>${blocoCTribMun}${blocoCNbs}
-        <xDescServ>${escaparXml(descricaoServico)}</xDescServ>
+        <cTribNac>${cTribNac}</cTribNac>${blocoCTribMun}${blocoCServOrdenado}
       </cServ>
     </serv>
     <valores>
