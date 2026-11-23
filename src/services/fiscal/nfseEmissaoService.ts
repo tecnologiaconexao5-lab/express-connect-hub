@@ -27,7 +27,8 @@ export interface DpsTomador {
   cnpj?: string | null;
   cpf?: string | null;
   email?: string | null;
-  municipioIbge?: string | null;
+  /** Inscricao Municipal do tomador (opcional, TSInscMun ate 15 chars). */
+  inscricaoMunicipal?: string | null;
 }
 
 export interface DpsServico {
@@ -39,14 +40,37 @@ export interface DpsServico {
   codigoMunicipioPrestacao?: string | null;
   /** Código NBS (Nomenclatura Brasileira de Serviços) — ex.: 1.0501.15.00. */
   codigoNbs?: string | null;
+  /** Informacoes complementares / pedido de compra (serv/infoCompl/xInfComp). */
+  informacoesComplementares?: string | null;
+}
+
+export interface DpsRetencoes {
+  pis?: number | null;
+  cofins?: number | null;
+  csll?: number | null;
+  irrf?: number | null;
+  inss?: number | null;
+}
+
+export interface DpsTributosAproximados {
+  tipo: "valor" | "percentual";
+  valor: number;
 }
 
 export interface DpsPayload {
-  /** Competencia da prestacao no formato AAAA-MM. */
+  /** Competencia da prestacao no formato AAAA-MM (fallback legado). */
   competencia: string;
+  /** Data de competencia AAAA-MM-DD (vira <dCompet>; tem prioridade). */
+  dataCompetencia?: string | null;
   prestador: DpsPrestador;
   tomador: DpsTomador;
   servico: DpsServico;
+  /** Retencoes federais opcionais (somente > 0 entram no XML). */
+  retencoes?: DpsRetencoes | null;
+  /** Exigibilidade do ISSQN: tributavel (padrao), imunidade, nao_incidencia. */
+  exigibilidadeIss?: string | null;
+  /** Lei da Transparencia (vTotTrib R$ / pTotTrib % / pTotTribSN). */
+  tributosAproximados?: DpsTributosAproximados | null;
   serie?: string | null;
   numero?: string | null;
   nfseId?: string | null;
@@ -449,10 +473,85 @@ export function gerarXmlDpsNacional(
     : `\n          <pAliq>${formatarAliquota(aliquota)}</pAliq>`;
   // E0712: ME/EPP não pode informar <indTotTrib> em <totTrib> (choice do XSD).
   // Para o Simples, usa <pTotTribSN> (percentual aproximado do Simples Nacional).
-  const blocoTotTrib = opSimpNac === "3"
-    ? `\n          <pTotTribSN>0.00</pTotTribSN>`
-    : `\n          <indTotTrib>0</indTotTrib>`;
-  const dCompet = `${dps.competencia}-01`;
+  const tributosAproximados = dps.tributosAproximados;
+  const tributoValor = Number(tributosAproximados?.valor ?? 0);
+  const tributoTipo = tributosAproximados?.tipo === "valor" ? "valor" : "percentual";
+  const blocoTotTrib = (function() {
+    if (Number.isFinite(tributoValor) && tributoValor > 0) {
+      if (tributoTipo === "valor") {
+        return `\n          <vTotTrib>\n            <vTotTribFed>${formatarValorMonetario(tributoValor)}</vTotTribFed>\n            <vTotTribEst>0.00</vTotTribEst>\n            <vTotTribMun>0.00</vTotTribMun>\n          </vTotTrib>`;
+      }
+      if (opSimpNac === "3") {
+        return `\n          <pTotTribSN>${formatarValorMonetario(tributoValor)}</pTotTribSN>`;
+      }
+      return `\n          <pTotTrib>\n            <pTotTribFed>${formatarValorMonetario(tributoValor)}</pTotTribFed>\n            <pTotTribEst>0.00</pTotTribEst>\n            <pTotTribMun>0.00</pTotTribMun>\n          </pTotTrib>`;
+    }
+    return opSimpNac === "3"
+      ? `\n          <pTotTribSN>0.00</pTotTribSN>`
+      : `\n          <indTotTrib>0</indTotTrib>`;
+  })();
+  const dataCompetencia = String(dps.dataCompetencia ?? "").trim();
+  const dCompet = /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia)
+    ? dataCompetencia
+    : `${dps.competencia}-01`;
+
+  // ---- Retencoes federais (opcionais: somente > 0 entram no XML) ----
+  const reter = function(valor: unknown): number {
+    const numero = Number(valor ?? 0);
+    return Number.isFinite(numero) && numero > 0
+      ? Number(numero.toFixed(2))
+      : 0;
+  };
+  const retPis = reter(dps.retencoes?.pis);
+  const retCofins = reter(dps.retencoes?.cofins);
+  const retCsll = reter(dps.retencoes?.csll);
+  const retIrrf = reter(dps.retencoes?.irrf);
+  const retInss = reter(dps.retencoes?.inss);
+  const blocoPiscofins = retPis > 0 || retCofins > 0
+    ? `\n        <piscofins>\n          <CST>01</CST>${
+      retPis > 0
+        ? `\n          <vPis>${formatarValorMonetario(retPis)}</vPis>`
+        : ""
+    }${
+      retCofins > 0
+        ? `\n          <vCofins>${formatarValorMonetario(retCofins)}</vCofins>`
+        : ""
+    }\n        </piscofins>`
+    : "";
+  const blocoTribFed = blocoPiscofins || retInss > 0 || retIrrf > 0 || retCsll > 0
+    ? `\n        <tribFed>${blocoPiscofins}${
+      retInss > 0
+        ? `\n          <vRetCP>${formatarValorMonetario(retInss)}</vRetCP>`
+        : ""
+    }${
+      retIrrf > 0
+        ? `\n          <vRetIRRF>${formatarValorMonetario(retIrrf)}</vRetIRRF>`
+        : ""
+    }${
+      retCsll > 0
+        ? `\n          <vRetCSLL>${formatarValorMonetario(retCsll)}</vRetCSLL>`
+        : ""
+    }\n        </tribFed>`
+    : "";
+
+  // ---- Exigibilidade do ISSQN (padrao: tributavel) ----
+  const exigibilidade = String(dps.exigibilidadeIss ?? "tributavel").toLowerCase();
+  const tribISSQN = exigibilidade.includes("imun")
+    ? "2"
+    : exigibilidade.includes("incid")
+    ? "4"
+    : "1";
+  const blocoTpImunidade = tribISSQN === "2"
+    ? `\n          <tpImunidade>0</tpImunidade>`
+    : "";
+
+  // ---- Informacoes complementares / PO (serv/infoCompl/xInfComp) ----
+  const infoComplementar = String(
+    dps.servico?.informacoesComplementares ?? "",
+  ).trim().slice(0, 2000);
+  const blocoInfoCompl = infoComplementar
+    ? `\n      <infoCompl>\n        <xInfComp>${escaparXml(infoComplementar)}</xInfComp>\n      </infoCompl>`
+    : "";
 
   // tpEmit = "1": emitente da DPS é o próprio prestador.
   // Regras Sefin: E0121 (não informar <xNome>) e E0122 (não informar <end>)
@@ -506,6 +605,10 @@ export function gerarXmlDpsNacional(
   const documentoTomador = cnpjTomador
     ? `<CNPJ>${cnpjTomador}</CNPJ>`
     : `<CPF>${cpfTomador}</CPF>`;
+  const imTomador = somenteDigitos(dps.tomador?.inscricaoMunicipal).slice(0, 15);
+  const blocoImTomador = imTomador
+    ? `\n      <IM>${escaparXml(imTomador)}</IM>`
+    : "";
   const blocoEmailTomador = dps.tomador?.email?.trim()
     ? `\n      <email>${escaparXml(dps.tomador.email.trim())}</email>`
     : "";
@@ -542,7 +645,7 @@ export function gerarXmlDpsNacional(
       </regTrib>
     </prest>
     <toma>
-      ${documentoTomador}
+      ${documentoTomador}${blocoImTomador}
       <xNome>${escaparXml(nomeTomador)}</xNome>${blocoEmailTomador}
     </toma>
     <serv>
@@ -551,7 +654,7 @@ export function gerarXmlDpsNacional(
       </locPrest>
       <cServ>
         <cTribNac>${cTribNac}</cTribNac>${blocoCTribMun}${blocoCServOrdenado}
-      </cServ>
+      </cServ>${blocoInfoCompl}
     </serv>
     <valores>
       <vServPrest>
@@ -559,9 +662,9 @@ export function gerarXmlDpsNacional(
       </vServPrest>
       <trib>
         <tribMun>
-          <tribISSQN>1</tribISSQN>
+          <tribISSQN>${tribISSQN}</tribISSQN>${blocoTpImunidade}
           <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>${blocoPAliq}
-        </tribMun>
+        </tribMun>${blocoTribFed}
         <totTrib>${blocoTotTrib}
         </totTrib>
       </trib>

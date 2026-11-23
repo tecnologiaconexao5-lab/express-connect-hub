@@ -681,8 +681,22 @@ serve(async (req: Request) => {
     const codigoNbsMeta = texto(meta.codigo_nbs) ||
       (codigoServicoMeta === CODIGO_SERVICO_PADRAO ? CODIGO_NBS_PADRAO : null);
 
+    const retencoesMeta = objeto(meta.retencoes) ?? {};
+    const retencoesDps = {
+      pis: Number(retencoesMeta["pis"] ?? 0) || 0,
+      cofins: Number(retencoesMeta["cofins"] ?? 0) || 0,
+      csll: Number(retencoesMeta["csll"] ?? 0) || 0,
+      irrf: Number(retencoesMeta["irrf"] ?? 0) || 0,
+      inss: Number(retencoesMeta["inss"] ?? 0) || 0,
+    };
+    const temRetencoes = Object.values(retencoesDps)
+      .some((valor) => valor > 0);
+    const tributosMeta = objeto(meta.tributos_aproximados);
+    const tributosValor = Number(tributosMeta?.["valor"] ?? 0) || 0;
+
     const dps: DpsPayload = {
       competencia,
+      dataCompetencia: texto(meta.data_competencia) || null,
       prestador: {
         cnpj: String(matriz["cnpj"] ?? ""),
         inscricaoMunicipal: inscricaoMunicipal || null,
@@ -694,6 +708,7 @@ serve(async (req: Request) => {
         cnpj: texto(tomadorMeta?.["cnpj"]),
         cpf: texto(tomadorMeta?.["cpf"]),
         email: texto(tomadorMeta?.["email"]),
+        inscricaoMunicipal: texto(tomadorMeta?.["inscricao_municipal"]),
       },
       servico: {
         codigoTributacaoNacional: codigoServicoMeta,
@@ -706,7 +721,18 @@ serve(async (req: Request) => {
         codigoMunicipioPrestacao: texto(meta.codigo_municipio_prestacao) ||
           texto(matriz["codigo_ibge"]),
         codigoNbs: codigoNbsMeta,
+        informacoesComplementares: texto(meta.pedido_compra) || null,
       },
+      retencoes: temRetencoes ? retencoesDps : null,
+      exigibilidadeIss: texto(meta.exigibilidade_iss) || "tributavel",
+      tributosAproximados: tributosValor > 0
+        ? {
+          tipo: texto(tributosMeta?.["tipo"]) === "valor"
+            ? "valor"
+            : "percentual",
+          valor: tributosValor,
+        }
+        : null,
       serie: serieMeta,
       numero: numeroDpsMeta,
       nfseId,

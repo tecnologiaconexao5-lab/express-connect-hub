@@ -56,6 +56,28 @@ export interface GerarNfseParams {
   codigo_nbs?: string;
   aliquota_iss?: number | null;
   iss_retido?: boolean;
+  /** Data de competencia AAAA-MM-DD (padrao: hoje em America/Sao_Paulo). */
+  data_competencia?: string;
+  /** Documento do tomador: CNPJ (14) ou CPF (11). */
+  tomador_tipo_documento?: "cnpj" | "cpf";
+  tomador_cpf?: string;
+  /** Inscricao Municipal do tomador (opcional). */
+  tomador_inscricao_municipal?: string;
+  /** Pedido de compra / informacoes complementares (opcional). */
+  pedido_compra?: string;
+  enviar_email_tomador?: boolean;
+  retencoes?: {
+    pis?: number;
+    cofins?: number;
+    csll?: number;
+    irrf?: number;
+    inss?: number;
+  };
+  exigibilidade_iss?: string;
+  tributos_aproximados?: {
+    tipo: "valor" | "percentual";
+    valor: number;
+  };
 }
 
 export async function gerarRascunhoNfse(params: GerarNfseParams) {
@@ -173,15 +195,25 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     const temEnderecoTomador = Object.values(enderecoTomador).some(Boolean);
 
     if (
-      params.tomador_nome || params.tomador_cnpj || params.tomador_email ||
-      params.tomador_telefone || temEnderecoTomador
+      params.tomador_nome || params.tomador_cnpj || params.tomador_cpf ||
+      params.tomador_email || params.tomador_telefone ||
+      params.tomador_inscricao_municipal || temEnderecoTomador
     ) {
+      const tipoDocumento = params.tomador_tipo_documento ||
+        (somenteDigitos(params.tomador_cpf) ? "cpf" : "cnpj");
       tomador = {
         ...(tomador || {}),
         nome: params.tomador_nome || tomador?.nome || null,
-        cnpj: params.tomador_cnpj || tomador?.cnpj || null,
+        cnpj: tipoDocumento === "cnpj"
+          ? (params.tomador_cnpj || tomador?.cnpj || null)
+          : null,
+        cpf: tipoDocumento === "cpf"
+          ? (params.tomador_cpf || tomador?.cpf || null)
+          : null,
         email: params.tomador_email || tomador?.email || null,
         telefone: params.tomador_telefone || tomador?.telefone || null,
+        inscricao_municipal: params.tomador_inscricao_municipal ||
+          tomador?.inscricao_municipal || null,
         endereco: temEnderecoTomador
           ? enderecoTomador
           : (tomador?.endereco || null),
@@ -192,13 +224,29 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     }
     const valorDesconto = Number(params.valor_desconto ?? 0) || 0;
 
+    const retencoes = params.retencoes || {};
+    const totalRetencoes = ["pis", "cofins", "csll", "irrf", "inss"]
+      .reduce(function(total, chave) {
+        const valor = Number(
+          (retencoes as Record<string, unknown>)[chave] ?? 0,
+        );
+        return total + (Number.isFinite(valor) && valor > 0 ? valor : 0);
+      }, 0);
+
     // Validacoes
     if (!emitente || !emitente.razao_social)
       validacoes.push({ campo: "emitente", mensagem: "Emitente padrao nao configurado", severidade: "erro" });
     if (!tomador || !tomador.nome)
       validacoes.push({ campo: "tomador", mensagem: "Tomador/cliente nao identificado", severidade: "erro" });
-    if (!tomador || !tomador.cnpj)
-      validacoes.push({ campo: "tomador.cnpj", mensagem: "CNPJ do tomador ausente", severidade: "erro" });
+    const documentoTomadorDigitos = somenteDigitos(tomador?.cnpj) ||
+      somenteDigitos(tomador?.cpf);
+    if (!documentoTomadorDigitos)
+      validacoes.push({ campo: "tomador.documento", mensagem: "CNPJ/CPF do tomador ausente", severidade: "erro" });
+    const imTomadorNumerica = somenteDigitos(tomador?.inscricao_municipal);
+    if (imTomadorNumerica.length > 15)
+      validacoes.push({ campo: "tomador.inscricao_municipal", mensagem: "IM do tomador deve ter no maximo 15 digitos", severidade: "erro" });
+    if (totalRetencoes > (valorServico || 0) - valorDesconto)
+      validacoes.push({ campo: "retencoes", mensagem: "Retencoes nao podem exceder o valor liquido do servico", severidade: "erro" });
     if (!params.municipio_prestacao && !params.codigo_municipio_prestacao)
       validacoes.push({ campo: "municipio_prestacao", mensagem: "Municipio de prestacao ausente", severidade: "erro" });
     if (!valorServico || valorServico <= 0)
@@ -253,9 +301,12 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       validacoes.push({ campo: "codigo_municipio_prestacao", mensagem: `Municipio "${params.municipio_prestacao || "?"}" nao encontrado na tabela municipios_ibge`, severidade: "erro" });
     }
 
+    const dataCompetencia = /^\d{4}-\d{2}-\d{2}$/.test(params.data_competencia || "")
+      ? String(params.data_competencia)
+      : new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
     const valorLiquido = Math.max(
       0,
-      Number(((valorServico || 0) - valorDesconto).toFixed(2)),
+      Number(((valorServico || 0) - valorDesconto - totalRetencoes).toFixed(2)),
     );
 
     const emitenteMeta = (emitente?.metadata || {}) as Record<string, unknown>;
@@ -277,6 +328,27 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
       } : null,
       tomador,
       servico: params.descricao_servico?.trim() || regraMunicipal?.descricao_servico || DESCRICAO_SERVICO_PADRAO,
+      competencia: dataCompetencia.slice(0, 7),
+      data_competencia: dataCompetencia,
+      pedido_compra: params.pedido_compra?.trim() || null,
+      enviar_email_tomador: params.enviar_email_tomador === true,
+      retencoes: {
+        pis: Number(retencoes.pis ?? 0) || 0,
+        cofins: Number(retencoes.cofins ?? 0) || 0,
+        csll: Number(retencoes.csll ?? 0) || 0,
+        irrf: Number(retencoes.irrf ?? 0) || 0,
+        inss: Number(retencoes.inss ?? 0) || 0,
+      },
+      exigibilidade_iss: String(params.exigibilidade_iss || "tributavel"),
+      tributos_aproximados: params.tributos_aproximados &&
+          Number(params.tributos_aproximados.valor) > 0
+        ? {
+          tipo: params.tributos_aproximados.tipo === "valor"
+            ? "valor"
+            : "percentual",
+          valor: Number(params.tributos_aproximados.valor),
+        }
+        : null,
       valor_servico: valorServico,
       valor_desconto: valorDesconto,
       valor_liquido: valorLiquido,

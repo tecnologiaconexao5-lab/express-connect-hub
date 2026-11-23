@@ -6,12 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { formatarCpfCnpj } from "@/lib/formatacaoCadastros";
 import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
 import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
@@ -540,6 +543,10 @@ export default function NfseTab() {
     emitente_id: "",
     emitente_nome: "",
     emitente_cnpj: "",
+    emitente_im: "",
+    emitente_regime: "",
+    ambiente: "homologacao",
+    competencia_data: hojeISOSP(),
     municipio: "SAO PAULO",
     municipio_ibge: "3550308",
     uf: "SP",
@@ -552,6 +559,9 @@ export default function NfseTab() {
     iss_retido: false,
     tomador_nome: "",
     tomador_cnpj: "",
+    tomador_cpf: "",
+    tomador_tipo_documento: "cnpj" as "cnpj" | "cpf",
+    tomador_im: "",
     tomador_email: "",
     tomador_telefone: "",
     tomador_logradouro: "",
@@ -563,6 +573,16 @@ export default function NfseTab() {
     tomador_cep: "",
     valor_servico: 0 as number,
     valor_desconto: 0 as number,
+    pedido_compra: "",
+    enviar_email_tomador: false,
+    ret_pis: "",
+    ret_cofins: "",
+    ret_csll: "",
+    ret_irrf: "",
+    ret_inss: "",
+    exigibilidade_iss: "tributavel",
+    tributos_aprox_tipo: "percentual" as "valor" | "percentual",
+    tributos_aprox_valor: "",
   });
   const [origens, setOrigens] = useState<OrigemOpcao[]>([]);
   const [buscaOrigem, setBuscaOrigem] = useState("");
@@ -727,24 +747,31 @@ export default function NfseTab() {
     setGerarForm({
       origem: "os", origem_id: "", cliente_id: "",
       emitente_id: "", emitente_nome: "", emitente_cnpj: "",
+      emitente_im: "", emitente_regime: "", ambiente: "homologacao",
+      competencia_data: hojeISOSP(),
       municipio: "SAO PAULO", municipio_ibge: "3550308", uf: "SP",
       codigo_servico: CODIGO_SERVICO_NACIONAL_PADRAO,
       codigo_nacional: CODIGO_NACIONAL_PADRAO,
       codigo_complementar: CODIGO_COMPLEMENTAR_PADRAO,
       codigo_nbs: CODIGO_NBS_PADRAO,
       descricao_servico: DESCRICAO_SERVICO_PADRAO, aliquota_iss: "", iss_retido: false,
-      tomador_nome: "", tomador_cnpj: "",
+      tomador_nome: "", tomador_cnpj: "", tomador_cpf: "",
+      tomador_tipo_documento: "cnpj", tomador_im: "",
       tomador_email: "", tomador_telefone: "",
       tomador_logradouro: "", tomador_numero: "", tomador_complemento: "",
       tomador_bairro: "", tomador_municipio: "", tomador_uf: "", tomador_cep: "",
       valor_servico: 0, valor_desconto: 0,
+      pedido_compra: "", enviar_email_tomador: false,
+      ret_pis: "", ret_cofins: "", ret_csll: "", ret_irrf: "", ret_inss: "",
+      exigibilidade_iss: "tributavel",
+      tributos_aprox_tipo: "percentual", tributos_aprox_valor: "",
     });
 
     // Emitente: MATRIZ da NFS-e Nacional (CNPJ 31.227.975/0001-80),
     // nunca o emitente padrao do CT-e.
     const { data: emitentes } = await supabase
       .from("configuracoes_fiscais")
-      .select("id, razao_social, nome_fantasia, cnpj, cidade, uf, codigo_ibge")
+      .select("id, razao_social, nome_fantasia, cnpj, cidade, uf, codigo_ibge, inscricao_municipal, regime_tributario, ambiente_fiscal")
       .eq("ativo", true);
 
     const listaEmitentes = (emitentes || []) as Array<{
@@ -755,6 +782,9 @@ export default function NfseTab() {
       cidade: string | null;
       uf: string | null;
       codigo_ibge: string | null;
+      inscricao_municipal: string | null;
+      regime_tributario: string | null;
+      ambiente_fiscal: string | null;
     }>;
 
     const matriz = listaEmitentes.find(function(e) {
@@ -782,6 +812,10 @@ export default function NfseTab() {
           // Exibicao fixa da matriz oficial (rastreabilidade visual)
           emitente_nome: MATRIZ_NFSE_RAZAO_SOCIAL,
           emitente_cnpj: MATRIZ_NFSE_CNPJ_FORMATADO,
+          emitente_im: matriz.inscricao_municipal || "",
+          emitente_regime: matriz.regime_tributario || "Simples Nacional",
+          ambiente: matriz.ambiente_fiscal || "homologacao",
+          competencia_data: hojeISOSP(),
           municipio: matriz.cidade || "SAO PAULO",
           municipio_ibge: ibgeMatriz,
           uf: matriz.uf || "SP",
@@ -1026,6 +1060,9 @@ export default function NfseTab() {
   const ultimoCnpjConsultadoRef = useRef("");
 
   useEffect(function() {
+    if (gerarForm.tomador_tipo_documento !== "cnpj") {
+      return;
+    }
     if (cnpjTomadorDigitos.length !== 14) {
       ultimoCnpjConsultadoRef.current = "";
       return;
@@ -1034,7 +1071,7 @@ export default function NfseTab() {
     ultimoCnpjConsultadoRef.current = cnpjTomadorDigitos;
     void consultarCnpjTomador(cnpjTomadorDigitos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cnpjTomadorDigitos]);
+  }, [cnpjTomadorDigitos, gerarForm.tomador_tipo_documento]);
 
   const selecionarCodigoNacional = function(opcao: CodigoServicoOpcao) {
     const nacionalDigitos = (opcao.codigo || "").replace(/\D/g, "").slice(0, 6);
@@ -1112,6 +1149,44 @@ export default function NfseTab() {
       return { id: null, erro: "O desconto nao pode ser maior que o valor do servico." };
     }
 
+    const retNumero = function(valor: string): number {
+      const numero = Number(valor);
+      return Number.isFinite(numero) && numero > 0 ? numero : 0;
+    };
+    const retencoes = {
+      pis: retNumero(gerarForm.ret_pis),
+      cofins: retNumero(gerarForm.ret_cofins),
+      csll: retNumero(gerarForm.ret_csll),
+      irrf: retNumero(gerarForm.ret_irrf),
+      inss: retNumero(gerarForm.ret_inss),
+    };
+    const totalRetencoes = Object.values(retencoes)
+      .reduce(function(total, valor) { return total + valor; }, 0);
+    if (totalRetencoes > gerarForm.valor_servico - gerarForm.valor_desconto) {
+      return { id: null, erro: "As retencoes nao podem exceder o valor liquido do servico." };
+    }
+
+    const tipoDocumentoTomador = gerarForm.tomador_tipo_documento;
+    const documentoTomadorDigitos = somenteDigitos(
+      tipoDocumentoTomador === "cpf"
+        ? gerarForm.tomador_cpf
+        : gerarForm.tomador_cnpj,
+    );
+    if (!documentoTomadorDigitos) {
+      return {
+        id: null,
+        erro: tipoDocumentoTomador === "cpf"
+          ? "Informe o CPF do tomador."
+          : "Informe o CNPJ do tomador.",
+      };
+    }
+    if (tipoDocumentoTomador === "cnpj" && documentoTomadorDigitos.length !== 14) {
+      return { id: null, erro: "CNPJ do tomador invalido (14 digitos)." };
+    }
+    if (tipoDocumentoTomador === "cpf" && documentoTomadorDigitos.length !== 11) {
+      return { id: null, erro: "CPF do tomador invalido (11 digitos)." };
+    }
+
     const aliquotaNumerica = gerarForm.aliquota_iss !== "" ? Number(gerarForm.aliquota_iss) : null;
 
     const result = await gerarRascunhoNfse({
@@ -1121,8 +1196,22 @@ export default function NfseTab() {
       municipio_prestacao: gerarForm.municipio || "SAO PAULO",
       codigo_municipio_prestacao: gerarForm.municipio_ibge || null,
       descricao_servico: gerarForm.descricao_servico || DESCRICAO_SERVICO_PADRAO,
+      data_competencia: gerarForm.competencia_data || hojeISOSP(),
       tomador_nome: gerarForm.tomador_nome || undefined,
-      tomador_cnpj: gerarForm.tomador_cnpj || undefined,
+      tomador_cnpj: tipoDocumentoTomador === "cnpj" ? gerarForm.tomador_cnpj || undefined : undefined,
+      tomador_cpf: tipoDocumentoTomador === "cpf" ? gerarForm.tomador_cpf || undefined : undefined,
+      tomador_tipo_documento: tipoDocumentoTomador,
+      tomador_inscricao_municipal: gerarForm.tomador_im || undefined,
+      pedido_compra: gerarForm.pedido_compra || undefined,
+      enviar_email_tomador: gerarForm.enviar_email_tomador,
+      retencoes,
+      exigibilidade_iss: gerarForm.exigibilidade_iss,
+      tributos_aproximados: Number(gerarForm.tributos_aprox_valor) > 0
+        ? {
+          tipo: gerarForm.tributos_aprox_tipo,
+          valor: Number(gerarForm.tributos_aprox_valor),
+        }
+        : undefined,
       tomador_email: gerarForm.tomador_email || undefined,
       tomador_telefone: gerarForm.tomador_telefone || undefined,
       tomador_logradouro: gerarForm.tomador_logradouro || undefined,
@@ -1437,6 +1526,7 @@ export default function NfseTab() {
 
     const dps: DpsPayload = {
       competencia,
+      dataCompetencia: meta.data_competencia ? String(meta.data_competencia) : null,
       prestador: {
         cnpj: "31227975000180",
         inscricaoMunicipal: inscricaoMunicipalEmitente,
@@ -1448,6 +1538,9 @@ export default function NfseTab() {
         cnpj: tomador.cnpj ? String(tomador.cnpj) : null,
         cpf: tomador.cpf ? String(tomador.cpf) : null,
         email: tomador.email ? String(tomador.email) : null,
+        inscricaoMunicipal: tomador.inscricao_municipal
+          ? String(tomador.inscricao_municipal)
+          : null,
       },
       servico: {
         codigoTributacaoNacional: String(meta.codigo_servico || "16.02.01.002"),
@@ -1457,7 +1550,27 @@ export default function NfseTab() {
         issRetido: meta.iss_retido === true,
         codigoMunicipioPrestacao: String(meta.codigo_municipio_prestacao || "3550308"),
         codigoNbs: meta.codigo_nbs ? String(meta.codigo_nbs) : null,
+        informacoesComplementares: meta.pedido_compra ? String(meta.pedido_compra) : null,
       },
+      retencoes: meta.retencoes
+        ? {
+          pis: Number(meta.retencoes.pis ?? 0) || 0,
+          cofins: Number(meta.retencoes.cofins ?? 0) || 0,
+          csll: Number(meta.retencoes.csll ?? 0) || 0,
+          irrf: Number(meta.retencoes.irrf ?? 0) || 0,
+          inss: Number(meta.retencoes.inss ?? 0) || 0,
+        }
+        : null,
+      exigibilidadeIss: meta.exigibilidade_iss
+        ? String(meta.exigibilidade_iss)
+        : "tributavel",
+      tributosAproximados: meta.tributos_aproximados &&
+          Number(meta.tributos_aproximados.valor) > 0
+        ? {
+          tipo: meta.tributos_aproximados.tipo === "valor" ? "valor" : "percentual",
+          valor: Number(meta.tributos_aproximados.valor),
+        }
+        : null,
       serie: String(meta.serie || "1"),
       numero: meta.numero_dps ? String(meta.numero_dps) : null,
       nfseId: nfse.id,
@@ -1680,6 +1793,17 @@ export default function NfseTab() {
 
   // Apenas o VALOR do serviço fica travado pela origem. Tomador/CNPJ/endereço
   // permanecem editáveis (inclusive para busca avulsa de CNPJ).
+  const numeroCampo = function(valor: string): number {
+    const numero = Number(valor);
+    return Number.isFinite(numero) && numero > 0 ? numero : 0;
+  };
+  const totalRetencoesForm = numeroCampo(gerarForm.ret_pis) +
+    numeroCampo(gerarForm.ret_cofins) + numeroCampo(gerarForm.ret_csll) +
+    numeroCampo(gerarForm.ret_irrf) + numeroCampo(gerarForm.ret_inss);
+  const valorLiquidoFinal = Math.max(
+    0,
+    (gerarForm.valor_servico || 0) - (gerarForm.valor_desconto || 0) - totalRetencoesForm,
+  );
   const valorTravadoPelaOrigem = gerarForm.origem !== "avulso";
   const termoBuscaOrigem = buscaOrigem.trim().toLowerCase();
   const origensFiltradas = termoBuscaOrigem
@@ -1816,79 +1940,36 @@ export default function NfseTab() {
                 <div className="min-w-0">
                   <p className="text-base font-bold text-slate-900">CONEXÃO EXPRESS</p>
                   <p className="text-sm text-slate-700">{MATRIZ_NFSE_RAZAO_SOCIAL}</p>
-                  <p className="text-xs text-muted-foreground">CNPJ {MATRIZ_NFSE_CNPJ_FORMATADO}</p>
+                  <p className="text-xs text-muted-foreground">
+                    CNPJ {MATRIZ_NFSE_CNPJ_FORMATADO} | IM {gerarForm.emitente_im || "-"} | Regime {gerarForm.emitente_regime || "-"}
+                  </p>
                 </div>
                 <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 sm:ml-auto">
                   Matriz oficial
                 </Badge>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <Label>Município de emissão (IBGE)</Label>
+                  <Label>Municipio de emissao (IBGE)</Label>
                   <Input value={gerarForm.municipio_ibge || "3550308"} readOnly className="bg-slate-50" />
                 </div>
                 <div>
-                  <Label>Código Nacional</Label>
-                  <CodigoCombobox
-                    value={gerarForm.codigo_nacional}
-                    options={codigosNacionais}
-                    placeholder="Ex.: 16.02.01"
-                    vazioTexto="Nenhum código na lista. Você pode digitar manualmente."
-                    rodapeTexto="Código nacional do ISSQN (6 dígitos). Ex.: 16.02.01."
-                    onChangeValue={function(valor) {
-                      setGerarForm(function(p) {
-                        return {
-                          ...p,
-                          codigo_nacional: valor,
-                          codigo_servico: comporCodigoServico(valor, p.codigo_complementar),
-                        };
-                      });
-                    }}
-                    onSelectOption={selecionarCodigoNacional}
-                  />
-                </div>
-                <div>
-                  <Label>Código Complementar Municipal</Label>
+                  <Label>Data de Competência</Label>
                   <Input
-                    value={gerarForm.codigo_complementar}
-                    inputMode="numeric"
-                    maxLength={3}
-                    placeholder="002"
-                    className="font-mono"
+                    type="date"
+                    value={gerarForm.competencia_data}
                     onChange={function(e) {
-                      const valor = e.target.value.replace(/\D/g, "").slice(0, 3);
-                      setGerarForm(function(p) {
-                        return {
-                          ...p,
-                          codigo_complementar: valor,
-                          codigo_servico: comporCodigoServico(p.codigo_nacional, valor),
-                        };
-                      });
+                      setGerarForm(function(p) { return { ...p, competencia_data: e.target.value }; });
                     }}
                   />
-                </div>
-                <div>
-                  <Label>Código NBS</Label>
-                  <CodigoCombobox
-                    value={gerarForm.codigo_nbs}
-                    options={CODIGOS_NBS}
-                    placeholder="Ex.: 1.0501.15.00"
-                    vazioTexto="Nenhum NBS na lista. Você pode digitar manualmente."
-                    rodapeTexto="NBS 2.0 — transporte rodoviário de cargas: 1.0501.15.00."
-                    onChangeValue={function(valor) {
-                      setGerarForm(function(p) { return { ...p, codigo_nbs: valor }; });
-                    }}
-                    onSelectOption={function(opcao) {
-                      setGerarForm(function(p) { return { ...p, codigo_nbs: opcao.codigo }; });
-                    }}
-                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Padrao: hoje em America/Sao_Paulo. Vai para a tag dCompet da DPS.
+                  </p>
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Padrão: Nacional 16.02.01 + Complementar 002 (São Paulo) e NBS
-                1.0501.15.00. Altere livremente (ex.: Complementar 001 para São
-                Bernardo do Campo).
+                Codigo nacional, complementar municipal e NBS ficam centralizados no Passo 4 (Tributacao).
               </p>
 
               {!gerarForm.emitente_id && (
@@ -1908,6 +1989,20 @@ export default function NfseTab() {
                   Selecione a origem ou informe o CNPJ do tomador. Todos os campos ficam editáveis.
                 </p>
               </div>
+
+              <label className="flex items-start gap-2 rounded-lg border border-violet-100 bg-violet-50/40 p-3 text-xs">
+                <Checkbox
+                  checked={gerarForm.enviar_email_tomador}
+                  onCheckedChange={function(v) {
+                    setGerarForm(function(p) { return { ...p, enviar_email_tomador: v === true }; });
+                  }}
+                  className="mt-0.5"
+                />
+                <span className="text-slate-700">
+                  Enviar PDF + XML automaticamente para o e-mail do tomador apos autorizacao.
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground">Preferencia salva na nota para uso no pos-emissao.</span>
+                </span>
+              </label>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
@@ -2056,36 +2151,81 @@ export default function NfseTab() {
                   )}
                 </div>
                 <div>
-                  <Label>CNPJ do Tomador</Label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <Label>{gerarForm.tomador_tipo_documento === "cpf" ? "CPF do Tomador" : "CNPJ do Tomador"}</Label>
+                    <div className="inline-flex overflow-hidden rounded-md border border-slate-200">
+                      {(["cnpj", "cpf"] as const).map(function(tipo) {
+                        const ativo = gerarForm.tomador_tipo_documento === tipo;
+                        return (
+                          <button
+                            key={tipo}
+                            type="button"
+                            onClick={function() {
+                              setGerarForm(function(p) {
+                                return {
+                                  ...p,
+                                  tomador_tipo_documento: tipo,
+                                  tomador_cnpj: tipo === "cnpj" ? p.tomador_cnpj : "",
+                                  tomador_cpf: tipo === "cpf" ? p.tomador_cpf : "",
+                                };
+                              });
+                              setErroConsultaCnpj("");
+                              ultimoCnpjConsultadoRef.current = "";
+                            }}
+                            className={"px-2.5 py-1 text-[10px] font-bold uppercase " + (ativo ? "bg-violet-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}
+                          >
+                            {tipo}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <Input
-                      value={gerarForm.tomador_cnpj}
-                      onChange={function(e) { setGerarForm(function(p) { return { ...p, tomador_cnpj: e.target.value }; }); }}
-                      placeholder="00.000.000/0000-00"
+                      value={gerarForm.tomador_tipo_documento === "cpf" ? gerarForm.tomador_cpf : gerarForm.tomador_cnpj}
+                      onChange={function(e) {
+                        const valor = formatarCpfCnpj(e.target.value);
+                        const campo = gerarForm.tomador_tipo_documento === "cpf" ? "tomador_cpf" : "tomador_cnpj";
+                        setGerarForm(function(p) { return { ...p, [campo]: valor }; });
+                      }}
+                      placeholder={gerarForm.tomador_tipo_documento === "cpf" ? "000.000.000-00" : "00.000.000/0000-00"}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1"
-                      onClick={function() { void consultarCnpjTomador(); }}
-                      disabled={consultandoCnpj}
-                      title="Buscar dados do CNPJ na Receita (BrasilAPI)"
-                    >
-                      {consultandoCnpj ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                      <span className="hidden sm:inline">Buscar CNPJ</span>
-                    </Button>
+                    {gerarForm.tomador_tipo_documento === "cnpj" && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1"
+                        onClick={function() { void consultarCnpjTomador(); }}
+                        disabled={consultandoCnpj}
+                        title="Buscar dados do CNPJ na Receita (BrasilAPI)"
+                      >
+                        {consultandoCnpj ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                        <span className="hidden sm:inline">Buscar CNPJ</span>
+                      </Button>
+                    )}
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Digite o CNPJ (consulta automática ao completar 14 dígitos) ou use "Buscar CNPJ".
+                    {gerarForm.tomador_tipo_documento === "cpf"
+                      ? "CPF com 11 digitos. Nao ha consulta automatica para CPF."
+                      : "Digite o CNPJ (consulta automatica ao completar 14 digitos) ou use Buscar CNPJ."}
                   </p>
                   {erroConsultaCnpj && (
                     <p className="mt-1 flex items-center gap-1 text-[11px] text-red-600">
                       <AlertCircle className="h-3 w-3" /> {erroConsultaCnpj}
                     </p>
                   )}
-                </div>
-              </div>
+                  <div className="mt-2">
+                    <Label>IM do Tomador (opcional)</Label>
+                    <Input
+                      value={gerarForm.tomador_im}
+                      onChange={function(e) {
+                        setGerarForm(function(p) { return { ...p, tomador_im: e.target.value.replace(/\D/g, "").slice(0, 15) }; });
+                      }}
+                      placeholder="Inscricao municipal do tomador"
+                    />
+                  </div>
+                </div></div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -2185,12 +2325,38 @@ export default function NfseTab() {
               </div>
 
               <div>
-                <Label>Descricao do Servico</Label>
-                <Input
+                <div className="flex items-center justify-between">
+                  <Label>Descricao do Servico</Label>
+                  <span className="text-[10px] text-muted-foreground">{gerarForm.descricao_servico.length}/2000</span>
+                </div>
+                <Textarea
                   value={gerarForm.descricao_servico}
-                  onChange={function(e) { setGerarForm(function(p) { return { ...p, descricao_servico: e.target.value }; }); }}
-                  placeholder="Prestação de serviços de coleta e entrega de mercadorias"
+                  onChange={function(e) {
+                    setGerarForm(function(p) { return { ...p, descricao_servico: e.target.value.slice(0, 2000) }; });
+                  }}
+                  rows={4}
+                  maxLength={2000}
+                  className="mt-1 min-h-[110px] resize-y"
+                  placeholder="Detalhe a prestacao: numero da OS, romaneio, periodo, placa e demais informacoes."
                 />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Multilinha (ate 2000 caracteres). Vai para xDescServ na DPS.
+                </p>
+              </div>
+
+              <div>
+                <Label>Nº Pedido de Compra (PO) / Informações Complementares (opcional)</Label>
+                <Input
+                  value={gerarForm.pedido_compra}
+                  onChange={function(e) {
+                    setGerarForm(function(p) { return { ...p, pedido_compra: e.target.value }; });
+                  }}
+                  maxLength={2000}
+                  placeholder="Ex.: PO-12345 / Romaneio 67890 / Periodo 01-15/11"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Quando preenchido, vai como xInfComp em serv/infoCompl (sem alterar a descricao do servico).
+                </p>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2406,6 +2572,99 @@ export default function NfseTab() {
                 </div>
               </div>
 
+              <details className="rounded-lg border border-slate-200 bg-slate-50/30">
+                <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-slate-700">
+                  Retenções Federais (opcional)
+                  <span className="ml-2 text-[10px] font-normal text-muted-foreground">Somente valores &gt; 0 entram no XML</span>
+                </summary>
+                <div className="grid grid-cols-2 gap-3 border-t p-3 sm:grid-cols-5">
+                  {([
+                    { campo: "ret_pis", label: "PIS" },
+                    { campo: "ret_cofins", label: "COFINS" },
+                    { campo: "ret_csll", label: "CSLL" },
+                    { campo: "ret_irrf", label: "IRRF" },
+                    { campo: "ret_inss", label: "INSS" },
+                  ] as Array<{ campo: "ret_pis" | "ret_cofins" | "ret_csll" | "ret_irrf" | "ret_inss"; label: string }>).map(function(item) {
+                    return (
+                      <div key={item.campo}>
+                        <Label className="text-[11px]">{item.label} (R$)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={gerarForm[item.campo]}
+                          onChange={function(e) {
+                            setGerarForm(function(p) { return { ...p, [item.campo]: e.target.value }; });
+                          }}
+                          placeholder="0,00"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Total retenções: <strong className="text-slate-800">{fmtFin(totalRetencoesForm)}</strong></span>
+                  <span className="text-muted-foreground">Valor líquido final: <strong className="text-emerald-700">{fmtFin(valorLiquidoFinal)}</strong></span>
+                </div>
+              </details>
+
+              <details className="rounded-lg border border-slate-200 bg-slate-50/30">
+                <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-slate-700">
+                  Configurações Avançadas (opcional)
+                </summary>
+                <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Exigibilidade do ISS</Label>
+                    <Select
+                      value={gerarForm.exigibilidade_iss}
+                      onValueChange={function(v: string) {
+                        setGerarForm(function(p) { return { ...p, exigibilidade_iss: v }; });
+                      }}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tributavel">Tributavel (padrao)</SelectItem>
+                        <SelectItem value="imunidade">Imunidade</SelectItem>
+                        <SelectItem value="nao_incidencia">Não incidência</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Tributos Aproximados / Lei 12.741 (opcional)</Label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={gerarForm.tributos_aprox_tipo}
+                        onValueChange={function(v: string) {
+                          setGerarForm(function(p) {
+                            return { ...p, tributos_aprox_tipo: v === "valor" ? "valor" : "percentual" };
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percentual">%</SelectItem>
+                          <SelectItem value="valor">R$</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={gerarForm.tributos_aprox_valor}
+                        onChange={function(e) {
+                          setGerarForm(function(p) { return { ...p, tributos_aprox_valor: e.target.value }; });
+                        }}
+                        placeholder="0,00"
+                        className="flex-1"
+                      />
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Simples: % vira pTotTribSN. Demais: % vira pTotTrib e R$ vira vTotTrib.
+                    </p>
+                  </div>
+                </div>
+              </details>
+
               {regraSugerida && (
                 <div className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-700">
                   Regra municipal encontrada: {regraSugerida.municipio_prestacao}/{regraSugerida.uf}
@@ -2430,6 +2689,13 @@ export default function NfseTab() {
                 <p className="text-sm text-muted-foreground">Confira os dados antes de salvar/emitir.</p>
               </div>
 
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={String(gerarForm.ambiente || "").toLowerCase().startsWith("prod") ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
+                  {String(gerarForm.ambiente || "").toLowerCase().startsWith("prod") ? "PRODUÇÃO" : "HOMOLOGAÇÃO"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">Ambiente da emissao</span>
+              </div>
+
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border p-3">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Prestador</p>
@@ -2439,7 +2705,12 @@ export default function NfseTab() {
                 <div className="rounded-lg border p-3">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Tomador</p>
                   <p className="text-sm font-semibold">{gerarForm.tomador_nome || "—"}</p>
-                  <p className="text-xs text-muted-foreground">{gerarForm.tomador_cnpj || "—"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {gerarForm.tomador_tipo_documento === "cpf"
+                      ? (formatarCpfCnpj(gerarForm.tomador_cpf) || "—")
+                      : (formatarCpfCnpj(gerarForm.tomador_cnpj) || "—")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">IM: {gerarForm.tomador_im || "—"}</p>
                   <p className="text-xs text-muted-foreground">{gerarForm.tomador_email || "—"}</p>
                   <p className="text-xs text-muted-foreground">{gerarForm.tomador_telefone || "—"}</p>
                   <p className="text-xs text-muted-foreground">
@@ -2465,7 +2736,25 @@ export default function NfseTab() {
                     Cód. {gerarForm.codigo_servico} · NBS {gerarForm.codigo_nbs || "—"} · ISS {gerarForm.aliquota_iss || "0"}% · {gerarForm.iss_retido ? "Retido" : "Não retido"}
                   </p>
                 </div>
-              </div>
+              <div className="rounded-lg border p-3 sm:col-span-2">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Competência / PO / Retenções</p>
+                  <div className="mt-1 grid gap-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">Data de Competência</p>
+                      <p className="font-semibold">{formatarDataBR(gerarForm.competencia_data) || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">Pedido de Compra</p>
+                      <p className="font-semibold">{gerarForm.pedido_compra || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">Retencoes</p>
+                      <p className="font-semibold">{totalRetencoesForm > 0 ? fmtFin(totalRetencoesForm) : "Nao informadas"}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-emerald-700">Valor Líquido Final: {fmtFin(valorLiquidoFinal)}</p>
+                </div>
+                </div>
 
               <div className="space-y-1 rounded-lg border p-3 text-sm">
                 <p className="flex items-center gap-2">
@@ -2475,10 +2764,10 @@ export default function NfseTab() {
                   Origem definida
                 </p>
                 <p className="flex items-center gap-2">
-                  {gerarForm.tomador_nome && gerarForm.tomador_cnpj
+                  {gerarForm.tomador_nome && (gerarForm.tomador_cnpj || gerarForm.tomador_cpf)
                     ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     : <AlertTriangle className="w-4 h-4 text-amber-500" />}
-                  Tomador e CNPJ
+                  Tomador e documento
                 </p>
                 <p className="flex items-center gap-2">
                   {gerarForm.valor_servico > 0
