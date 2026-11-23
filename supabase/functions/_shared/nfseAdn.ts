@@ -43,6 +43,23 @@ interface RespostaDanfseHttp {
 
 const TIMEOUT_PADRAO_MS = 9000;
 const LIMITE_PDF_BYTES = 12 * 1024 * 1024;
+const USER_AGENT = "ConexaoExpress-NFSe/1.0 (+https://www.conexaoexpress.com.br)";
+
+/** Trecho seguro do corpo de erro do ADN (sem caracteres de controle). */
+function trechoResposta(bytes: Uint8Array | null): string {
+  if (!bytes || bytes.length === 0) return "";
+  try {
+    const texto = new TextDecoder("utf-8", { fatal: false })
+      .decode(bytes.subarray(0, 400));
+    return texto
+      .replace(/[\u0000-\u001f\u007f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160);
+  } catch {
+    return "";
+  }
+}
 
 function resumoSeguro(erro: unknown, limite = 280): string {
   const bruto = erro instanceof Error
@@ -120,11 +137,12 @@ function avaliar(
       url,
     };
   }
+  const trecho = resposta.status >= 400 ? trechoResposta(resposta.bytes) : "";
   const erro = resposta.status >= 200 && resposta.status < 300
     ? `resposta ${resposta.status} sem PDF (content-type ${
       resposta.contentType || "desconhecido"
     })`
-    : `HTTP ${resposta.status}`;
+    : `HTTP ${resposta.status}${trecho ? ` - ${trecho}` : ""}`;
   return {
     ok: false,
     status: resposta.status,
@@ -168,7 +186,10 @@ async function getComProxy(
       body: JSON.stringify({
         url,
         method: "GET",
-        headers: { "Accept": "application/pdf" },
+        headers: {
+          "Accept": "application/pdf",
+          "User-Agent": USER_AGENT,
+        },
         cert: material.chainPem,
         key: material.keyPem,
         responseEncoding: "base64",
@@ -244,7 +265,10 @@ async function getComDenoFetch(
   try {
     const init = {
       method: "GET",
-      headers: { "Accept": "application/pdf" },
+      headers: {
+        "Accept": "application/pdf",
+        "User-Agent": USER_AGENT,
+      },
       client: cliente,
       signal: controller.signal,
     } as unknown as RequestInit;
@@ -295,7 +319,10 @@ function getComNodeHttps(
         port: url.port ? Number(url.port) : 443,
         path: `${url.pathname || "/"}${url.search}`,
         method: "GET",
-        headers: { "Accept": "application/pdf" },
+        headers: {
+          "Accept": "application/pdf",
+          "User-Agent": USER_AGENT,
+        },
         cert: material.chainPem,
         key: material.keyPem,
         rejectUnauthorized: true,

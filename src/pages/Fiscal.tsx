@@ -44,6 +44,7 @@ type EmitenteMatriz = {
   id: string;
   razao_social: string | null;
   cnpj: string | null;
+  ambiente_fiscal?: string | null;
 };
 
 type RespostaUploadCertificado = {
@@ -77,6 +78,7 @@ export default function Fiscal() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState("");
   const [certEmitente, setCertEmitente] = useState<EmitenteMatriz | null>(null);
+  const [ambienteFiscal, setAmbienteFiscal] = useState<string | null>(null);
   const [certCarregandoEmitente, setCertCarregandoEmitente] = useState(false);
   const [certEnviando, setCertEnviando] = useState(false);
   const certInputRef = useRef<HTMLInputElement>(null);
@@ -139,16 +141,14 @@ export default function Fiscal() {
   // Ao abrir o modal, resolve o emitente_fiscal usado no upload.
   // ------------------------------------------------------------------
   useEffect(() => {
-    if (!showConfigModal) return;
     let cancelado = false;
 
     (async () => {
-      setCertEmitente(null);
       setCertCarregandoEmitente(true);
       try {
         const { data, error } = await supabase
           .from("configuracoes_fiscais")
-          .select("id, razao_social, cnpj")
+          .select("id, razao_social, cnpj, ambiente_fiscal")
           .eq("ativo", true);
         if (error) throw error;
 
@@ -159,19 +159,25 @@ export default function Fiscal() {
         if (!matriz) {
           const { data: padrao } = await supabase
             .from("configuracoes_fiscais")
-            .select("id, razao_social, cnpj")
+            .select("id, razao_social, cnpj, ambiente_fiscal")
             .eq("padrao", true)
             .maybeSingle();
           matriz = (padrao as EmitenteMatriz | null) || null;
         }
 
-        if (!cancelado) setCertEmitente(matriz);
+        if (!cancelado) {
+          setCertEmitente(matriz);
+          setAmbienteFiscal(matriz?.ambiente_fiscal || "homologacao");
+        }
       } catch (err: unknown) {
         console.error(
           "[Fiscal] Erro ao carregar emitente matriz:",
           err instanceof Error ? err.message : String(err),
         );
-        if (!cancelado) setCertEmitente(null);
+        if (!cancelado) {
+          setCertEmitente(null);
+          setAmbienteFiscal("homologacao");
+        }
       } finally {
         if (!cancelado) setCertCarregandoEmitente(false);
       }
@@ -303,7 +309,7 @@ export default function Fiscal() {
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <FileText className="w-8 h-8 text-primary" /> Central Fiscal Conexao Express
           </h1>
-          <p className="text-muted-foreground">Emissao de NFS-e, CT-e, MDF-e — Ambiente de homologacao</p>
+          <p className="text-muted-foreground">Emissao de NFS-e, CT-e, MDF-e - Ambiente de {String(ambienteFiscal || "").toLowerCase().startsWith("prod") ? "producao" : "homologacao"}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowConfigModal(true)} className="gap-1">
