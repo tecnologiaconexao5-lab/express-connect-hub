@@ -90,6 +90,34 @@ const toCrmLeadRow = (lead: Lead): Record<string, any> => ({
   updated_at: new Date().toISOString(),
 });
 
+const RESPONSAVEL_PLACEHOLDER = "Você";
+
+/**
+ * Todo lead criado pela UI é vinculado ao usuário autenticado
+ * (responsavel_id/created_by), respeitando o escopo por responsável no CRM.
+ */
+async function atribuirResponsavelAtual(
+  payload: ReturnType<typeof toCrmLeadRow>,
+): Promise<ReturnType<typeof toCrmLeadRow>> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return payload;
+    const nome = String(user.user_metadata?.nome || user.user_metadata?.name || user.email || "").trim();
+    const responsavelAtual = payload.responsavel && payload.responsavel !== RESPONSAVEL_PLACEHOLDER
+      ? payload.responsavel
+      : (nome || payload.responsavel);
+    return {
+      ...payload,
+      responsavel_id: user.id,
+      created_by: user.id,
+      responsavel: responsavelAtual,
+    };
+  } catch (e) {
+    console.warn("[CRM] Falha ao obter o usuário autenticado:", e);
+    return payload;
+  }
+}
+
 export default function CrmBase() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -115,9 +143,9 @@ export default function CrmBase() {
         if (crmData.length > 0) {
           setLeads(crmData.map(fromCrmLeadRow));
         } else {
-          // Banco vazio — inicializar com dados mock migrados automaticamente
-          console.log("[CRM] Banco crm_leads vazio. Carregando mock sem persistir.");
-          setLeads(LEADS_MOCK);
+          // Banco conectado e sem leads visíveis para este usuário:
+          // não usar mock (evita vazar prospecções fictícias/de outros donos).
+          setLeads([]);
         }
         return;
       }
@@ -196,9 +224,10 @@ export default function CrmBase() {
       const isMockId = /^\d+$/.test(leadAlterado.id);
 
       if (isMockId) {
+        const payloadComDono = await atribuirResponsavelAtual(payload);
         const { data, error } = await supabase
           .from("crm_leads")
-          .insert([{ ...payload, created_at: new Date().toISOString() }])
+          .insert([{ ...payloadComDono, created_at: new Date().toISOString() }])
           .select("id")
           .single();
         if (!error && data) {
@@ -228,9 +257,10 @@ export default function CrmBase() {
 
     try {
       const payload = toCrmLeadRow(lead);
+      const payloadComDono = await atribuirResponsavelAtual(payload);
       const { data, error } = await supabase
         .from("crm_leads")
-        .insert([{ ...payload, created_at: new Date().toISOString() }])
+        .insert([{ ...payloadComDono, created_at: new Date().toISOString() }])
         .select("*")
         .single();
 
