@@ -591,7 +591,9 @@ serve(async (req: Request) => {
             success: false,
             error: download.status === 404
               ? "O ADN respondeu HTTP 404: o DANFSe oficial nao esta disponivel para esta nota neste ambiente."
-              : "Nao foi possivel baixar o PDF oficial agora. O ADN pode ainda nao disponibilizar o arquivo; tente novamente em instantes.",
+              : download.status >= 500
+                ? `O ADN de producao esta temporariamente indisponivel (HTTP ${download.status}). Tente novamente em alguns minutos.`
+                : "Nao foi possivel baixar o PDF oficial agora. O ADN pode ainda nao disponibilizar o arquivo; tente novamente em instantes.",
             detalhe: truncar(download.erro || "sem PDF", 300),
           },
           502,
