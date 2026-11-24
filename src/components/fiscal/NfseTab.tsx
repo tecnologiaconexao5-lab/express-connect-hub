@@ -15,6 +15,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { formatarCpfCnpj } from "@/lib/formatacaoCadastros";
+import { hojeISOSP } from "@/lib/formatDates";
 import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
 import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
