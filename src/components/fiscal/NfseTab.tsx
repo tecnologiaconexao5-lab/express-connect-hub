@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search, Printer, Download, FileText } from "lucide-react";
+import JSZip from "jszip";
+import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search, Printer, Download, FileText, Mail } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { formatarCpfCnpj } from "@/lib/formatacaoCadastros";
 import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
-import { gerarRascunhoNfse, cancelarNfse, MOTIVOS_CANCELAMENTO_NFSE } from "@/services/fiscal/nfseService";
+import { gerarRascunhoNfse, cancelarNfse, enviarNfsePorEmail, MOTIVOS_CANCELAMENTO_NFSE } from "@/services/fiscal/nfseService";
 import type { MotivoCancelamentoNfse } from "@/services/fiscal/nfseService";
 import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
@@ -470,6 +471,132 @@ function urlLogoAbsoluta(valor: string): string {
 }
 const somenteDigitos = function(valor?: string | null) { return (valor || "").replace(/\D/g, ""); };
 
+/** "YYYY-MM" no fuso America/Sao_Paulo (para o filtro de exportacao mensal). */
+function mesSP(valor: unknown): string {
+  const texto = String(valor || "").trim();
+  if (!texto) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto.slice(0, 7);
+  const data = new Date(texto);
+  if (Number.isNaN(data.getTime())) return texto.slice(0, 7);
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(data);
+  const ano = partes.find(function(p) { return p.type === "year"; })?.value || "";
+  const mes = partes.find(function(p) { return p.type === "month"; })?.value || "";
+  return ano && mes ? `${ano}-${mes}` : "";
+}
+
+function dataBrSP(valor: unknown): string {
+  const texto = String(valor || "").trim();
+  if (!texto) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+    const [ano, mes, dia] = texto.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+  const data = new Date(texto);
+  if (Number.isNaN(data.getTime())) return texto;
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(data);
+}
+
+function numeroCsv(valor: unknown): string {
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return "0,00";
+  return numero.toFixed(2).replace(".", ",");
+}
+
+function somarRetencoes(retencoes: unknown): number {
+  if (!retencoes || typeof retencoes !== "object") return 0;
+  return ["pis", "cofins", "csll", "irrf", "inss"].reduce(function(total, chave) {
+    const valor = Number((retencoes as Record<string, unknown>)[chave] ?? 0);
+    return total + (Number.isFinite(valor) && valor > 0 ? valor : 0);
+  }, 0);
+}
+
+function escaparCsv(valor: unknown): string {
+  const texto = String(valor ?? "");
+  if (/[";\n\r]/.test(texto)) return '"' + texto.replace(/"/g, '""') + '"';
+  return texto;
+}
+
+/** CSV do resumo mensal (UTF-8 com BOM, separador ";" para Excel pt-BR). */
+function montarResumoCsv(nfses: any[]): string {
+  const cabecalho = [
+    "Numero",
+    "Data",
+    "Tomador",
+    "CNPJ_CPF",
+    "Status",
+    "Valor_Bruto",
+    "Retencoes",
+    "Valor_Liquido",
+    "Chave_Acesso",
+  ];
+  const linhas = nfses.map(function(nfse) {
+    const meta = (nfse.metadata || {}) as Record<string, any>;
+    const tomador = (meta.tomador || {}) as Record<string, any>;
+    const bruto = Number(meta.valor_servico ?? nfse.valor ?? 0);
+    const retencoes = somarRetencoes(meta.retencoes);
+    const liquido = Number(
+      meta.valor_liquido ?? ((nfse.valor ?? bruto) - retencoes),
+    );
+    return [
+      nfse.numero || "",
+      dataBrSP(
+        nfse.data_emissao || meta.data_emissao ||
+          meta.emissao?.data_emissao || nfse.created_at,
+      ),
+      tomador.nome || "",
+      tomador.cnpj || tomador.cpf || "",
+      String(nfse.status || "").toLowerCase(),
+      numeroCsv(bruto),
+      numeroCsv(retencoes),
+      numeroCsv(liquido),
+      nfse.chave_acesso || "",
+    ].map(escaparCsv).join(";");
+  });
+  const conteudo = [cabecalho.join(";")].concat(linhas).join("\r\n");
+  return "\uFEFF" + conteudo + "\r\n";
+}
+
+function caminhoXmlAutorizado(nfse: any): string | null {
+  const meta = (nfse.metadata || {}) as Record<string, any>;
+  const docs = (meta.documentos_storage || {}) as Record<string, any>;
+  return docs.nfse_retorno || docs.nfse_dps || nfse.xml_url || null;
+}
+
+function caminhoPdfOficialNfse(nfse: any): string | null {
+  const meta = (nfse.metadata || {}) as Record<string, any>;
+  const docs = (meta.documentos_storage || {}) as Record<string, any>;
+  return (
+    nfse.pdf_url ||
+    meta.pdf_oficial_path ||
+    docs.danfse_oficial ||
+    docs.danfse_pdf ||
+    docs.nfse_pdf ||
+    null
+  );
+}
+
+async function baixarBytesStorage(
+  caminhoBruto: string | null,
+): Promise<Uint8Array | null> {
+  const caminho = String(caminhoBruto || "").trim();
+  if (!caminho || /^https?:\/\//i.test(caminho)) return null;
+  const limpo = caminho.replace(/^fiscal-documentos\//, "");
+  const { data, error } = await supabase.storage
+    .from("fiscal-documentos")
+    .download(limpo);
+  if (error || !data) return null;
+  return new Uint8Array(await data.arrayBuffer());
+}
+
 type OrigemOpcao = {
   id: string;
   numero: string | null;
@@ -542,6 +669,9 @@ export default function NfseTab() {
   const [cancelando, setCancelando] = useState(false);
   const [cancelMotivo, setCancelMotivo] = useState<MotivoCancelamentoNfse>("1");
   const [cancelJustificativa, setCancelJustificativa] = useState("");
+  const [mesExportacao, setMesExportacao] = useState(function() { return hojeISOSP().slice(0, 7); });
+  const [exportandoMes, setExportandoMes] = useState(false);
+  const [enviandoEmailId, setEnviandoEmailId] = useState<string | null>(null);
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -1845,6 +1975,132 @@ export default function NfseTab() {
       }
     } finally {
       setCancelando(false);
+    }
+  };
+
+  const exportarMesZip = async function() {
+    if (exportandoMes) return;
+    const mes = mesExportacao;
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      toast.error("Selecione um mes/ano valido para exportar.");
+      return;
+    }
+    setExportandoMes(true);
+    try {
+      const { data, error } = await supabase
+        .from("fiscal_nfse")
+        .select("*")
+        .in("status", ["emitida", "cancelada"])
+        .order("created_at", { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+
+      const doMes = (data || []).filter(function(nfse) {
+        const meta = (nfse.metadata || {}) as Record<string, any>;
+        const referencia = nfse.data_emissao || meta.data_emissao ||
+          meta.emissao?.data_emissao || nfse.created_at;
+        return mesSP(referencia) === mes;
+      });
+
+      if (doMes.length === 0) {
+        toast.error("Nenhuma NFS-e emitida/cancelada no mes selecionado.");
+        return;
+      }
+
+      const zip = new JSZip();
+      const pastaXml = zip.folder("XML_Autorizados")!;
+      const pastaCancel = zip.folder("XML_Cancelamentos")!;
+      const pastaPdf = zip.folder("PDF_DANFSe")!;
+
+      const semXml: string[] = [];
+      const semPdf: string[] = [];
+      const semCancelXml: string[] = [];
+
+      for (const nfse of doMes) {
+        const numero = nfse.numero || nfse.id;
+
+        const xmlBytes = await baixarBytesStorage(caminhoXmlAutorizado(nfse));
+        if (xmlBytes) pastaXml.file(nomeArquivoNfse(nfse, "xml"), xmlBytes);
+        else semXml.push(String(numero));
+
+        if (String(nfse.status || "").toLowerCase() === "cancelada") {
+          const cancelPath =
+            (nfse.metadata || {})?.cancelamento?.xml_storage_path || null;
+          const cancelBytes = await baixarBytesStorage(cancelPath);
+          if (cancelBytes) {
+            pastaCancel.file(
+              nomeBaseNfse(nfse) + "_Cancelamento.xml",
+              cancelBytes,
+            );
+          } else {
+            semCancelXml.push(String(numero));
+          }
+        }
+
+        const pdfBytes = await baixarBytesStorage(caminhoPdfOficialNfse(nfse));
+        if (pdfBytes) pastaPdf.file(nomeArquivoNfse(nfse, "pdf"), pdfBytes);
+        else semPdf.push(String(numero));
+      }
+
+      zip.file("Resumo_Mensal_" + mes + ".csv", montarResumoCsv(doMes));
+
+      const blob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 },
+      });
+      const nomeZip = "NFSe_ConexaoExpress_" + mes + ".zip";
+      baixarArquivo(blob, nomeZip);
+
+      const partes = [
+        doMes.length + " NFS-e",
+        (doMes.length - semXml.length) + " XML",
+        (doMes.length - semPdf.length) + " PDF",
+      ];
+      if (semPdf.length) partes.push("sem PDF: " + semPdf.length);
+      if (semXml.length) partes.push("sem XML: " + semXml.length);
+      if (semCancelXml.length) {
+        partes.push("cancelamento sem XML: " + semCancelXml.length);
+      }
+      toast.success(
+        "ZIP " + nomeZip + " gerado (" + partes.join(" · ") + ").",
+      );
+    } catch (erro: unknown) {
+      console.error(
+        "[NfseTab] Falha ao exportar mes:",
+        erro instanceof Error ? erro.message : String(erro),
+      );
+      toast.error(
+        erro instanceof Error ? erro.message : "Falha ao exportar o mes.",
+      );
+    } finally {
+      setExportandoMes(false);
+    }
+  };
+
+  const reenviarEmailNfse = async function(nfse: any) {
+    if (enviandoEmailId) return;
+    setEnviandoEmailId(nfse.id);
+    try {
+      const resposta = await enviarNfsePorEmail(nfse.id);
+      if (resposta.success) {
+        toast.success(
+          resposta.envio_real === false
+            ? (resposta.mensagem || "Envio registrado.")
+            : "E-mail enviado ao tomador.",
+        );
+        await fetchNfses();
+      } else if (resposta.configurado === false) {
+        const faltando = (resposta.secrets_faltando || []).join(" | ");
+        toast.error(
+          (resposta.error || "Envio de e-mail nao configurado no backend.") +
+            (faltando ? " Secrets: " + faltando : ""),
+        );
+      } else {
+        toast.error(resposta.error || "Falha ao enviar o e-mail.");
+      }
+    } finally {
+      setEnviandoEmailId(null);
     }
   };
 
@@ -3225,6 +3481,20 @@ export default function NfseTab() {
                   : <Download className="w-4 h-4 mr-2" />}
                 Baixar XML
               </Button>
+              {(statusLower === "emitida" || statusLower === "cancelada") && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={function() { void reenviarEmailNfse(selectedNfse); }}
+                  disabled={enviandoEmailId === selectedNfse.id}
+                  title="Enviar XML e DANFSe por e-mail ao tomador"
+                >
+                  {enviandoEmailId === selectedNfse.id
+                    ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    : <Mail className="w-4 h-4 mr-2" />}
+                  Reenviar por E-mail
+                </Button>
+              )}
               <p className="text-[11px] text-muted-foreground">
                 XML autorizado do Storage ou DPS gerada localmente para rascunho.
               </p>
@@ -3385,7 +3655,27 @@ export default function NfseTab() {
     <div className="space-y-4 pt-4">
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
         <div><h2 className="text-2xl font-bold tracking-tight">NFS-e</h2><p className="text-muted-foreground text-sm">Nota Fiscal de Servico Eletronica.</p></div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="month"
+            value={mesExportacao}
+            onChange={function(e) { setMesExportacao(e.target.value); }}
+            className="h-9 w-40"
+            aria-label="Mes e ano para exportacao"
+            title="Mes/Ano para exportacao do ZIP mensal"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={function() { void exportarMesZip(); }}
+            disabled={exportandoMes}
+            title="Exportar NFS-e do mes em ZIP (XML, cancelamentos, PDF e resumo CSV)"
+          >
+            {exportandoMes
+              ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              : <Download className="w-4 h-4 mr-2" />}
+            {exportandoMes ? "Gerando ZIP..." : "Exportar Mes (ZIP)"}
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchNfses} disabled={loading}><RefreshCw className="w-4 h-4 mr-2" /> Atualizar</Button>
           <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleOpenGerar}><PlusCircle className="w-4 h-4 mr-2" /> Nova NFS-e</Button>
         </div>

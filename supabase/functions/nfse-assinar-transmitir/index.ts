@@ -44,6 +44,8 @@ import {
   motivoCancelamentoValido,
   validarJustificativaCancelamento,
 } from "../_shared/nfseEvento.ts";
+import { enviarEmailNfse } from "../_shared/nfseEmail.ts";
+import type { AnexoEmailNfse } from "../_shared/nfseEmail.ts";
 
 const BUCKET_CERTIFICADOS = "certificados-fiscais";
 const BUCKET_DOCUMENTOS = "fiscal-documentos";
@@ -284,6 +286,218 @@ async function caminhoPdfOficialSalvo(
   return null;
 }
 
+function formatarDataHoraBr(valor: string): string {
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return valor;
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(data);
+}
+
+function escaparHtmlEmail(valor: unknown): string {
+  return String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+interface ResultadoEnvioEmailNota {
+  ok: boolean;
+  configurado: boolean;
+  provider: string | null;
+  messageId: string | null;
+  erro: string | null;
+  secretsFaltando: string[];
+  destinatario: string | null;
+  anexos: { xml: boolean; pdf: boolean };
+}
+
+/** Baixa um anexo do Storage (XML/PDF) e gera signed URL para o webhook. */
+async function carregarAnexoNota(
+  admin: AdminClient,
+  caminhoBruto: string | null,
+  nome: string,
+  contentType: string,
+): Promise<AnexoEmailNfse | null> {
+  const caminho = String(caminhoBruto || "").trim();
+  if (!caminho) return null;
+
+  if (/^https?:\/\//i.test(caminho)) {
+    try {
+      const resposta = await fetch(caminho);
+      if (!resposta.ok) return null;
+      const bytes = new Uint8Array(await resposta.arrayBuffer());
+      return { nome, content_type: contentType, bytes, signed_url: caminho };
+    } catch {
+      return null;
+    }
+  }
+
+  const limpo = caminho.replace(/^fiscal-documentos\//, "");
+  const { data: blob, error } = await admin.storage
+    .from(BUCKET_DOCUMENTOS)
+    .download(limpo);
+  if (error || !blob) {
+    console.warn(
+      "[nfse-assinar-transmitir] Anexo de e-mail indisponivel:",
+      limpo,
+      error?.message || "sem arquivo",
+    );
+    return null;
+  }
+
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const { data: signed } = await admin.storage
+    .from(BUCKET_DOCUMENTOS)
+    .createSignedUrl(limpo, 600);
+
+  return {
+    nome,
+    content_type: contentType,
+    bytes,
+    signed_url: signed?.signedUrl ?? null,
+  };
+}
+
+/**
+ * Monta e envia o e-mail da NFS-e ao tomador (XML + DANFSe quando houver) e
+ * registra o evento em fiscal_events. Nunca lanca: devolve o resultado.
+ */
+async function enviarEmailDaNfse(
+  admin: AdminClient,
+  nfseId: string,
+  rascunho: Record<string, unknown>,
+  meta: Record<string, unknown>,
+): Promise<ResultadoEnvioEmailNota> {
+  const tomador = objeto(meta.tomador) ?? {};
+  const destinatario = texto(tomador["email"]);
+  const numero = texto(rascunho.numero) || "S/N";
+  const chave = somenteDigitos(rascunho.chave_acesso);
+  const dataEmissao = texto(rascunho.data_emissao) || new Date().toISOString();
+  const valor = Number(meta.valor_liquido ?? rascunho.valor ?? 0) || 0;
+  const valorTxt = valor.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+
+  const docs = objeto(meta.documentos_storage) ?? {};
+  const xmlPath = texto(docs.nfse_retorno) || texto(docs.nfse_dps) ||
+    texto(rascunho.xml_url);
+  const pdfPath = texto(meta.pdf_oficial_path) ||
+    texto(docs.danfse_oficial) || texto(docs.danfse_pdf) ||
+    texto(docs.nfse_pdf) || texto(rascunho.pdf_url);
+
+  const anexoXml = await carregarAnexoNota(
+    admin,
+    xmlPath,
+    `NFSe-${numero}.xml`,
+    "application/xml",
+  );
+  const anexoPdf = await carregarAnexoNota(
+    admin,
+    pdfPath,
+    `DANFSe-NFSe-${numero}.pdf`,
+    "application/pdf",
+  );
+  const anexos: AnexoEmailNfse[] = [];
+  if (anexoXml) anexos.push(anexoXml);
+  if (anexoPdf) anexos.push(anexoPdf);
+  const anexosInfo = { xml: Boolean(anexoXml), pdf: Boolean(anexoPdf) };
+
+  if (!destinatario) {
+    return {
+      ok: false,
+      configurado: true,
+      provider: null,
+      messageId: null,
+      erro: "Tomador sem e-mail cadastrado.",
+      secretsFaltando: [],
+      destinatario: null,
+      anexos: anexosInfo,
+    };
+  }
+
+  const assunto = `NFS-e nº ${numero} - Conexão Express`;
+  const dataTxt = formatarDataHoraBr(dataEmissao);
+  const chaveTxt = chave || texto(rascunho.chave_acesso) || "—";
+  const anexosTxt = anexos.map((a) => a.nome).join(", ") ||
+    "indisponiveis no momento";
+
+  const text = [
+    "Ola,",
+    "",
+    `Segue a NFS-e n ${numero} emitida pela Conexao Express.`,
+    "",
+    `Data: ${dataTxt}`,
+    `Valor: ${valorTxt}`,
+    `Chave de acesso: ${chaveTxt}`,
+    "",
+    `Documentos em anexo: ${anexosTxt}.`,
+    "",
+    "Atenciosamente,",
+    "Conexao Express Transportes",
+  ].join("\n");
+
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:14px;line-height:1.55">` +
+    `<p>Olá,</p>` +
+    `<p>Segue a <strong>NFS-e nº ${escaparHtmlEmail(numero)}</strong> emitida pela <strong>Conexão Express Transportes</strong>.</p>` +
+    `<table style="border-collapse:collapse;margin:14px 0">` +
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280">Número</td><td style="font-weight:600">${escaparHtmlEmail(numero)}</td></tr>` +
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280">Data</td><td>${escaparHtmlEmail(dataTxt)}</td></tr>` +
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280">Valor</td><td>${escaparHtmlEmail(valorTxt)}</td></tr>` +
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280">Chave de acesso</td><td style="font-family:monospace;font-size:12px">${escaparHtmlEmail(chaveTxt)}</td></tr>` +
+    `</table>` +
+    `<p>Documentos em anexo: ${escaparHtmlEmail(anexosTxt)}.</p>` +
+    `<p>Atenciosamente,<br/><strong>Conexão Express Transportes</strong></p>` +
+    `</div>`;
+
+  const resultado = await enviarEmailNfse({
+    to: [destinatario],
+    subject: assunto,
+    html,
+    text,
+    anexos,
+    meta: { nfse_id: nfseId, numero, chave_acesso: chave, valor },
+  });
+
+  await registrarEvento(
+    admin,
+    nfseId,
+    resultado.ok ? "NFSE_EMAIL_ENVIADO" : "NFSE_EMAIL_FALHA",
+    resultado.ok
+      ? `E-mail da NFS-e ${numero} enviado para ${destinatario}.`
+      : `Falha ao enviar e-mail da NFS-e ${numero}: ${
+        resultado.erro || "erro"
+      }`,
+    {
+      destinatario,
+      provider: resultado.provider,
+      message_id: resultado.messageId,
+      configurado: resultado.configurado,
+      secrets_faltando: resultado.secretsFaltando,
+      anexo_xml: anexosInfo.xml,
+      anexo_pdf: anexosInfo.pdf,
+    },
+  );
+
+  return {
+    ok: resultado.ok,
+    configurado: resultado.configurado,
+    provider: resultado.provider,
+    messageId: resultado.messageId,
+    erro: resultado.erro,
+    secretsFaltando: resultado.secretsFaltando,
+    destinatario,
+    anexos: anexosInfo,
+  };
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -378,6 +592,7 @@ serve(async (req: Request) => {
     const baixarDanfse = acao === "baixar_danfse" ||
       acao === "baixar_danfse_oficial";
     const cancelar = acao === "cancelar";
+    const enviarEmail = acao === "enviar_email";
 
     // ---------- 3) Rascunho ----------
     const { data: rascunho, error: draftError } = await admin
@@ -418,7 +633,7 @@ serve(async (req: Request) => {
           409,
         );
       }
-    } else if (!baixarDanfse) {
+    } else if (!baixarDanfse && !enviarEmail) {
       if (statusAtual === "emitida") {
         return respostaJson(
           { success: false, error: "Esta NFS-e ja foi emitida." },
@@ -436,6 +651,65 @@ serve(async (req: Request) => {
     const meta = objeto(rascunho.metadata) ?? {};
     const emitenteMeta = objeto(meta.emitente);
     const tomadorMeta = objeto(meta.tomador);
+
+    // ---------- 3.1) Envio de e-mail ao tomador (acao enviar_email) ----------
+    if (enviarEmail) {
+      if (statusAtual !== "emitida" && statusAtual !== "cancelada") {
+        return respostaJson(
+          {
+            success: false,
+            configurado: true,
+            error: "Somente NFS-e emitidas podem ser enviadas por e-mail.",
+          },
+          409,
+        );
+      }
+
+      const emailTomador = texto(tomadorMeta?.["email"]);
+      if (!emailTomador) {
+        return respostaJson(
+          {
+            success: false,
+            configurado: true,
+            error: "A NFS-e nao possui e-mail do tomador cadastrado.",
+          },
+          422,
+        );
+      }
+
+      const envio = await enviarEmailDaNfse(admin, nfseId, rascunho, meta);
+      await registrarLog(
+        admin,
+        nfseId,
+        { acao: "NFSE_EMAIL", destinatario: envio.destinatario },
+        {
+          sucesso: envio.ok,
+          provider: envio.provider,
+          message_id: envio.messageId,
+          configurado: envio.configurado,
+        },
+        envio.ok ? 200 : (envio.configurado ? 502 : 503),
+      );
+
+      return respostaJson(
+        {
+          success: envio.ok,
+          configurado: envio.configurado,
+          envio_real: envio.ok,
+          provider: envio.provider,
+          message_id: envio.messageId,
+          error: envio.ok ? undefined : envio.erro,
+          mensagem: envio.ok
+            ? "E-mail enviado ao tomador."
+            : (envio.configurado
+              ? "Falha ao enviar o e-mail."
+              : "Envio de e-mail nao configurado no backend."),
+          secrets_faltando: envio.secretsFaltando,
+          anexos: envio.anexos,
+        },
+        envio.ok ? 200 : (envio.configurado ? 502 : 503),
+      );
+    }
 
     // ---------- 4) Matriz ----------
     const { data: emitentes, error: emitentesError } = await admin
@@ -1409,6 +1683,55 @@ serve(async (req: Request) => {
       const pdfUrl = pdfOficialPath || resposta.pdfUrl;
       const emitidoEm = new Date().toISOString();
 
+      // Envio automatico ao tomador quando marcado no wizard (best-effort,
+      // com timeout). O helper nao lanca e registra NFSE_EMAIL_* em fiscal_events.
+      let emailTomadorInfo: Record<string, unknown> | null = null;
+      if (meta.enviar_email_tomador === true) {
+        try {
+          const docsEmail = objeto(meta.documentos_storage) ?? {};
+          const metaParaEmail: Record<string, unknown> = {
+            ...meta,
+            ...(pdfOficialPath ? { pdf_oficial_path: pdfOficialPath } : {}),
+            documentos_storage: {
+              ...docsEmail,
+              ...(retornoPath ? { nfse_retorno: retornoPath } : {}),
+              ...(pdfOficialPath ? { danfse_oficial: pdfOficialPath } : {}),
+            },
+          };
+          const rascunhoParaEmail: Record<string, unknown> = {
+            ...rascunho,
+            status: "emitida",
+            numero: numeroOficial,
+            chave_acesso: resposta.chaveAcesso,
+            data_emissao: emitidoEm,
+            xml_url: xmlUrl,
+            pdf_url: pdfOficialPath ?? rascunho.pdf_url,
+          };
+          const envioAuto = await Promise.race([
+            enviarEmailDaNfse(admin, nfseId, rascunhoParaEmail, metaParaEmail),
+            new Promise<null>((resolve) => {
+              setTimeout(function() { resolve(null); }, 15000);
+            }),
+          ]);
+          if (envioAuto) {
+            emailTomadorInfo = {
+              enviado: envioAuto.ok,
+              enviado_em: new Date().toISOString(),
+              destinatario: envioAuto.destinatario,
+              provider: envioAuto.provider,
+              message_id: envioAuto.messageId,
+              configurado: envioAuto.configurado,
+              erro: envioAuto.erro,
+            };
+          }
+        } catch (erro) {
+          console.warn(
+            "[nfse-assinar-transmitir] Aviso: envio automatico de e-mail falhou:",
+            erro instanceof Error ? erro.message.slice(0, 200) : "erro",
+          );
+        }
+      }
+
       try {
         await atualizarRascunho(
           admin,
@@ -1442,6 +1765,7 @@ serve(async (req: Request) => {
               retorno: resposta.corpoResumo,
             },
             rejeicao: null,
+            ...(emailTomadorInfo ? { email_tomador: emailTomadorInfo } : {}),
             ...(pdfOficialPath
               ? { pdf_oficial_path: pdfOficialPath }
               : {}),

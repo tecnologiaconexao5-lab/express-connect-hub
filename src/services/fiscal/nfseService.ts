@@ -519,3 +519,61 @@ export async function cancelarNfse(
     };
   }
 }
+
+// ===================================================================
+// Envio da NFS-e por e-mail ao tomador (XML + DANFSe)
+// ===================================================================
+
+export interface RespostaEmailNfse {
+  success?: boolean;
+  configurado?: boolean;
+  envio_real?: boolean;
+  provider?: string | null;
+  message_id?: string | null;
+  error?: string;
+  mensagem?: string;
+  secrets_faltando?: string[];
+  anexos?: { xml?: boolean; pdf?: boolean };
+}
+
+/**
+ * Envia (ou reenvia) a NFS-e ao e-mail do tomador via Edge Function
+ * `nfse-assinar-transmitir` (acao: "enviar_email"). Reaproveita o provedor de
+ * e-mail configurado no backend (Resend ou webhook n8n/Zoho).
+ */
+export async function enviarNfsePorEmail(
+  nfse_id: string,
+): Promise<RespostaEmailNfse> {
+  try {
+    const { data, error } = await supabase.functions.invoke(
+      "nfse-assinar-transmitir",
+      { body: { nfse_id, acao: "enviar_email" } },
+    );
+
+    let payload = (data ?? null) as RespostaEmailNfse | null;
+
+    if (error) {
+      const contexto = (error as { context?: unknown }).context;
+      if (contexto instanceof Response) {
+        const corpo = await contexto.json().catch(function() { return null; });
+        payload = (corpo ?? payload) as RespostaEmailNfse | null;
+      }
+      if (!payload) {
+        return {
+          success: false,
+          error: error.message || "Falha ao enviar o e-mail.",
+        };
+      }
+    }
+
+    return payload ??
+      { success: false, error: "Resposta invalida ao enviar o e-mail." };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error
+        ? err.message
+        : "Erro inesperado ao enviar o e-mail.",
+    };
+  }
+}
