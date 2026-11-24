@@ -616,6 +616,51 @@ function diaSP(valor: unknown): string {
   return `${campo("year")}-${campo("month")}-${campo("day")}`;
 }
 
+type PeriodoNfse = "todo" | "hoje" | "7d" | "mes" | "mes_anterior" | "personalizado";
+
+function addDiasISO(iso: string, dias: number): string {
+  const [ano, mes, dia] = iso.split("-").map(Number);
+  const data = new Date(Date.UTC(ano, (mes || 1) - 1, dia || 1));
+  data.setUTCDate(data.getUTCDate() + dias);
+  return data.toISOString().slice(0, 10);
+}
+
+function mesInicioFim(
+  ano: number,
+  mesZeroBase: number,
+): { inicio: string; fim: string } {
+  const primeiro = new Date(Date.UTC(ano, mesZeroBase, 1));
+  const ultimo = new Date(Date.UTC(ano, mesZeroBase + 1, 0));
+  return {
+    inicio: primeiro.toISOString().slice(0, 10),
+    fim: ultimo.toISOString().slice(0, 10),
+  };
+}
+
+/** Intervalo [inicio, fim] em YYYY-MM-DD (America/Sao_Paulo) para o periodo. */
+function intervaloPeriodoSP(
+  periodo: PeriodoNfse,
+  hoje: string,
+): { inicio: string; fim: string } {
+  switch (periodo) {
+    case "hoje":
+      return { inicio: hoje, fim: hoje };
+    case "7d":
+      return { inicio: addDiasISO(hoje, -6), fim: hoje };
+    case "mes": {
+      const [ano, mes] = hoje.split("-").map(Number);
+      return mesInicioFim(ano, (mes || 1) - 1);
+    }
+    case "mes_anterior": {
+      const [ano, mes] = hoje.split("-").map(Number);
+      const ref = new Date(Date.UTC(ano, (mes || 1) - 2, 1));
+      return mesInicioFim(ref.getUTCFullYear(), ref.getUTCMonth());
+    }
+    default:
+      return { inicio: "", fim: "" };
+  }
+}
+
 interface InfoStatusNfse {
   label: string;
   badge: string;
@@ -758,6 +803,7 @@ export default function NfseTab() {
   const [filtroStatus, setFiltroStatus] = useState<
     "todas" | "emitida" | "cancelada" | "rascunho" | "erro_emissao"
   >("todas");
+  const [filtroPeriodo, setFiltroPeriodo] = useState<PeriodoNfse>("todo");
   const [filtroDataInicio, setFiltroDataInicio] = useState("");
   const [filtroDataFim, setFiltroDataFim] = useState("");
   const [buscaNfse, setBuscaNfse] = useState("");
@@ -785,6 +831,9 @@ export default function NfseTab() {
   const nfsesFiltradas = useMemo(function() {
     const termo = buscaNfse.trim().toLowerCase();
     const termoDigitos = somenteDigitos(buscaNfse);
+    const intervalo = filtroPeriodo === "personalizado"
+      ? { inicio: filtroDataInicio, fim: filtroDataFim }
+      : intervaloPeriodoSP(filtroPeriodo, diaSP(new Date()));
     return nfses.filter(function(n) {
       const meta = (n.metadata || {}) as Record<string, any>;
       const status = String(n.status || "").toLowerCase();
@@ -795,8 +844,8 @@ export default function NfseTab() {
         n.data_emissao || meta.data_emissao ||
           meta.emissao?.data_emissao || n.created_at,
       );
-      if (filtroDataInicio && (!dia || dia < filtroDataInicio)) return false;
-      if (filtroDataFim && (!dia || dia > filtroDataFim)) return false;
+      if (intervalo.inicio && (!dia || dia < intervalo.inicio)) return false;
+      if (intervalo.fim && (!dia || dia > intervalo.fim)) return false;
 
       if (termo) {
         const tomador = (meta.tomador || {}) as Record<string, any>;
@@ -813,7 +862,7 @@ export default function NfseTab() {
       }
       return true;
     });
-  }, [nfses, filtroStatus, filtroDataInicio, filtroDataFim, buscaNfse]);
+  }, [nfses, filtroStatus, filtroPeriodo, filtroDataInicio, filtroDataFim, buscaNfse]);
 
   const totalPaginas = Math.max(
     1,
@@ -825,13 +874,12 @@ export default function NfseTab() {
     inicioPagina,
     inicioPagina + itensPorPagina,
   );
-  const filtrosAtivos = filtroStatus !== "todas" ||
-    Boolean(filtroDataInicio) || Boolean(filtroDataFim) ||
+  const filtrosAtivos = filtroStatus !== "todas" || filtroPeriodo !== "todo" ||
     Boolean(buscaNfse.trim());
 
   useEffect(function() {
     setPaginaAtual(1);
-  }, [filtroStatus, filtroDataInicio, filtroDataFim, buscaNfse, itensPorPagina]);
+  }, [filtroStatus, filtroPeriodo, filtroDataInicio, filtroDataFim, buscaNfse, itensPorPagina]);
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -3828,7 +3876,7 @@ export default function NfseTab() {
             type="month"
             value={mesExportacao}
             onChange={function(e) { setMesExportacao(e.target.value); }}
-            className="h-9 w-40"
+            className="h-9 min-w-[175px] w-auto"
             aria-label="Mes e ano para exportacao"
             title="Mes/Ano para exportacao do ZIP mensal"
           />
@@ -3842,7 +3890,7 @@ export default function NfseTab() {
             {exportandoMes
               ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               : <Download className="w-4 h-4 mr-2" />}
-            {exportandoMes ? "Gerando ZIP..." : "Exportar Mes (ZIP)"}
+            {exportandoMes ? "Gerando ZIP..." : "Exportar Mês (ZIP)"}
           </Button>
           <Button variant="outline" size="sm" onClick={fetchNfses} disabled={loading}><RefreshCw className="w-4 h-4 mr-2" /> Atualizar</Button>
           <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleOpenGerar}><PlusCircle className="w-4 h-4 mr-2" /> Nova NFS-e</Button>
@@ -3887,6 +3935,7 @@ export default function NfseTab() {
               className="ml-auto h-7 text-xs text-slate-500 hover:text-slate-800"
               onClick={function() {
                 setFiltroStatus("todas");
+                setFiltroPeriodo("todo");
                 setFiltroDataInicio("");
                 setFiltroDataFim("");
                 setBuscaNfse("");
@@ -3907,23 +3956,50 @@ export default function NfseTab() {
               aria-label="Buscar NFS-e"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Label className="whitespace-nowrap text-xs text-slate-500">De</Label>
-            <Input
-              type="date"
-              value={filtroDataInicio}
-              onChange={function(e) { setFiltroDataInicio(e.target.value); }}
-              className="h-9 w-40"
-              aria-label="Data inicial"
-            />
-            <Label className="whitespace-nowrap text-xs text-slate-500">Ate</Label>
-            <Input
-              type="date"
-              value={filtroDataFim}
-              onChange={function(e) { setFiltroDataFim(e.target.value); }}
-              className="h-9 w-40"
-              aria-label="Data final"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={filtroPeriodo}
+              onValueChange={function(v) {
+                const periodo = v as PeriodoNfse;
+                setFiltroPeriodo(periodo);
+                if (periodo !== "personalizado") {
+                  setFiltroDataInicio("");
+                  setFiltroDataFim("");
+                }
+              }}
+            >
+              <SelectTrigger className="h-9 w-[180px]" aria-label="Periodo">
+                <SelectValue placeholder="Periodo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todo">Todo período</SelectItem>
+                <SelectItem value="hoje">Hoje</SelectItem>
+                <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                <SelectItem value="mes">Este mês</SelectItem>
+                <SelectItem value="mes_anterior">Mês anterior</SelectItem>
+                <SelectItem value="personalizado">Personalizado</SelectItem>
+              </SelectContent>
+            </Select>
+            {filtroPeriodo === "personalizado" && (
+              <>
+                <Label className="whitespace-nowrap text-xs text-slate-500">De</Label>
+                <Input
+                  type="date"
+                  value={filtroDataInicio}
+                  onChange={function(e) { setFiltroDataInicio(e.target.value); }}
+                  className="h-9 min-w-[140px]"
+                  aria-label="Data inicial"
+                />
+                <Label className="whitespace-nowrap text-xs text-slate-500">Até</Label>
+                <Input
+                  type="date"
+                  value={filtroDataFim}
+                  onChange={function(e) { setFiltroDataFim(e.target.value); }}
+                  className="h-9 min-w-[140px]"
+                  aria-label="Data final"
+                />
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -3934,6 +4010,7 @@ export default function NfseTab() {
             <TableHeader>
               <TableRow className="border-slate-200 bg-slate-50/60 hover:bg-slate-50/60">
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nº NFS-e</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Data</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tomador</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Serviço</TableHead>
                 <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Valor</TableHead>
@@ -3943,9 +4020,9 @@ export default function NfseTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {erro ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-red-500"><AlertCircle className="w-5 h-5 mx-auto mb-1" /><p className="text-sm">{erro}</p><Button variant="link" size="sm" onClick={fetchNfses}>Tentar novamente</Button></TableCell></TableRow>
-               : loading ? <TableRow><TableCell colSpan={7} className="h-24 text-center"><ProgressiveBlocksLoader size="normal" /></TableCell></TableRow>
-               : nfsesFiltradas.length === 0 ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">{nfses.length === 0 ? "Nenhuma NFS-e encontrada." : "Nenhuma NFS-e para os filtros selecionados."}</TableCell></TableRow>
+              {erro ? <TableRow><TableCell colSpan={8} className="h-24 text-center text-red-500"><AlertCircle className="w-5 h-5 mx-auto mb-1" /><p className="text-sm">{erro}</p><Button variant="link" size="sm" onClick={fetchNfses}>Tentar novamente</Button></TableCell></TableRow>
+               : loading ? <TableRow><TableCell colSpan={8} className="h-24 text-center"><ProgressiveBlocksLoader size="normal" /></TableCell></TableRow>
+               : nfsesFiltradas.length === 0 ? <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">{nfses.length === 0 ? "Nenhuma NFS-e encontrada." : "Nenhuma NFS-e para os filtros selecionados."}</TableCell></TableRow>
                 : nfsesPagina.map(function(n) {
                     const m = n.metadata || {};
                     const v = m.validacoes_pendentes || [];
@@ -3953,9 +4030,14 @@ export default function NfseTab() {
                     const podeTransmitir =
                       statusNfse === "rascunho" || statusNfse === "erro_emissao";
                     const infoStatus = infoStatusNfse(n.status);
+                    const dataNfse = dataBrSP(
+                      n.data_emissao || m.data_emissao ||
+                        m.emissao?.data_emissao || n.created_at,
+                    );
                     return (
                       <TableRow key={n.id} className="transition-colors hover:bg-slate-50/70">
                         <TableCell className="font-semibold tabular-nums text-slate-800">{n.numero || "-"}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm tabular-nums text-slate-600">{dataNfse || "—"}</TableCell>
                         <TableCell className="text-sm text-slate-700">{m.tomador?.nome || "-"}</TableCell>
                         <TableCell className="text-xs text-slate-500">{m.servico || "-"}</TableCell>
                         <TableCell className="text-right font-medium tabular-nums text-slate-800">{fmtFin(n.valor)}</TableCell>
