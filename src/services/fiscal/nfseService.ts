@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { buscarRegraNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { buscarCodigoIbge } from "@/services/fiscal/ibgeService";
+import { somenteDigitos } from "@/lib/formatacaoCadastros";
 
 /** Matriz oficial da NFS-e Nacional (CONEXAO TRANSPORTES LTDA). */
 const CNPJ_MATRIZ_NFSE = "31227975000180";

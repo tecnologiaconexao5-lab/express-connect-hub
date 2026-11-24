@@ -15,7 +15,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { formatarCpfCnpj } from "@/lib/formatacaoCadastros";
-import { hojeISOSP } from "@/lib/formatDates";
+import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
 import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
 import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
@@ -622,7 +622,7 @@ export default function NfseTab() {
 
         const lista = (data || []) as Array<Record<string, unknown>>;
         const matriz = lista.find(function(e) {
-          return somenteDigitos(e.cnpj) === CNPJ_MATRIZ_NFSE;
+          return somenteDigitos(String(e.cnpj ?? "")) === CNPJ_MATRIZ_NFSE;
         }) || lista.find(function(e) { return e.padrao === true; }) || lista[0];
 
         const metadata = matriz?.metadata as Record<string, unknown> | undefined;
@@ -948,7 +948,7 @@ export default function NfseTab() {
         tomador_cnpj: String(cli.cnpj || p.tomador_cnpj || ""),
         tomador_email: String(cli.email || p.tomador_email || ""),
         tomador_telefone: String(cli.telefone || cli.whatsapp || p.tomador_telefone || ""),
-        tomador_cep: somenteDigitos(cli.cep) || p.tomador_cep,
+        tomador_cep: somenteDigitos(String(cli.cep ?? "")) || p.tomador_cep,
         tomador_logradouro: String(cli.logradouro || p.tomador_logradouro || ""),
         tomador_numero: String(cli.numero || p.tomador_numero || ""),
         tomador_complemento: String(cli.complemento || p.tomador_complemento || ""),
