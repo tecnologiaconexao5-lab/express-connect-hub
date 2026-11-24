@@ -403,3 +403,119 @@ export async function gerarRascunhoNfse(params: GerarNfseParams) {
     return { success: false, error: error.message };
   }
 }
+
+// ===================================================================
+// Cancelamento oficial da NFS-e Nacional (evento e101101)
+// ===================================================================
+
+export type MotivoCancelamentoNfse = "1" | "2" | "9";
+
+export const MOTIVOS_CANCELAMENTO_NFSE: Array<{
+  valor: MotivoCancelamentoNfse;
+  rotulo: string;
+}> = [
+  { valor: "1", rotulo: "Erro na emissão" },
+  { valor: "2", rotulo: "Serviço não prestado" },
+  { valor: "9", rotulo: "Outros" },
+];
+
+export interface CancelarNfseParams {
+  nfse_id: string;
+  codigo_motivo: MotivoCancelamentoNfse;
+  justificativa: string;
+}
+
+export interface RespostaCancelamentoNfse {
+  success?: boolean;
+  status?: string;
+  protocolo?: string | null;
+  chave_acesso?: string | null;
+  motivo_codigo?: string | null;
+  motivo_descricao?: string | null;
+  data?: string | null;
+  error?: string;
+  detalhe?: string | null;
+  rejeicao?: {
+    codigo?: string | null;
+    mensagem?: string | null;
+    http_status?: number | null;
+  } | null;
+}
+
+/**
+ * Registra o evento oficial de cancelamento (e101101) na Sefin via Edge
+ * Function `nfse-assinar-transmitir` (acao: "cancelar"). Devolve a mensagem
+ * exata da Sefin em caso de rejeicao.
+ */
+export async function cancelarNfse(
+  params: CancelarNfseParams,
+): Promise<RespostaCancelamentoNfse> {
+  const justificativa = (params.justificativa || "").trim();
+  const tamanho = Array.from(justificativa).length;
+  if (tamanho < 15 || tamanho > 255) {
+    return {
+      success: false,
+      error: "A justificativa deve ter de 15 a 255 caracteres.",
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke(
+      "nfse-assinar-transmitir",
+      {
+        body: {
+          nfse_id: params.nfse_id,
+          acao: "cancelar",
+          codigo_motivo: params.codigo_motivo,
+          justificativa,
+        },
+      },
+    );
+
+    let payload = (data ?? null) as RespostaCancelamentoNfse | null;
+
+    if (error) {
+      // FunctionsHttpError: o corpo JSON fica em `context`.
+      const contexto = (error as { context?: unknown }).context;
+      if (contexto instanceof Response) {
+        const corpo = await contexto.json().catch(function() { return null; });
+        payload = (corpo ?? payload) as RespostaCancelamentoNfse | null;
+      }
+      if (!payload) {
+        return {
+          success: false,
+          error: error.message || "Falha ao cancelar a NFS-e.",
+        };
+      }
+    }
+
+    if (!payload) {
+      return {
+        success: false,
+        error: "Resposta invalida ao cancelar a NFS-e.",
+      };
+    }
+
+    if (!payload.success) {
+      const rejeicao = payload.rejeicao;
+      const partes = [rejeicao?.codigo, rejeicao?.mensagem]
+        .filter(function(parte): parte is string { return Boolean(parte); });
+      return {
+        ...payload,
+        error: payload.error ||
+          (partes.length > 0
+            ? partes.join(" - ")
+            : "Cancelamento rejeitado pela Sefin."),
+      };
+    }
+
+    return payload;
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error
+        ? err.message
+        : "Erro inesperado ao cancelar a NFS-e.",
+    };
+  }
+}

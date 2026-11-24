@@ -12,11 +12,13 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { formatarCpfCnpj } from "@/lib/formatacaoCadastros";
 import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
-import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
+import { gerarRascunhoNfse, cancelarNfse, MOTIVOS_CANCELAMENTO_NFSE } from "@/services/fiscal/nfseService";
+import type { MotivoCancelamentoNfse } from "@/services/fiscal/nfseService";
 import { buscarRegraNfse, listarRegrasNfse } from "@/services/fiscal/regrasFiscaisNfseService";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
 import { abrirImpressaoDanfse } from "@/components/fiscal/DanfsePrintTemplate";
@@ -536,6 +538,10 @@ export default function NfseTab() {
   const [baixandoXmlId, setBaixandoXmlId] = useState<string | null>(null);
   const [logoEmitenteUrl, setLogoEmitenteUrl] = useState("/logos/logo-conexao-colorido.png");
   const [abrindoPdfOficialId, setAbrindoPdfOficialId] = useState<string | null>(null);
+  const [showCancelamento, setShowCancelamento] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [cancelMotivo, setCancelMotivo] = useState<MotivoCancelamentoNfse>("1");
+  const [cancelJustificativa, setCancelJustificativa] = useState("");
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -1772,6 +1778,76 @@ export default function NfseTab() {
     }
   };
 
+  const abrirCancelamento = function() {
+    setCancelMotivo("1");
+    setCancelJustificativa("");
+    setShowCancelamento(true);
+  };
+
+  const fecharCancelamento = function() {
+    if (cancelando) return;
+    setShowCancelamento(false);
+  };
+
+  const confirmarCancelamento = async function() {
+    if (!selectedNfse || cancelando) return;
+    const justificativa = cancelJustificativa.trim();
+    const tamanho = Array.from(justificativa).length;
+    if (tamanho < 15) {
+      toast.error("A justificativa deve ter no minimo 15 caracteres.");
+      return;
+    }
+    if (tamanho > 255) {
+      toast.error("A justificativa deve ter no maximo 255 caracteres.");
+      return;
+    }
+
+    setCancelando(true);
+    try {
+      const resposta = await cancelarNfse({
+        nfse_id: selectedNfse.id,
+        codigo_motivo: cancelMotivo,
+        justificativa,
+      });
+
+      if (resposta.success) {
+        toast.success(
+          "NFS-e cancelada" +
+            (resposta.protocolo
+              ? " (protocolo " + resposta.protocolo + ")"
+              : "") +
+            ".",
+        );
+        setShowCancelamento(false);
+        const dataCancelamento = resposta.data || new Date().toISOString();
+        setSelectedNfse(function(prev: any) {
+          if (!prev) return prev;
+          const metaPrev = prev.metadata || {};
+          return {
+            ...prev,
+            status: "cancelada",
+            metadata: {
+              ...metaPrev,
+              cancelamento: {
+                ...(metaPrev.cancelamento || {}),
+                protocolo: resposta.protocolo ?? null,
+                data: dataCancelamento,
+                motivo_codigo: resposta.motivo_codigo ?? cancelMotivo,
+                motivo_descricao: resposta.motivo_descricao ?? null,
+                justificativa,
+              },
+            },
+          };
+        });
+        await fetchNfses();
+      } else {
+        toast.error(resposta.error || "Cancelamento rejeitado pela Sefin.");
+      }
+    } finally {
+      setCancelando(false);
+    }
+  };
+
   const fetchHistorico = async function(nfseId: string) {
     const data = await listarHistoricoStatus("NFSE", nfseId);
     setHistorico(data);
@@ -2890,7 +2966,15 @@ export default function NfseTab() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-xs">
+            <Badge
+              variant="outline"
+              className={
+                "text-xs " +
+                (statusLower === "cancelada"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-blue-200 bg-blue-50 text-blue-700")
+              }
+            >
               {statusDetalhe || "—"}
             </Badge>
             {podeTransmitirDetalhe && (
@@ -2907,6 +2991,18 @@ export default function NfseTab() {
                   ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   : <Send className="w-4 h-4 mr-2" />}
                 Transmitir
+              </Button>
+            )}
+            {statusLower === "emitida" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                onClick={abrirCancelamento}
+                disabled={cancelando}
+                title="Cancelar a NFS-e na Sefin (evento e101101)"
+              >
+                <XCircle className="w-4 h-4 mr-2" /> Cancelar NFS-e
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={fecharDetalhes}>Fechar</Button>
@@ -3168,6 +3264,119 @@ export default function NfseTab() {
             </div>
           </div>
         </div>
+
+        <Dialog
+          open={showCancelamento}
+          onOpenChange={function(aberto) { if (!aberto) fecharCancelamento(); }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-700">
+                <XCircle className="h-5 w-5" /> Cancelar NFS-e
+              </DialogTitle>
+              <DialogDescription>
+                Registra o evento oficial de cancelamento (e101101) na Sefin.
+                Esta acao e irreversivel.
+              </DialogDescription>
+            </DialogHeader>
+            {(() => {
+              const metaSel = (selectedNfse.metadata || {}) as Record<string, any>;
+              const ambienteSel = String(metaSel.emissao?.ambiente || "").toLowerCase();
+              const ehProducaoSel = ambienteSel.startsWith("prod") || ambienteSel === "1";
+              const justificativaLen = Array.from(cancelJustificativa.trim()).length;
+              const justificativaValida = justificativaLen >= 15 && justificativaLen <= 255;
+              return (
+                <div className="space-y-4">
+                  <div className="space-y-1 rounded-lg border bg-slate-50 p-3 text-sm">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Nota</span>
+                      <span className="font-semibold">{selectedNfse.numero || "—"}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Tomador</span>
+                      <span className="text-right font-medium">{metaSel.tomador?.nome || "—"}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Valor</span>
+                      <span className="font-medium">{fmtFin(selectedNfse.valor)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Ambiente</span>
+                      <span className={ehProducaoSel ? "font-bold text-red-700" : "font-medium text-amber-700"}>
+                        {ehProducaoSel ? "PRODUÇÃO" : "HOMOLOGAÇÃO"}
+                      </span>
+                    </div>
+                  </div>
+                  {ehProducaoSel ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        Esta nota e de <strong>PRODUÇÃO</strong> (valor fiscal). O
+                        cancelamento na Sefin e definitivo.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                      Nota de homologação (ambiente de produção restrita).
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Motivo oficial</Label>
+                    <Select
+                      value={cancelMotivo}
+                      onValueChange={function(valor) { setCancelMotivo(valor as MotivoCancelamentoNfse); }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o motivo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MOTIVOS_CANCELAMENTO_NFSE.map(function(opcao) {
+                          return (
+                            <SelectItem key={opcao.valor} value={opcao.valor}>
+                              {opcao.valor} - {opcao.rotulo}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Justificativa</Label>
+                      <span className={"text-xs " + (justificativaValida ? "text-muted-foreground" : "text-red-600")}>
+                        {justificativaLen}/255
+                      </span>
+                    </div>
+                    <Textarea
+                      value={cancelJustificativa}
+                      onChange={function(e) { setCancelJustificativa(e.target.value); }}
+                      rows={4}
+                      maxLength={255}
+                      placeholder="Descreva o motivo do cancelamento (15 a 255 caracteres)."
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Mínimo de 15 caracteres. A justificativa é enviada à Sefin.
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={fecharCancelamento} disabled={cancelando}>
+                      Voltar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={confirmarCancelamento}
+                      disabled={cancelando || !justificativaValida}
+                    >
+                      {cancelando
+                        ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cancelando...</>
+                        : <><XCircle className="mr-2 h-4 w-4" /> Confirmar cancelamento</>}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -3202,7 +3411,7 @@ export default function NfseTab() {
                         <TableCell className="text-sm">{m.tomador?.nome || "-"}</TableCell>
                         <TableCell className="text-xs">{m.servico || "-"}</TableCell>
                         <TableCell className="font-medium">{fmtFin(n.valor)}</TableCell>
-                        <TableCell><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{n.status}</Badge></TableCell>
+                        <TableCell><Badge variant="outline" className={statusNfse === "cancelada" ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"}>{n.status}</Badge></TableCell>
                         <TableCell>
                           {v.length === 0 ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />0</Badge>
                            : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><AlertTriangle className="w-3 h-3 mr-1" />{v.length}</Badge>}

@@ -1,9 +1,11 @@
 // ===================================================================
 // _shared/nfseXmlSign.ts
 //
-// Assinatura XMLDSig (enveloped) do no <infDPS>, RSA-SHA256,
+// Assinatura XMLDSig (enveloped) de um no do documento, RSA-SHA256,
 // C14N 1.0 e digest SHA-256 — perfil exigido pelo Padrao Nacional NFS-e.
-// A tag <Signature> e inserida como irma de <infDPS> dentro de <DPS>.
+// A tag <Signature> e inserida como irma do no assinado (enveloped).
+//
+// Usado pela DPS (<infDPS>) e pelo pedido de evento (<infPedReg>).
 // ===================================================================
 import { SignedXml } from "npm:xml-crypto@6.1.2";
 
@@ -17,16 +19,19 @@ export interface OpcoesAssinaturaDps {
   certPem: string;
 }
 
+export type OpcoesAssinaturaEvento = OpcoesAssinaturaDps;
+
 /**
- * Assina o XML da DPS e devolve o documento com <Signature>.
- * O KeyInfo inclui X509Certificate (ICP-Brasil).
+ * Assina um no XML (localName) e devolve o documento com <Signature>
+ * inserida logo apos o no. O KeyInfo inclui X509Certificate (ICP-Brasil).
  */
-export function assinarDpsXml(
+function assinarNoXml(
   xml: string,
   opcoes: OpcoesAssinaturaDps,
+  localName: string,
 ): string {
-  if (!xml || !xml.includes("<infDPS")) {
-    throw new Error("XML da DPS sem no infDPS.");
+  if (!xml || !xml.includes(`<${localName}`)) {
+    throw new Error(`XML sem no ${localName}.`);
   }
   if (!opcoes.keyPem || !opcoes.certPem) {
     throw new Error("Chave/certificado ausentes para assinatura.");
@@ -39,21 +44,23 @@ export function assinarDpsXml(
     canonicalizationAlgorithm: CANONICALIZACAO,
   });
 
-  // Referencia aponta para o Id do <infDPS> (URI="#DPS...").
-  const idInfDps = xml.match(/<infDPS[^>]*\sId="([^"]+)"/)?.[1] || "";
-  const uriReferencia = idInfDps ? `#${idInfDps}` : "";
+  // Referencia aponta para o Id do no assinado (URI="#ID").
+  const idRegex = new RegExp(`<${localName}[^>]*\\sId="([^"]+)"`);
+  const idNo = xml.match(idRegex)?.[1] || "";
+  const uriReferencia = idNo ? `#${idNo}` : "";
+  const xpathNo = `//*[local-name()='${localName}']`;
 
   assinador.addReference({
-    xpath: "//*[local-name()='infDPS']",
+    xpath: xpathNo,
     uri: uriReferencia,
     digestAlgorithm: ALGORITMO_DIGEST,
     transforms: [TRANSFORM_ENVELOPED, CANONICALIZACAO],
   });
 
-  // XSD TCDPS: <infDPS> seguido de <ds:Signature> (irmao, dentro de DPS).
+  // XSD: <Signature> e irma do no assinado (logo apos).
   assinador.computeSignature(xml, {
     location: {
-      reference: "//*[local-name()='infDPS']",
+      reference: xpathNo,
       action: "after",
     },
   });
@@ -63,4 +70,26 @@ export function assinarDpsXml(
     throw new Error("Falha ao gerar a assinatura XML.");
   }
   return assinado;
+}
+
+/**
+ * Assina o XML da DPS e devolve o documento com <Signature>.
+ * O KeyInfo inclui X509Certificate (ICP-Brasil).
+ */
+export function assinarDpsXml(
+  xml: string,
+  opcoes: OpcoesAssinaturaDps,
+): string {
+  return assinarNoXml(xml, opcoes, "infDPS");
+}
+
+/**
+ * Assina o pedido de registro de evento (<infPedReg>) e devolve o
+ * documento com <Signature> como irma do infPedReg.
+ */
+export function assinarEventoXml(
+  xml: string,
+  opcoes: OpcoesAssinaturaEvento,
+): string {
+  return assinarNoXml(xml, opcoes, "infPedReg");
 }

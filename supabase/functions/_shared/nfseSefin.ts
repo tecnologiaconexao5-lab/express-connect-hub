@@ -39,6 +39,17 @@ export interface RespostaSefin {
   json: Record<string, unknown> | null;
 }
 
+/** Resultado do registro de evento (POST /nfse/{chave}/eventos). */
+export interface RespostaEventoSefin {
+  ok: boolean;
+  httpStatus: number;
+  protocolo: string | null;
+  eventoXml: string | null;
+  codigoRejeicao: string | null;
+  mensagemRejeicao: string | null;
+  corpoResumo: string;
+}
+
 function bytesParaBase64(bytes: Uint8Array): string {
   let bin = "";
   const bloco = 0x8000;
@@ -379,6 +390,130 @@ async function analisarResposta(
   };
 }
 
+/** Interpreta a resposta do registro de evento (/nfse/{chave}/eventos). */
+async function analisarRespostaEvento(
+  httpStatus: number,
+  corpo: string,
+  json: unknown,
+): Promise<RespostaEventoSefin> {
+  const raiz = objeto(json);
+  const sucessoFlag = raiz?.["sucesso"] ?? raiz?.["success"];
+  const httpOk = httpStatus >= 200 && httpStatus < 300;
+
+  const containersErro = [
+    Array.isArray(json) ? json : null,
+    raiz?.["erros"],
+    raiz?.["erro"],
+    raiz?.["errors"],
+    raiz?.["mensagens"],
+    raiz?.["rejeicao"],
+    raiz?.["falha"],
+  ].filter((valor) => {
+    if (valor === undefined || valor === null || valor === "") return false;
+    if (Array.isArray(valor) && valor.length === 0) return false;
+    if (
+      valor && typeof valor === "object" && !Array.isArray(valor) &&
+      Object.keys(valor).length === 0
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const temContainerErro = containersErro.length > 0;
+
+  let codigo: string | null = null;
+  const mensagensErro = new Set<string>();
+  const fontes = [
+    ...containersErro,
+    ...(!httpOk || temContainerErro || sucessoFlag === false
+      ? [
+        raiz?.["mensagem"],
+        raiz?.["descricao"],
+        raiz?.["title"],
+        raiz?.["detail"],
+      ]
+      : []),
+  ].filter((valor) => valor !== undefined && valor !== null && valor !== "");
+
+  for (const fonte of fontes) {
+    const parcial = extrairErrosSefin(fonte);
+    if (!codigo && parcial.codigo) codigo = parcial.codigo;
+    if (parcial.mensagem) mensagensErro.add(parcial.mensagem);
+  }
+
+  let mensagem: string | null = mensagensErro.size
+    ? Array.from(mensagensErro).join("; ")
+    : null;
+
+  if (!mensagem && (!httpOk || temContainerErro)) {
+    const xmlErro = extrairErrosXml(corpo);
+    if (!codigo && xmlErro.codigo) codigo = xmlErro.codigo;
+    if (xmlErro.mensagem) mensagem = xmlErro.mensagem;
+  }
+
+  const temErro = Boolean(
+    codigo || mensagem || temContainerErro || sucessoFlag === false,
+  );
+  const ok = httpOk && !temErro;
+
+  if (!ok && !mensagem) {
+    const trecho = corpo.replace(/\s+/g, " ").trim().slice(0, 600);
+    mensagem = trecho ? `HTTP ${httpStatus}: ${trecho}` : `HTTP ${httpStatus}`;
+  }
+
+  const protocolo = buscarCampo(
+    [
+      raiz,
+      objeto(raiz?.["evento"]),
+      objeto(raiz?.["registro"]),
+      objeto(raiz?.["resultado"]),
+    ].filter((obj): obj is Record<string, unknown> => Boolean(obj)),
+    ["protocolo", "numeroProtocolo", "protocoloEvento", "nProt"],
+  );
+
+  let eventoXml: string | null = null;
+  const eventoB64 = buscarCampo(
+    [raiz, objeto(raiz?.["evento"])].filter((obj): obj is Record<
+      string,
+      unknown
+    > => Boolean(obj)),
+    ["eventoXmlGZipB64", "eventoXmlGzipB64"],
+  );
+  if (eventoB64) {
+    try {
+      eventoXml = await descomprimirGzipBase64(eventoB64);
+    } catch (erro) {
+      console.warn(
+        "[nfseSefin] Falha ao descomprimir eventoXmlGZipB64:",
+        erro instanceof Error ? erro.message.slice(0, 200) : "erro",
+      );
+    }
+  }
+
+  return {
+    ok,
+    httpStatus,
+    protocolo,
+    eventoXml,
+    codigoRejeicao: ok ? null : codigo,
+    mensagemRejeicao: ok ? null : (mensagem || "Rejeicao sem detalhe."),
+    corpoResumo: corpo.slice(0, 1200),
+  };
+}
+
+async function respostaComJsonEvento(
+  status: number,
+  corpo: string,
+): Promise<RespostaEventoSefin> {
+  let json: unknown = null;
+  try {
+    json = JSON.parse(corpo);
+  } catch {
+    json = null;
+  }
+  return await analisarRespostaEvento(status, corpo, json);
+}
+
 interface RespostaHttp {
   status: number;
   corpo: string;
@@ -489,6 +624,18 @@ async function montarCorpoSefin(xmlAssinado: string): Promise<CorpoSefin> {
   const dpsXmlGZipB64 = await comprimirGzipBase64(xmlAssinado);
   return {
     body: JSON.stringify({ dpsXmlGZipB64 }),
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+  };
+}
+
+/** Contrato oficial de evento: pedido em GZip+Base64 dentro de JSON. */
+async function montarCorpoEvento(xmlAssinado: string): Promise<CorpoSefin> {
+  const pedidoRegistroEventoXmlGZipB64 = await comprimirGzipBase64(xmlAssinado);
+  return {
+    body: JSON.stringify({ pedidoRegistroEventoXmlGZipB64 }),
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/json",
@@ -698,28 +845,20 @@ function postComNodeHttps(
 }
 
 /**
- * Envia o XML assinado com o certificado A1 como agente TLS (mTLS).
- * Com proxy configurado, usa a Vercel (gru1). Sem proxy, tenta Deno.fetch
- * e cai automaticamente para node:https. Erros sanitizados (sem segredos).
+ * Envia um corpo JSON para a Sefin com o certificado A1 como agente TLS
+ * (mTLS): proxy Vercel -> Deno.fetch -> node:https. Erros sanitizados.
  */
-export async function transmitirParaSefin(
-  xmlAssinado: string,
-  material: MaterialTls,
+async function executarTransporte(
   endpoint: string,
-): Promise<RespostaSefin> {
+  corpoSefin: CorpoSefin,
+  material: MaterialTls,
+): Promise<RespostaHttp> {
   const url = validarEndpointSefin(endpoint);
   const proxy = obterProxySefin();
-  const corpoSefin = await montarCorpoSefin(xmlAssinado);
 
   if (proxy) {
     try {
-      const resposta = await postComProxy(
-        url.toString(),
-        corpoSefin,
-        material,
-        proxy,
-      );
-      return await respostaComJson(resposta.status, resposta.corpo);
+      return await postComProxy(url.toString(), corpoSefin, material, proxy);
     } catch (erro) {
       throw new SefinComunicacaoError(`proxy ${resumoSeguro(erro)}`);
     }
@@ -728,22 +867,45 @@ export async function transmitirParaSefin(
   const detalhes: string[] = [];
 
   try {
-    const resposta = await postComDenoFetch(
-      url.toString(),
-      corpoSefin,
-      material,
-    );
-    return await respostaComJson(resposta.status, resposta.corpo);
+    return await postComDenoFetch(url.toString(), corpoSefin, material);
   } catch (erro) {
     detalhes.push(`deno-fetch ${resumoSeguro(erro)}`);
   }
 
   try {
-    const resposta = await postComNodeHttps(url, corpoSefin, material);
-    return await respostaComJson(resposta.status, resposta.corpo);
+    return await postComNodeHttps(url, corpoSefin, material);
   } catch (erro) {
     detalhes.push(`node-https ${resumoSeguro(erro)}`);
   }
 
   throw new SefinComunicacaoError(detalhes.join(" | ").slice(0, 500));
+}
+
+/**
+ * Envia o XML da DPS assinado com o certificado A1 como agente TLS (mTLS).
+ * Com proxy configurado, usa a Vercel (gru1). Sem proxy, tenta Deno.fetch
+ * e cai automaticamente para node:https. Erros sanitizados (sem segredos).
+ */
+export async function transmitirParaSefin(
+  xmlAssinado: string,
+  material: MaterialTls,
+  endpoint: string,
+): Promise<RespostaSefin> {
+  const corpoSefin = await montarCorpoSefin(xmlAssinado);
+  const resposta = await executarTransporte(endpoint, corpoSefin, material);
+  return await respostaComJson(resposta.status, resposta.corpo);
+}
+
+/**
+ * Envia o pedido de registro de evento assinado (mTLS) para
+ * POST /nfse/{chave}/eventos, no mesmo transporte da DPS.
+ */
+export async function transmitirEventoParaSefin(
+  xmlEventoAssinado: string,
+  material: MaterialTls,
+  endpoint: string,
+): Promise<RespostaEventoSefin> {
+  const corpoSefin = await montarCorpoEvento(xmlEventoAssinado);
+  const resposta = await executarTransporte(endpoint, corpoSefin, material);
+  return await respostaComJsonEvento(resposta.status, resposta.corpo);
 }

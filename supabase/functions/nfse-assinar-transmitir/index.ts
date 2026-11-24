@@ -26,11 +26,24 @@ import type {
 } from "../_shared/nfseDps.ts";
 import { abrirPfx, CertificadoError } from "../_shared/nfsePfx.ts";
 import type { MaterialCertificado } from "../_shared/nfsePfx.ts";
-import { assinarDpsXml } from "../_shared/nfseXmlSign.ts";
-import { transmitirParaSefin } from "../_shared/nfseSefin.ts";
-import type { RespostaSefin } from "../_shared/nfseSefin.ts";
+import { assinarDpsXml, assinarEventoXml } from "../_shared/nfseXmlSign.ts";
+import {
+  transmitirEventoParaSefin,
+  transmitirParaSefin,
+} from "../_shared/nfseSefin.ts";
+import type {
+  RespostaEventoSefin,
+  RespostaSefin,
+} from "../_shared/nfseSefin.ts";
 import { baixarDanfseOficialAdn } from "../_shared/nfseAdn.ts";
 import type { ResultadoDanfseOficial } from "../_shared/nfseAdn.ts";
+import {
+  codigoAmbiente,
+  gerarXmlPedRegEventoCancelamento,
+  MOTIVOS_CANCELAMENTO,
+  motivoCancelamentoValido,
+  validarJustificativaCancelamento,
+} from "../_shared/nfseEvento.ts";
 
 const BUCKET_CERTIFICADOS = "certificados-fiscais";
 const BUCKET_DOCUMENTOS = "fiscal-documentos";
@@ -110,6 +123,42 @@ function resolverEndpointSefin(ambiente: string): string | null {
   return ambiente.toLowerCase().startsWith("prod")
     ? (producao || null)
     : (homologacao || null);
+}
+
+/**
+ * Endpoint oficial do registro de evento: POST /nfse/{chave}/eventos.
+ * Overrides: NFSE_SEFIN_EVENTO_URL_(PRODUCAO|HOMOLOGACAO) ou
+ * NFSE_SEFIN_EVENTO_URL (template com `{chave}` ou base). Senao deriva da
+ * base da Sefin (secret de emissao) e, por fim, usa os dominios oficiais.
+ */
+function resolverEndpointEvento(
+  ambiente: string,
+  chaveAcesso: string,
+): string {
+  const ehProducao = codigoAmbiente(ambiente) === "1";
+  const template = Deno.env.get(
+    ehProducao
+      ? "NFSE_SEFIN_EVENTO_URL_PRODUCAO"
+      : "NFSE_SEFIN_EVENTO_URL_HOMOLOGACAO",
+  )?.trim() || Deno.env.get("NFSE_SEFIN_EVENTO_URL")?.trim();
+
+  if (template) {
+    if (template.includes("{chave}")) {
+      return template.replace(/\{chave\}/g, chaveAcesso);
+    }
+    return `${template.replace(/\/+$/, "")}/nfse/${chaveAcesso}/eventos`;
+  }
+
+  const base = resolverEndpointSefin(ambiente);
+  if (base) {
+    const raiz = base.replace(/\/+$/, "").replace(/\/(nfse|dps)$/i, "");
+    return `${raiz}/nfse/${chaveAcesso}/eventos`;
+  }
+
+  const oficial = ehProducao
+    ? "https://sefin.nfse.gov.br/SefinNacional"
+    : "https://sefin.producaorestrita.nfse.gov.br/SefinNacional";
+  return `${oficial}/nfse/${chaveAcesso}/eventos`;
 }
 
 async function registrarEvento(
@@ -304,7 +353,14 @@ serve(async (req: Request) => {
     }
 
     // ---------- 2) Payload ----------
-    let body: { nfse_id?: string; acao?: string } | null = null;
+    let body:
+      | {
+        nfse_id?: string;
+        acao?: string;
+        codigo_motivo?: string | number;
+        justificativa?: string;
+      }
+      | null = null;
     try {
       body = await req.json();
     } catch {
@@ -321,6 +377,7 @@ serve(async (req: Request) => {
     const acao = String(body?.acao || "emitir").trim().toLowerCase();
     const baixarDanfse = acao === "baixar_danfse" ||
       acao === "baixar_danfse_oficial";
+    const cancelar = acao === "cancelar";
 
     // ---------- 3) Rascunho ----------
     const { data: rascunho, error: draftError } = await admin
@@ -344,7 +401,24 @@ serve(async (req: Request) => {
     }
 
     const statusAtual = String(rascunho.status || "").toLowerCase();
-    if (!baixarDanfse) {
+
+    if (cancelar) {
+      if (statusAtual === "cancelada") {
+        return respostaJson(
+          { success: false, error: "Esta NFS-e ja esta cancelada." },
+          409,
+        );
+      }
+      if (statusAtual !== "emitida") {
+        return respostaJson(
+          {
+            success: false,
+            error: "Somente notas emitidas podem ser canceladas.",
+          },
+          409,
+        );
+      }
+    } else if (!baixarDanfse) {
       if (statusAtual === "emitida") {
         return respostaJson(
           { success: false, error: "Esta NFS-e ja foi emitida." },
@@ -399,7 +473,7 @@ serve(async (req: Request) => {
     const ambiente = String(matriz["ambiente_fiscal"] ?? "homologacao");
     const inscricaoMunicipal = somenteDigitos(matriz["inscricao_municipal"]);
     const endpoint = resolverEndpointSefin(ambiente);
-    if (!endpoint) {
+    if (!endpoint && !cancelar) {
       return respostaJson(
         {
           success: false,
@@ -521,6 +595,333 @@ serve(async (req: Request) => {
         },
         422,
       );
+    }
+
+    // ---------- 5.0) Cancelamento (evento e101101) ----------
+    if (cancelar) {
+      const motivoCodigo = String(body?.codigo_motivo ?? "").trim();
+      if (!motivoCancelamentoValido(motivoCodigo)) {
+        return respostaJson(
+          {
+            success: false,
+            error: "Motivo do cancelamento invalido (use 1, 2 ou 9).",
+          },
+          400,
+        );
+      }
+
+      const justificativa = validarJustificativaCancelamento(
+        body?.justificativa,
+      );
+      if (!justificativa.ok) {
+        return respostaJson(
+          { success: false, error: justificativa.erro },
+          400,
+        );
+      }
+
+      const metaEmissao = objeto(meta.emissao) ?? {};
+      const chaveAcesso = somenteDigitos(
+        rascunho.chave_acesso || metaEmissao["chave_acesso"],
+      );
+      if (!/^\d{50}$/.test(chaveAcesso)) {
+        await registrarEvento(
+          admin,
+          nfseId,
+          "NFSE_CANCELAMENTO_FALHA",
+          "NFS-e sem chave de acesso valida para cancelamento.",
+          { ambiente, motivo_codigo: motivoCodigo },
+        );
+        return respostaJson(
+          {
+            success: false,
+            status: statusAtual,
+            error:
+              "NFS-e sem chave de acesso valida (50 digitos). Somente notas emitidas podem ser canceladas.",
+          },
+          422,
+        );
+      }
+
+      // Ambiente da PROPRIA nota (gravado na emissao), nao o da matriz atual.
+      const ambienteNota = texto(metaEmissao["ambiente"]) || ambiente;
+      const cnpjAutor = somenteDigitos(matriz["cnpj"]);
+
+      let xmlEvento: string;
+      try {
+        xmlEvento = gerarXmlPedRegEventoCancelamento({
+          chaveAcesso,
+          ambiente: ambienteNota,
+          cnpjAutor,
+          codigoMotivo: motivoCodigo,
+          justificativa: justificativa.texto,
+        });
+      } catch (erro) {
+        return respostaJson(
+          {
+            success: false,
+            error: erro instanceof Error
+              ? erro.message
+              : "Falha ao gerar o evento de cancelamento.",
+          },
+          422,
+        );
+      }
+
+      let xmlEventoAssinado: string;
+      try {
+        xmlEventoAssinado = assinarEventoXml(xmlEvento, {
+          keyPem: material.keyPem,
+          certPem: material.certPem,
+        });
+      } catch (erro) {
+        console.error(
+          "[nfse-assinar-transmitir] Falha ao assinar evento:",
+          erro instanceof Error ? erro.message : "erro",
+        );
+        return respostaJson(
+          { success: false, error: "Falha ao assinar o evento de cancelamento." },
+          500,
+        );
+      }
+
+      const carimboCancel = new Date().toISOString().replace(/[:.]/g, "-");
+      const eventoPath = `nfse/${nfseId}/evento-cancelamento-${carimboCancel}.xml`;
+      const { error: uploadEventoError } = await admin.storage
+        .from(BUCKET_DOCUMENTOS)
+        .upload(
+          eventoPath,
+          new Blob([xmlEventoAssinado], { type: "application/xml" }),
+          { contentType: "application/xml", upsert: true },
+        );
+      if (uploadEventoError) {
+        console.warn(
+          "[nfse-assinar-transmitir] Aviso: XML do evento nao arquivado:",
+          uploadEventoError.message,
+        );
+      }
+
+      const endpointEvento = resolverEndpointEvento(
+        ambienteNota,
+        chaveAcesso,
+      );
+
+      let respostaEvento: RespostaEventoSefin;
+      let timerEvento: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const limiteEvento = new Promise<never>((_, reject) => {
+          timerEvento = setTimeout(function() {
+            reject(
+              new Error(
+                "Tempo total de cancelamento excedido (32s). Verifique a conectividade com a Sefin.",
+              ),
+            );
+          }, 32000);
+        });
+        try {
+          respostaEvento = await Promise.race([
+            transmitirEventoParaSefin(
+              xmlEventoAssinado,
+              { keyPem: material.keyPem, chainPem: material.chainPem },
+              endpointEvento,
+            ),
+            limiteEvento,
+          ]);
+        } finally {
+          if (timerEvento !== undefined) clearTimeout(timerEvento);
+        }
+      } catch (erro) {
+        const motivo = erro instanceof Error
+          ? erro.message
+          : "Falha de comunicacao com a Sefin.";
+        console.error(
+          "[nfse-assinar-transmitir] Falha de comunicacao no cancelamento:",
+          motivo,
+        );
+        await registrarEvento(
+          admin,
+          nfseId,
+          "NFSE_CANCELAMENTO_FALHA",
+          motivo,
+          {
+            ambiente: ambienteNota,
+            chave_acesso: chaveAcesso,
+            motivo_codigo: motivoCodigo,
+            erro_comunicacao: true,
+          },
+        );
+        await registrarLog(
+          admin,
+          nfseId,
+          { ambiente: ambienteNota, endpoint: endpointEvento, motivo_codigo: motivoCodigo },
+          { sucesso: false, erro: truncar(motivo) },
+          502,
+        );
+        return respostaJson(
+          { success: false, status: "emitida", error: motivo },
+          502,
+        );
+      }
+
+      if (respostaEvento.ok) {
+        const canceladoEm = new Date().toISOString();
+
+        if (respostaEvento.eventoXml) {
+          const retornoEventoPath =
+            `nfse/${nfseId}/evento-cancelamento-retorno-${carimboCancel}.xml`;
+          const { error } = await admin.storage
+            .from(BUCKET_DOCUMENTOS)
+            .upload(
+              retornoEventoPath,
+              new Blob([respostaEvento.eventoXml], {
+                type: "application/xml",
+              }),
+              { contentType: "application/xml", upsert: true },
+            );
+          if (error) {
+            console.warn(
+              "[nfse-assinar-transmitir] Aviso: retorno do evento nao arquivado:",
+              error.message,
+            );
+          }
+        }
+
+        const motivoDescricao = MOTIVOS_CANCELAMENTO[motivoCodigo] ?? null;
+        try {
+          await atualizarRascunho(
+            admin,
+            nfseId,
+            { status: "cancelada", motivo_rejeicao: null },
+            meta,
+            {
+              cancelamento: {
+                protocolo: respostaEvento.protocolo,
+                data: canceladoEm,
+                motivo_codigo: motivoCodigo,
+                motivo_descricao: motivoDescricao,
+                justificativa: justificativa.texto,
+                ambiente: ambienteNota,
+                chave_acesso: chaveAcesso,
+                http_status: respostaEvento.httpStatus,
+                xml_storage_path: uploadEventoError ? null : eventoPath,
+                retorno: respostaEvento.corpoResumo,
+              },
+            },
+          );
+        } catch (erro) {
+          console.error(
+            "[nfse-assinar-transmitir] CANCELADA, mas falhou ao persistir:",
+            erro instanceof Error ? erro.message : "erro",
+          );
+          return respostaJson(
+            {
+              success: false,
+              status: "cancelada",
+              error:
+                "NFS-e cancelada na Sefin, mas falhou ao salvar o resultado. Verifique o banco.",
+              protocolo: respostaEvento.protocolo,
+              chave_acesso: chaveAcesso,
+            },
+            500,
+          );
+        }
+
+        await registrarEvento(
+          admin,
+          nfseId,
+          "NFSE_CANCELADA",
+          `NFS-e cancelada (motivo ${motivoCodigo}).`,
+          {
+            ambiente: ambienteNota,
+            chave_acesso: chaveAcesso,
+            protocolo: respostaEvento.protocolo,
+            motivo_codigo: motivoCodigo,
+          },
+        );
+        await registrarLog(
+          admin,
+          nfseId,
+          { ambiente: ambienteNota, endpoint: endpointEvento, motivo_codigo: motivoCodigo },
+          {
+            sucesso: true,
+            http_status: respostaEvento.httpStatus,
+            protocolo: respostaEvento.protocolo,
+          },
+          200,
+        );
+
+        return respostaJson({
+          success: true,
+          status: "cancelada",
+          protocolo: respostaEvento.protocolo,
+          chave_acesso: chaveAcesso,
+          motivo_codigo: motivoCodigo,
+          motivo_descricao: motivoDescricao,
+          data: canceladoEm,
+        });
+      }
+
+      // Rejeicao da Sefin: a nota permanece "emitida" (nao altera status nem
+      // motivo_rejeicao da emissao). Guarda o detalhe para auditoria.
+      const motivoRejeicao = truncar(
+        [respostaEvento.codigoRejeicao, respostaEvento.mensagemRejeicao]
+          .filter(Boolean)
+          .join(" - ") || "Cancelamento rejeitado pela Sefin.",
+        1000,
+      );
+
+      try {
+        await atualizarRascunho(admin, nfseId, {}, meta, {
+          cancelamento_falha: {
+            motivo_codigo: motivoCodigo,
+            justificativa: justificativa.texto,
+            codigo: respostaEvento.codigoRejeicao,
+            mensagem: respostaEvento.mensagemRejeicao,
+            http_status: respostaEvento.httpStatus,
+            ambiente: ambienteNota,
+            resposta_resumo: respostaEvento.corpoResumo,
+            data: new Date().toISOString(),
+          },
+        });
+      } catch { /* best-effort */ }
+
+      await registrarEvento(
+        admin,
+        nfseId,
+        "NFSE_CANCELAMENTO_FALHA",
+        motivoRejeicao,
+        {
+          ambiente: ambienteNota,
+          chave_acesso: chaveAcesso,
+          motivo_codigo: motivoCodigo,
+          http_status: respostaEvento.httpStatus,
+          codigo: respostaEvento.codigoRejeicao,
+        },
+      );
+      await registrarLog(
+        admin,
+        nfseId,
+        { ambiente: ambienteNota, endpoint: endpointEvento, motivo_codigo: motivoCodigo },
+        {
+          sucesso: false,
+          http_status: respostaEvento.httpStatus,
+          codigo: respostaEvento.codigoRejeicao,
+          mensagem: respostaEvento.mensagemRejeicao,
+          resposta: respostaEvento.corpoResumo,
+        },
+        respostaEvento.httpStatus || 400,
+      );
+
+      return respostaJson({
+        success: false,
+        status: "emitida",
+        rejeicao: {
+          codigo: respostaEvento.codigoRejeicao,
+          mensagem: respostaEvento.mensagemRejeicao,
+          http_status: respostaEvento.httpStatus,
+        },
+        error: motivoRejeicao,
+      }, 200);
     }
 
     // ---------- 5.1) DANFSe oficial sob demanda ----------
@@ -666,6 +1067,19 @@ serve(async (req: Request) => {
         pdf_oficial_path: caminho,
         links: { xml: null, pdf: signedFinal?.signedUrl ?? null },
       });
+    }
+
+    // A partir daqui e somente emissao (cancelamento/DANFSe retornaram acima):
+    // garante o endpoint da Sefin (narrowing de tipo e defesa extra).
+    if (!endpoint) {
+      return respostaJson(
+        {
+          success: false,
+          error:
+            "Endpoint da Sefin nao configurado (NFSE_SEFIN_URL_PRODUCAO / NFSE_SEFIN_URL_HOMOLOGACAO).",
+        },
+        500,
+      );
     }
 
     // ---------- 6) DPS ----------
