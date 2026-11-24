@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { Stamp, PlusCircle, RefreshCw, Loader2, ShieldAlert, XCircle, AlertTriangle, CheckCircle2, Send, Eye, AlertCircle, GitBranch, HelpCircle, Lock, ArrowLeft, Search, Printer, Download, FileText, Mail } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -597,6 +597,87 @@ async function baixarBytesStorage(
   return new Uint8Array(await data.arrayBuffer());
 }
 
+/** "YYYY-MM-DD" no fuso America/Sao_Paulo (comparacao de filtro por data). */
+function diaSP(valor: unknown): string {
+  const texto = String(valor || "").trim();
+  if (!texto) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
+  const data = new Date(texto);
+  if (Number.isNaN(data.getTime())) return "";
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(data);
+  const campo = function(tipo: string): string {
+    return partes.find(function(p) { return p.type === tipo; })?.value || "";
+  };
+  return `${campo("year")}-${campo("month")}-${campo("day")}`;
+}
+
+interface InfoStatusNfse {
+  label: string;
+  badge: string;
+  dot: string;
+}
+
+/** Rotulo + classes profissionais por status da NFS-e (ponto + borda sutil). */
+function infoStatusNfse(status: unknown): InfoStatusNfse {
+  const valor = String(status || "").toLowerCase();
+  if (valor === "emitida") {
+    return {
+      label: "Emitida",
+      badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      dot: "bg-emerald-500",
+    };
+  }
+  if (valor === "cancelada") {
+    return {
+      label: "Cancelada",
+      badge: "bg-rose-50 text-rose-700 border-rose-200",
+      dot: "bg-rose-500",
+    };
+  }
+  if (valor === "erro_emissao") {
+    return {
+      label: "Com Erro",
+      badge: "bg-amber-50 text-amber-800 border-amber-200",
+      dot: "bg-amber-500",
+    };
+  }
+  if (valor === "rascunho") {
+    return {
+      label: "Rascunho",
+      badge: "bg-slate-100 text-slate-700 border-slate-200",
+      dot: "bg-slate-400",
+    };
+  }
+  return {
+    label: status ? String(status) : "—",
+    badge: "bg-slate-100 text-slate-600 border-slate-200",
+    dot: "bg-slate-400",
+  };
+}
+
+/** Lista de paginas com elipses (ex.: 1 … 4 5 6 … 12). */
+function paginasVisiveis(
+  atual: number,
+  total: number,
+): Array<number | "ellipsis"> {
+  if (total <= 7) {
+    return Array.from({ length: total }, function(_, i) { return i + 1; });
+  }
+  const paginas: Array<number | "ellipsis"> = [1];
+  const inicio = Math.max(2, atual - 1);
+  const fim = Math.min(total - 1, atual + 1);
+  if (inicio > 2) paginas.push("ellipsis");
+  for (let p = inicio; p <= fim; p++) paginas.push(p);
+  if (fim < total - 1) paginas.push("ellipsis");
+  paginas.push(total);
+  return paginas;
+}
+
 type OrigemOpcao = {
   id: string;
   numero: string | null;
@@ -672,6 +753,85 @@ export default function NfseTab() {
   const [mesExportacao, setMesExportacao] = useState(function() { return hojeISOSP().slice(0, 7); });
   const [exportandoMes, setExportandoMes] = useState(false);
   const [enviandoEmailId, setEnviandoEmailId] = useState<string | null>(null);
+
+  // Filtros e paginacao da listagem (Etapa 2).
+  const [filtroStatus, setFiltroStatus] = useState<
+    "todas" | "emitida" | "cancelada" | "rascunho" | "erro_emissao"
+  >("todas");
+  const [filtroDataInicio, setFiltroDataInicio] = useState("");
+  const [filtroDataFim, setFiltroDataFim] = useState("");
+  const [buscaNfse, setBuscaNfse] = useState("");
+  const [itensPorPagina, setItensPorPagina] = useState(10);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+
+  const contadoresNfse = useMemo(function() {
+    const base = {
+      todas: nfses.length,
+      emitida: 0,
+      cancelada: 0,
+      rascunho: 0,
+      erro_emissao: 0,
+    };
+    nfses.forEach(function(n) {
+      const status = String(n.status || "").toLowerCase();
+      if (status === "emitida") base.emitida++;
+      else if (status === "cancelada") base.cancelada++;
+      else if (status === "rascunho") base.rascunho++;
+      else if (status === "erro_emissao") base.erro_emissao++;
+    });
+    return base;
+  }, [nfses]);
+
+  const nfsesFiltradas = useMemo(function() {
+    const termo = buscaNfse.trim().toLowerCase();
+    const termoDigitos = somenteDigitos(buscaNfse);
+    return nfses.filter(function(n) {
+      const meta = (n.metadata || {}) as Record<string, any>;
+      const status = String(n.status || "").toLowerCase();
+
+      if (filtroStatus !== "todas" && status !== filtroStatus) return false;
+
+      const dia = diaSP(
+        n.data_emissao || meta.data_emissao ||
+          meta.emissao?.data_emissao || n.created_at,
+      );
+      if (filtroDataInicio && (!dia || dia < filtroDataInicio)) return false;
+      if (filtroDataFim && (!dia || dia > filtroDataFim)) return false;
+
+      if (termo) {
+        const tomador = (meta.tomador || {}) as Record<string, any>;
+        const numero = String(n.numero || "").toLowerCase();
+        const nome = String(tomador.nome || "").toLowerCase();
+        const doc = String(tomador.cnpj || tomador.cpf || "");
+        const docDigitos = somenteDigitos(doc);
+        const chave = String(n.chave_acesso || "");
+        const bate = numero.includes(termo) || nome.includes(termo) ||
+          doc.toLowerCase().includes(termo) ||
+          (termoDigitos.length >= 3 &&
+            (docDigitos.includes(termoDigitos) || chave.includes(termoDigitos)));
+        if (!bate) return false;
+      }
+      return true;
+    });
+  }, [nfses, filtroStatus, filtroDataInicio, filtroDataFim, buscaNfse]);
+
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(nfsesFiltradas.length / itensPorPagina),
+  );
+  const paginaSegura = Math.min(paginaAtual, totalPaginas);
+  const inicioPagina = (paginaSegura - 1) * itensPorPagina;
+  const nfsesPagina = nfsesFiltradas.slice(
+    inicioPagina,
+    inicioPagina + itensPorPagina,
+  );
+  const filtrosAtivos = filtroStatus !== "todas" ||
+    Boolean(filtroDataInicio) || Boolean(filtroDataFim) ||
+    Boolean(buscaNfse.trim());
+
+  useEffect(function() {
+    setPaginaAtual(1);
+  }, [filtroStatus, filtroDataInicio, filtroDataFim, buscaNfse, itensPorPagina]);
 
   const [gerarForm, setGerarForm] = useState({
     origem: "os" as "os" | "cte" | "avulso",
@@ -3651,6 +3811,14 @@ export default function NfseTab() {
     );
   }
 
+  const pillsStatus = [
+    { valor: "todas", label: "Todas", count: contadoresNfse.todas },
+    { valor: "emitida", label: "Emitidas", count: contadoresNfse.emitida },
+    { valor: "cancelada", label: "Canceladas", count: contadoresNfse.cancelada },
+    { valor: "rascunho", label: "Rascunhos", count: contadoresNfse.rascunho },
+    { valor: "erro_emissao", label: "Com Erro", count: contadoresNfse.erro_emissao },
+  ] as const;
+
   return (
     <div className="space-y-4 pt-4">
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -3681,27 +3849,122 @@ export default function NfseTab() {
         </div>
       </div>
 
+      {/* FILTROS E BUSCA */}
+      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {pillsStatus.map(function(pill) {
+            const ativo = filtroStatus === pill.valor;
+            return (
+              <button
+                key={pill.valor}
+                type="button"
+                onClick={function() { setFiltroStatus(pill.valor); }}
+                className={
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+                  (ativo
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")
+                }
+              >
+                {pill.label}
+                <span
+                  className={
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
+                    (ativo
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-100 text-slate-600")
+                  }
+                >
+                  {pill.count}
+                </span>
+              </button>
+            );
+          })}
+          {filtrosAtivos && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7 text-xs text-slate-500 hover:text-slate-800"
+              onClick={function() {
+                setFiltroStatus("todas");
+                setFiltroDataInicio("");
+                setFiltroDataFim("");
+                setBuscaNfse("");
+              }}
+            >
+              Limpar filtros
+            </Button>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={buscaNfse}
+              onChange={function(e) { setBuscaNfse(e.target.value); }}
+              placeholder="Buscar por numero da nota, tomador ou CNPJ/CPF..."
+              className="h-9 pl-8"
+              aria-label="Buscar NFS-e"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap text-xs text-slate-500">De</Label>
+            <Input
+              type="date"
+              value={filtroDataInicio}
+              onChange={function(e) { setFiltroDataInicio(e.target.value); }}
+              className="h-9 w-40"
+              aria-label="Data inicial"
+            />
+            <Label className="whitespace-nowrap text-xs text-slate-500">Ate</Label>
+            <Input
+              type="date"
+              value={filtroDataFim}
+              onChange={function(e) { setFiltroDataFim(e.target.value); }}
+              className="h-9 w-40"
+              aria-label="Data final"
+            />
+          </div>
+        </div>
+      </div>
+
       <Card className="w-full">
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>Nº NFS-e</TableHead><TableHead>Tomador</TableHead><TableHead>Servico</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead>Pendencias</TableHead><TableHead className="text-right">Acoes</TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow className="border-slate-200 bg-slate-50/60 hover:bg-slate-50/60">
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nº NFS-e</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tomador</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Serviço</TableHead>
+                <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Valor</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pendências</TableHead>
+                <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {erro ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-red-500"><AlertCircle className="w-5 h-5 mx-auto mb-1" /><p className="text-sm">{erro}</p><Button variant="link" size="sm" onClick={fetchNfses}>Tentar novamente</Button></TableCell></TableRow>
                : loading ? <TableRow><TableCell colSpan={7} className="h-24 text-center"><ProgressiveBlocksLoader size="normal" /></TableCell></TableRow>
-               : nfses.length === 0 ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Nenhuma NFS-e encontrada.</TableCell></TableRow>
-                : nfses.map(function(n) {
+               : nfsesFiltradas.length === 0 ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">{nfses.length === 0 ? "Nenhuma NFS-e encontrada." : "Nenhuma NFS-e para os filtros selecionados."}</TableCell></TableRow>
+                : nfsesPagina.map(function(n) {
                     const m = n.metadata || {};
                     const v = m.validacoes_pendentes || [];
                     const statusNfse = String(n.status || "").toLowerCase();
                     const podeTransmitir =
                       statusNfse === "rascunho" || statusNfse === "erro_emissao";
+                    const infoStatus = infoStatusNfse(n.status);
                     return (
-                      <TableRow key={n.id}>
-                        <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
-                        <TableCell className="text-sm">{m.tomador?.nome || "-"}</TableCell>
-                        <TableCell className="text-xs">{m.servico || "-"}</TableCell>
-                        <TableCell className="font-medium">{fmtFin(n.valor)}</TableCell>
-                        <TableCell><Badge variant="outline" className={statusNfse === "cancelada" ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"}>{n.status}</Badge></TableCell>
+                      <TableRow key={n.id} className="transition-colors hover:bg-slate-50/70">
+                        <TableCell className="font-semibold tabular-nums text-slate-800">{n.numero || "-"}</TableCell>
+                        <TableCell className="text-sm text-slate-700">{m.tomador?.nome || "-"}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{m.servico || "-"}</TableCell>
+                        <TableCell className="text-right font-medium tabular-nums text-slate-800">{fmtFin(n.valor)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={"inline-flex items-center gap-1.5 " + infoStatus.badge}>
+                            <span className={"h-1.5 w-1.5 rounded-full " + infoStatus.dot} />
+                            {infoStatus.label}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           {v.length === 0 ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />0</Badge>
                            : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><AlertTriangle className="w-3 h-3 mr-1" />{v.length}</Badge>}
@@ -3745,6 +4008,79 @@ export default function NfseTab() {
                   })}
             </TableBody>
           </Table>
+          {!loading && !erro && nfsesFiltradas.length > 0 && (
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span>
+                  Mostrando{" "}
+                  <strong className="text-slate-800">{inicioPagina + 1}</strong>
+                  –
+                  <strong className="text-slate-800">
+                    {Math.min(inicioPagina + itensPorPagina, nfsesFiltradas.length)}
+                  </strong>{" "}
+                  de <strong className="text-slate-800">{nfsesFiltradas.length}</strong>{" "}
+                  notas
+                </span>
+                <span className="hidden text-slate-300 sm:inline">•</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="hidden sm:inline">Por pagina:</span>
+                  <Select
+                    value={String(itensPorPagina)}
+                    onValueChange={function(v) { setItensPorPagina(Number(v)); }}
+                  >
+                    <SelectTrigger className="h-8 w-16">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={function() { setPaginaAtual(Math.max(1, paginaSegura - 1)); }}
+                  disabled={paginaSegura <= 1}
+                >
+                  Anterior
+                </Button>
+                {paginasVisiveis(paginaSegura, totalPaginas).map(function(p, indice) {
+                  if (p === "ellipsis") {
+                    return (
+                      <span key={"e-" + indice} className="px-1 text-xs text-slate-400">
+                        …
+                      </span>
+                    );
+                  }
+                  return (
+                    <Button
+                      key={p}
+                      variant={p === paginaSegura ? "default" : "outline"}
+                      size="sm"
+                      className="h-8 w-8 p-0 tabular-nums"
+                      onClick={function() { setPaginaAtual(p); }}
+                    >
+                      {p}
+                    </Button>
+                  );
+                })}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={function() { setPaginaAtual(Math.min(totalPaginas, paginaSegura + 1)); }}
+                  disabled={paginaSegura >= totalPaginas}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
