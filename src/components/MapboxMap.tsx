@@ -49,6 +49,8 @@ interface RegionPolygon {
   id: string;
   color: string;
   coordinates: [number, number][];
+  /** Rótulo da região desenhado sobre o polígono. */
+  label?: string;
 }
 
 interface MapboxMapProps {
@@ -148,6 +150,11 @@ export default function MapboxMap({
   const navigate = useNavigate();
 
   const clusteringEnabled = showClustering && locations.length > 5;
+  // Modo roteirização: várias rotas/polígonos — sem legenda genérica duplicada.
+  const modoRoteirizacao = Boolean(
+    (routeLines && routeLines.length > 0) || (regionPolygons && regionPolygons.length > 0),
+  );
+  const clusteringEfetivo = clusteringEnabled && !modoRoteirizacao;
 
   useEffect(() => {
     if (!selectedLocationId || !mapRef.current) return;
@@ -233,7 +240,7 @@ export default function MapboxMap({
   }), [locations]);
 
   const handleMapClick = useCallback((e: any) => {
-    if (!clusteringEnabled) return;
+    if (!clusteringEfetivo) return;
     const feature = e.features?.[0];
     if (!feature) return;
 
@@ -255,7 +262,7 @@ export default function MapboxMap({
         onMarkerClick?.(loc);
       }
     }
-  }, [locations, clusteringEnabled, onMarkerClick]);
+  }, [locations, clusteringEfetivo, onMarkerClick]);
 
   const handleMarkerClick = (location: MapLocation) => {
     setSelectedLocation(location);
@@ -325,7 +332,7 @@ export default function MapboxMap({
         mapboxAccessToken={mapToken}
         style={{ width: "100%", height: "100%" }}
         onClick={handleMapClick}
-        interactiveLayerIds={clusteringEnabled ? ["clusters-circle", "unclustered-point"] : undefined}
+        interactiveLayerIds={clusteringEfetivo ? ["clusters-circle", "unclustered-point"] : undefined}
       >
         {showControls && (
           <>
@@ -346,49 +353,84 @@ export default function MapboxMap({
           </Source>
         )}
 
-        {regionPolygons?.map((poly) => (
-          <Source
-            key={`poly-${poly.id}`}
-            id={`poly-${poly.id}`}
-            type="geojson"
-            data={{
-              type: "Feature",
-              properties: {},
-              geometry: { type: "Polygon", coordinates: [poly.coordinates] },
-            } as any}
-          >
-            <Layer
-              id={`poly-fill-${poly.id}`}
-              type="fill"
-              paint={{ "fill-color": poly.color, "fill-opacity": 0.16 }}
-            />
-            <Layer
-              id={`poly-line-${poly.id}`}
-              type="line"
-              paint={{ "line-color": poly.color, "line-width": 2.5, "line-opacity": 0.9 }}
-            />
-          </Source>
-        ))}
+        {regionPolygons?.map((poly) => {
+          const emFoco = !focusRouteId || poly.id === focusRouteId;
+          return (
+            <Source
+              key={`poly-${poly.id}`}
+              id={`poly-${poly.id}`}
+              type="geojson"
+              data={{
+                type: "Feature",
+                properties: {},
+                geometry: { type: "Polygon", coordinates: [poly.coordinates] },
+              } as any}
+            >
+              <Layer
+                id={`poly-fill-${poly.id}`}
+                type="fill"
+                paint={{ "fill-color": poly.color, "fill-opacity": emFoco ? 0.12 : 0.04 }}
+              />
+              <Layer
+                id={`poly-line-${poly.id}`}
+                type="line"
+                paint={{
+                  "line-color": poly.color,
+                  "line-width": emFoco ? 2.5 : 1.5,
+                  "line-opacity": emFoco ? 0.9 : 0.2,
+                }}
+              />
+            </Source>
+          );
+        })}
 
-        {routeLines?.map((line) => (
-          <Source
-            key={`line-${line.id}`}
-            id={`line-${line.id}`}
-            type="geojson"
-            data={{
-              type: "Feature",
-              properties: {},
-              geometry: { type: "LineString", coordinates: line.coordinates },
-            } as any}
-          >
-            <Layer
+        {regionPolygons?.map((poly) => {
+          if (!poly.label) return null;
+          const ring = poly.coordinates.length > 3
+            ? poly.coordinates.slice(0, poly.coordinates.length - 1)
+            : poly.coordinates;
+          if (ring.length === 0) return null;
+          const lng = ring.reduce((acc, p) => acc + p[0], 0) / ring.length;
+          const lat = ring.reduce((acc, p) => acc + p[1], 0) / ring.length;
+          const emFoco = !focusRouteId || poly.id === focusRouteId;
+          return (
+            <Marker key={`lbl-${poly.id}`} longitude={lng} latitude={lat} anchor="center">
+              <div
+                className="rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-md whitespace-nowrap pointer-events-none"
+                style={{ backgroundColor: poly.color, opacity: emFoco ? 0.95 : 0.3 }}
+              >
+                {poly.label}
+              </div>
+            </Marker>
+          );
+        })}
+
+        {routeLines?.map((line) => {
+          const emFoco = !focusRouteId || line.id === focusRouteId;
+          return (
+            <Source
+              key={`line-${line.id}`}
               id={`line-${line.id}`}
-              type="line"
-              layout={{ "line-join": "round", "line-cap": "round" }}
-              paint={{ "line-color": line.color, "line-width": 4, "line-opacity": 0.85 }}
-            />
-          </Source>
-        ))}
+              type="geojson"
+              data={{
+                type: "Feature",
+                properties: {},
+                geometry: { type: "LineString", coordinates: line.coordinates },
+              } as any}
+            >
+              <Layer
+                id={`line-${line.id}`}
+                type="line"
+                layout={{ "line-join": "round", "line-cap": "round" }}
+                paint={{
+                  "line-color": line.color,
+                  "line-width": emFoco ? 5 : 2.5,
+                  "line-opacity": emFoco ? 0.95 : 0.15,
+                }}
+              />
+            </Source>
+          );
+        })}
 
         {origin && (
           <Marker longitude={origin.longitude} latitude={origin.latitude} anchor="bottom">
@@ -407,7 +449,7 @@ export default function MapboxMap({
           </Marker>
         )}
 
-        {clusteringEnabled ? (
+        {clusteringEfetivo ? (
           <Source id="clusters" type="geojson" data={geojsonData} cluster={true} clusterMaxZoom={14} clusterRadius={50}>
             <Layer
               id="clusters-circle"
@@ -456,6 +498,8 @@ export default function MapboxMap({
         ) : (
           locations.map((location) => {
             const IconMarker = getMarkerIcon(location);
+            const emFoco = !focusRouteId || location.routeId === focusRouteId;
+            const modoRotaMarcador = Boolean(location.routeColor);
             return (
               <Marker
                 key={location.id}
@@ -469,19 +513,35 @@ export default function MapboxMap({
               >
                 <div 
                   className="cursor-pointer transform hover:scale-110 transition-transform relative"
-                  style={{ filter: `drop-shadow(0 2px 4px rgba(0,0,0,0.3))` }}
+                  style={{
+                    filter: `drop-shadow(0 2px 4px rgba(0,0,0,0.3))`,
+                    opacity: emFoco ? 1 : 0.28,
+                  }}
                 >
-                  {location.sequencia !== undefined && (
-                    <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold border border-white z-10">
-                      {location.sequencia}
+                  {modoRotaMarcador ? (
+                    // Marcador limpo numerado na cor da rota (roteirizador).
+                    <div
+                      className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold text-white shadow-lg"
+                      style={{ backgroundColor: location.routeColor }}
+                      title={location.numero}
+                    >
+                      {location.sequencia ?? "•"}
                     </div>
+                  ) : (
+                    <>
+                      {location.sequencia !== undefined && (
+                        <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold border border-white z-10">
+                          {location.sequencia}
+                        </div>
+                      )}
+                      <div 
+                        className="w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"
+                        style={{ backgroundColor: getStatusColor(location.status) }}
+                      >
+                        <IconMarker className="w-4 h-4 text-white" />
+                      </div>
+                    </>
                   )}
-                  <div 
-                    className="w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"
-                    style={{ backgroundColor: location.routeColor || getStatusColor(location.status) }}
-                  >
-                    <IconMarker className="w-4 h-4 text-white" />
-                  </div>
                 </div>
               </Marker>
             );
@@ -625,7 +685,7 @@ export default function MapboxMap({
         )}
       </Map>
 
-      {legend && legend.length > 0 && (
+      {!modoRoteirizacao && legend && legend.length > 0 && (
         <div className="absolute bottom-4 right-4 bg-slate-900/90 backdrop-blur rounded-lg p-3 z-10 border border-slate-700 max-h-[50%] overflow-y-auto">
           <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">Rotas / Regiões</p>
           <div className="space-y-1">
@@ -640,6 +700,7 @@ export default function MapboxMap({
       )}
 
       {/* Legend */}
+      {!modoRoteirizacao && (
       <div className="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur rounded-lg p-3 z-10 border border-slate-700">
         <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">Legenda</p>
         <div className="space-y-1">
@@ -671,7 +732,7 @@ export default function MapboxMap({
             <div className="w-3 h-3 rounded-full bg-blue-500" />
             <span className="text-xs text-slate-300">Concluída</span>
           </div>
-          {clusteringEnabled && (
+          {clusteringEfetivo && (
             <div className="flex items-center gap-2 pt-1 border-t border-slate-700 mt-1">
               <div className="w-3 h-3 rounded-full bg-indigo-500" />
               <span className="text-xs text-slate-300">Cluster</span>
@@ -679,6 +740,7 @@ export default function MapboxMap({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

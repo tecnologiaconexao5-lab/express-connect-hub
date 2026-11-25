@@ -26,7 +26,13 @@ ChevronRight,
   CheckCircle,
   XCircle,
   Save,
-  Plus
+  Plus,
+  RotateCcw,
+  Smartphone,
+  Copy,
+  Home,
+  ExternalLink,
+  Trash2
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import MapboxMap from "@/components/MapboxMap";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -47,6 +54,7 @@ import {
   CAPACIDADES_PADRAO_VEICULOS,
   CABECALHO_PLANILHA,
   ModoRoteirizacao,
+  ModoPercurso,
   SugestaoFrotaCenario
 } from "@/types/roteirizacao";
 import {
@@ -65,6 +73,10 @@ import {
   getNomeTipoVeiculo,
   getIconeTipoVeiculo,
   normalizarTipoVeiculo,
+  normalizarColunasPlanilha,
+  detectarPendenciasDados,
+  gerarSolicitacaoDadosWhatsApp,
+  obterCentroideAproximado,
   avaliarJanelasHorario,
   identificarMacroRegiao,
   agruparPorMacroRegiao,
@@ -97,6 +109,32 @@ const PRESETS_ORIGEM: OrigemRoteirizador[] = [
   { rotulo: "CD Guarulhos", cep: "07000-000", endereco: "CD Guarulhos", cidade: "Guarulhos", uf: "SP", latitude: -23.454, longitude: -46.533 },
   { rotulo: "Base Centro SP", cep: "01000-000", endereco: "Base Centro SP", cidade: "São Paulo", uf: "SP", latitude: -23.5505, longitude: -46.6333 },
 ];
+
+const CHAVE_BASES_LOCAL = "tms_roteirizador_bases_v1";
+
+function carregarBasesLocal(): OrigemRoteirizador[] {
+  try {
+    const bruto = localStorage.getItem(CHAVE_BASES_LOCAL);
+    if (!bruto) return [];
+    const parsed = JSON.parse(bruto);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (b: unknown): b is OrigemRoteirizador =>
+        Boolean(b) && typeof b === "object" &&
+        typeof (b as { rotulo?: unknown }).rotulo === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistirBasesLocal(bases: OrigemRoteirizador[]): void {
+  try {
+    localStorage.setItem(CHAVE_BASES_LOCAL, JSON.stringify(bases));
+  } catch {
+    // localStorage indisponível — ignora silenciosamente
+  }
+}
 
 const CORES_ROTAS = [
   "#6366f1", "#10b981", "#f97316", "#ec4899", "#06b6d4", "#eab308",
@@ -149,7 +187,7 @@ const RoteirizadorWeb = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [fileError, setFileError] = useState("");
   const [carregandoOs, setCarregandoOs] = useState(false);
-  const [composicaoEscolhida, setComposicaoEscolhida] = useState<ComposicaoItem[] | null>(null);
+  const [composicaoAplicada, setComposicaoAplicada] = useState<Record<string, SugestaoFrotaCenario>>({});
   const [despachoAlvo, setDespachoAlvo] = useState<Record<number, string>>({});
   const [despachandoIdx, setDespachandoIdx] = useState<number | null>(null);
   const [despachos, setDespachos] = useState<Record<number, DespachoRotaResultado | undefined>>({});
@@ -167,6 +205,18 @@ const RoteirizadorWeb = () => {
   const [origem, setOrigem] = useState<OrigemRoteirizador>(() => ({ ...PRESETS_ORIGEM[0] }));
   const [geocodificandoOrigem, setGeocodificandoOrigem] = useState(false);
   const [mapaFocoId, setMapaFocoId] = useState<string | null>(null);
+  // Percurso (ida / ida e volta) + gestão de bases personalizadas.
+  const [modoPercurso, setModoPercurso] = useState<ModoPercurso>("sem_retorno");
+  const [basesPersonalizadas, setBasesPersonalizadas] = useState<OrigemRoteirizador[]>(() => carregarBasesLocal());
+  const [salvarBaseAberta, setSalvarBaseAberta] = useState(false);
+  const [nomeNovaBase, setNomeNovaBase] = useState("");
+  const [buscandoCepOrigem, setBuscandoCepOrigem] = useState(false);
+  // Detalhe da parada (modal) + prévia do App Motorista.
+  const [pedidoDetalhe, setPedidoDetalhe] = useState<PedidoRoteirizacao | null>(null);
+  const [previaApp, setPreviaApp] = useState<{
+    resultado: { veiculo: VeiculoRoteirizacao; pedidos: PedidoRoteirizacao[] };
+    idx: number;
+  } | null>(null);
 
   const sugestoesComparativas = useMemo(function() {
     if (pedidos.length === 0) return [];
@@ -251,7 +301,8 @@ const RoteirizadorWeb = () => {
         continue;
       }
       if (tentativas >= limite) {
-        saida.push(pedido);
+        const centroide = obterCentroideAproximado(pedido.cidade, pedido.estado, pedido.cep);
+        saida.push({ ...pedido, ...centroide });
         continue;
       }
       tentativas++;
@@ -261,7 +312,9 @@ const RoteirizadorWeb = () => {
         saida.push({ ...pedido, ...coord });
         geocodificados++;
       } else {
-        saida.push(pedido);
+        // Fallback de centroide (cidade/CEP) — garante coordenadas para a rota.
+        const centroide = obterCentroideAproximado(pedido.cidade, pedido.estado, pedido.cep);
+        saida.push({ ...pedido, ...centroide });
       }
       await new Promise(function(resolve) { setTimeout(resolve, 110); });
     }
@@ -300,6 +353,73 @@ const RoteirizadorWeb = () => {
     } finally {
       setGeocodificandoOrigem(false);
     }
+  };
+
+  // Consulta ViaCEP ao digitar/sair do CEP da base.
+  const buscarCepOrigem = async () => {
+    const digitos = String(origem.cep || "").replace(/\D/g, "");
+    if (digitos.length !== 8) return;
+    setBuscandoCepOrigem(true);
+    try {
+      const resposta = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
+      if (!resposta.ok) return;
+      const dados = await resposta.json();
+      if (dados?.erro) return;
+      setOrigem((prev) => ({
+        ...prev,
+        cep: dados.cep || prev.cep,
+        endereco: dados.logradouro || prev.endereco,
+        cidade: dados.localidade || prev.cidade,
+        uf: dados.uf || prev.uf,
+      }));
+      toast.success("Endereço da base preenchido pelo ViaCEP.");
+      // Busca coordenadas do endereço recém-preenchido.
+      const consulta = [dados.logradouro, dados.localidade, dados.uf, dados.cep, "Brasil"]
+        .filter(Boolean)
+        .join(", ");
+      if (consulta) {
+        const coord = await geocodificarEndereco(consulta);
+        if (coord) {
+          setOrigem((prev) => ({
+            ...prev,
+            latitude: coord.latitude,
+            longitude: coord.longitude,
+          }));
+        }
+      }
+    } catch {
+      // silencioso — operador pode clicar em "Buscar coordenadas"
+    } finally {
+      setBuscandoCepOrigem(false);
+    }
+  };
+
+  const salvarNovaBase = () => {
+    const nome = nomeNovaBase.trim() || `Base ${basesPersonalizadas.length + 1}`;
+    if (!origem.endereco && !origem.cidade) {
+      toast.error("Preencha o endereço da base antes de salvar.");
+      return;
+    }
+    const nova: OrigemRoteirizador = { ...origem, rotulo: nome };
+    setBasesPersonalizadas((prev) => {
+      const semDuplicada = prev.filter((b) => b.rotulo !== nome);
+      const lista = [...semDuplicada, nova];
+      persistirBasesLocal(lista);
+      return lista;
+    });
+    setOrigem(nova);
+    setNomeNovaBase("");
+    setSalvarBaseAberta(false);
+    toast.success(`Base "${nome}" salva no navegador.`);
+  };
+
+  const removerBasePersonalizada = (rotulo: string) => {
+    setBasesPersonalizadas((prev) => {
+      const lista = prev.filter((b) => b.rotulo !== rotulo);
+      persistirBasesLocal(lista);
+      return lista;
+    });
+    toast.success(`Base "${rotulo}" removida.`);
   };
 
   const origemCoords = temCoordenadaValida(origem.latitude, origem.longitude)
@@ -410,49 +530,82 @@ const RoteirizadorWeb = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const processImportData = (data: any[]) => {
+  const processImportData = (data: Record<string, unknown>[]) => {
     const novosPedidos: PedidoRoteirizacao[] = data.map((row, index) => {
-      const endereco = row.endereco || "";
-      const numero = (row.numero ?? "").toString();
-      const complemento = row.complemento || "";
-      const enderecoCompleto = [endereco, numero, complemento, row.bairro]
+      // Mapeador flexível: aceita cabeçalhos de planilhas de qualquer cliente.
+      const dados = normalizarColunasPlanilha(row);
+      const endereco = dados.endereco || "";
+      const numero = (dados.numero ?? "").toString();
+      const complemento = dados.complemento || "";
+      const enderecoCompleto = [endereco, numero, complemento, dados.bairro]
         .filter(Boolean)
         .join(", ");
-      const p = {
+
+      const pesoOriginal = parseFloat(dados.peso_kg);
+      const pesoValido = Number.isFinite(pesoOriginal) && pesoOriginal > 0;
+      // Tolerância total: peso ausente assume 1 kg (permite roteirizar).
+      const pesoKg = pesoValido ? pesoOriginal : 1;
+      const pesoEstimado = !pesoValido;
+
+      const comprimentoCm = parseFloat(dados.comprimento_cm) || 0;
+      const larguraCm = parseFloat(dados.largura_cm) || 0;
+      const alturaCm = parseFloat(dados.altura_cm) || 0;
+      const quantidadeVolumes = parseInt(dados.quantidade_volumes) || 1;
+
+      const dadosFaltantes: string[] = [];
+      if (pesoEstimado) dadosFaltantes.push("peso");
+      if (!comprimentoCm || !larguraCm || !alturaCm) dadosFaltantes.push("dimensões");
+      if (!dados.telefone) dadosFaltantes.push("telefone");
+      if (!dados.janela_inicio && !dados.janela_fim) dadosFaltantes.push("janela de horário");
+      if (!dados.cep && !endereco) dadosFaltantes.push("endereço");
+
+      const prioridade = (dados.prioridade || "media").toLowerCase();
+      const prioridadeValida = ["baixa", "media", "alta", "urgente"].includes(prioridade)
+        ? prioridade
+        : "media";
+
+      const p: PedidoRoteirizacao = {
         id: "IMP-" + Date.now() + "-" + index,
-        numeroPedido: row.numero_pedido || row.numeroPedido || `SEM-NUM-${index}`,
-        cliente: row.cliente || "Não informado",
-        destinatario: row.destinatario || "Não informado",
-        telefone: (row.telefone || "").toString(),
-        documento: row.documento ? String(row.documento) : undefined,
-        email: row.email ? String(row.email) : undefined,
-        cep: (row.cep || "").toString().replace(/\D/g, ''),
+        numeroPedido: dados.numero_pedido || `SEM-NUM-${index}`,
+        cliente: dados.cliente || "Não informado",
+        destinatario: dados.destinatario || "Não informado",
+        telefone: dados.telefone || "",
+        documento: dados.documento || undefined,
+        email: dados.email || undefined,
+        cep: (dados.cep || "").replace(/\D/g, ""),
         enderecoCompleto,
         endereco,
         numero,
         complemento,
-        bairro: row.bairro || "",
-        cidade: row.cidade || "",
-        estado: row.estado || "",
+        bairro: dados.bairro || "",
+        cidade: dados.cidade || "",
+        estado: dados.estado || "",
         latitude: 0,
         longitude: 0,
-        pesoKg: parseFloat(row.peso_kg) || parseFloat(row.peso) || 0,
-        quantidadeVolumes: parseInt(row.quantidade_volumes) || parseInt(row.volumes) || 0,
-        comprimentoCm: parseFloat(row.comprimento_cm) || 0,
-        larguraCm: parseFloat(row.largura_cm) || 0,
-        alturaCm: parseFloat(row.altura_cm) || 0,
+        pesoKg,
+        quantidadeVolumes,
+        comprimentoCm,
+        larguraCm,
+        alturaCm,
         cubagemM3: 0,
-        tipoCarga: row.tipo_carga || "seco",
-        secoOuRefrigerado: (row.seco_ou_refrigerado || "seco").toLowerCase().includes("refri") ? "refrigerado" : "seco",
-        temperaturaMinima: parseFloat(row.temperatura_minima) || undefined,
-        janelaInicio: row.janela_inicio || "",
-        janelaFim: row.janela_fim || "",
-        prioridade: (row.prioridade || "normal").toLowerCase(),
-        observacoes: row.observacoes || "",
-        status: "pendente" as const
+        tipoCarga: (dados.tipo_carga as PedidoRoteirizacao["tipoCarga"]) || "seco",
+        secoOuRefrigerado:
+          (dados.seco_ou_refrigerado || "seco").toLowerCase().includes("refri")
+            ? "refrigerado"
+            : "seco",
+        temperaturaMinima: dados.temperatura_minima
+          ? parseFloat(dados.temperatura_minima)
+          : undefined,
+        janelaInicio: dados.janela_inicio || "",
+        janelaFim: dados.janela_fim || "",
+        prioridade: prioridadeValida as PedidoRoteirizacao["prioridade"],
+        observacoes: dados.observacoes || "",
+        status: "pendente" as const,
+        dadosFaltantes,
+        pesoEstimado,
       };
-      p.cubagemM3 = calcularCubagemPedido(p as any);
-      return p as unknown as PedidoRoteirizacao;
+      p.cubagemM3 = calcularCubagemPedido(p);
+      return p;
     });
     setImportedPedidos(novosPedidos);
     setFileError("");
@@ -489,7 +642,7 @@ const RoteirizadorWeb = () => {
           const wsname = workbook.SheetNames[0];
           const ws = workbook.Sheets[wsname];
           const data = XLSX.utils.sheet_to_json(ws);
-          processImportData(data);
+          processImportData(data as Record<string, unknown>[]);
         } catch (err: any) {
           setFileError("Erro ao ler Excel: " + err.message);
         } finally {
@@ -506,13 +659,25 @@ const RoteirizadorWeb = () => {
   };
 
   const confirmarImportacao = async () => {
-    const validos = importedPedidos.filter(p => !validarListaPedidos([p]).some(a => a.tipo === 'erro'));
+    // Tolerância total: só é bloqueado o pedido SEM nenhuma referência de endereço.
+    // Peso/dimensões/telefone/janela ausentes NÃO bloqueiam (peso assume 1 kg).
+    const temEndereco = (p: PedidoRoteirizacao) =>
+      Boolean(p.cep || p.endereco || p.enderecoCompleto || p.cidade);
+    const validos = importedPedidos.filter(temEndereco);
     if (validos.length === 0) {
-      toast.error("Nenhum pedido válido para importar.");
+      toast.error("Nenhum pedido com endereço válido para importar.");
       return;
     }
     if (validos.length < importedPedidos.length) {
-      toast.warning(`Foram ignorados ${importedPedidos.length - validos.length} pedidos inválidos.`);
+      toast.warning(
+        `Foram ignorados ${importedPedidos.length - validos.length} pedidos sem endereço.`,
+      );
+    }
+    const semDados = detectarPendenciasDados(validos).length;
+    if (semDados > 0) {
+      toast.info(
+        `${semDados} pedido(s) com dados incompletos — roteirizados com valores padrão. Veja "Pendências de Dados".`,
+      );
     }
     const geocodificados = await geocodificarPedidosSemCoordenadas(validos);
     setPedidos(geocodificados);
@@ -724,7 +889,7 @@ const RoteirizadorWeb = () => {
       setPedidos(pedidosReais);
       setDistribuicaoGerada([]);
       setRotasCalculadas(new Map());
-      setComposicaoEscolhida(null);
+      setComposicaoAplicada({});
       toast.success(
         `${pedidosReais.length} paradas de entrega carregadas das OS do sistema.`,
       );
@@ -740,7 +905,7 @@ const RoteirizadorWeb = () => {
     setImportedPedidos([]);
     setDistribuicaoGerada([]);
     setRotasCalculadas(new Map());
-    setComposicaoEscolhida(null);
+    setComposicaoAplicada({});
     setFileError("");
     toast.success("Lote limpo. Importe a planilha ou adicione paradas manualmente.");
   };
@@ -750,12 +915,13 @@ const RoteirizadorWeb = () => {
     composicao: ComposicaoItem[],
   ): VeiculoRoteirizacao[] => {
     const lista: VeiculoRoteirizacao[] = [];
+    let seq = 0;
     composicao.forEach(function(item) {
       const cap = getCapacidadePadrao(item.tipo);
       const qtd = Math.max(1, item.quantidade || 1);
       for (let i = 0; i < qtd; i++) {
         lista.push({
-          id: `virtual-${item.tipo}-${item.refrigerado ? "ref" : "seco"}-${i}`,
+          id: `virtual-${item.tipo}-${item.refrigerado ? "ref" : "seco"}-${seq++}`,
           tipoVeiculo: item.tipo,
           placa: "",
           motorista: "",
@@ -771,18 +937,61 @@ const RoteirizadorWeb = () => {
     return lista;
   };
 
-  const aplicarComposicao = (cenario: SugestaoFrotaCenario) => {
-    setComposicaoEscolhida([{
-      tipo: cenario.tipo,
-      quantidade: cenario.quantidade,
-      refrigerado: false,
-    }]);
+  const aplicarComposicao = (regiao: string, cenario: SugestaoFrotaCenario) => {
+    setComposicaoAplicada(function(prev) {
+      return { ...prev, [regiao]: cenario };
+    });
     toast.success(
-      `Composição aplicada: ${cenario.quantidade}x ${cenario.tipoNome}. Clique em "Gerar Roteiros Inteligentes".`,
+      `${regiao}: ${cenario.quantidade}x ${cenario.tipoNome} (${
+        cenario.rotuloModo || "cenário"
+      }) aplicado.`,
     );
   };
 
-  const limparComposicao = () => setComposicaoEscolhida(null);
+  const limparComposicaoRegiao = (regiao: string) => {
+    setComposicaoAplicada(function(prev) {
+      const copia = { ...prev };
+      delete copia[regiao];
+      return copia;
+    });
+  };
+
+  const limparComposicao = () => setComposicaoAplicada({});
+
+  /** Agrega as escolhas por região (e o recomendado das não escolhidas) numa composição única. */
+  const montarComposicaoPorRegiao = (
+    pedidosGeocodificados: PedidoRoteirizacao[],
+  ): ComposicaoItem[] => {
+    const pedidosSeco = pedidosGeocodificados.filter(
+      (p) => p.secoOuRefrigerado !== "refrigerado",
+    );
+    const pedidosRefrigerado = pedidosGeocodificados.filter(
+      (p) => p.secoOuRefrigerado === "refrigerado",
+    );
+
+    const acumulado = new Map<string, ComposicaoItem>();
+    const adicionar = (tipo: TipoVeiculo, quantidade: number, refrigerado: boolean) => {
+      if (quantidade <= 0) return;
+      const chave = `${tipo}::${refrigerado ? "ref" : "seco"}`;
+      const atual = acumulado.get(chave);
+      if (atual) atual.quantidade += quantidade;
+      else acumulado.set(chave, { tipo, quantidade, refrigerado });
+    };
+
+    gerarSugestoesComparativasPorRegiao(pedidosSeco)
+      .filter((s) => s.regiao !== "Consolidado geral")
+      .forEach((s) => {
+        const escolha = composicaoAplicada[s.regiao] || s.recomendado;
+        if (escolha) adicionar(escolha.tipo, escolha.quantidade, false);
+      });
+
+    // Cargas refrigeradas sempre com veículo refrigerado (Van/VUC).
+    sugerirVeiculosNecessarios(pedidosRefrigerado, ["refrigerado"]).forEach((s) => {
+      adicionar(s.tipo, s.quantidade, true);
+    });
+
+    return Array.from(acumulado.values());
+  };
 
   const handleGerarRoteiros = async () => {
     if (pedidos.length === 0) {
@@ -793,7 +1002,7 @@ const RoteirizadorWeb = () => {
     }
     setIsGerando(true);
     try {
-      // Geocoding automatico dos pedidos pendentes.
+      // Geocoding automatico dos pedidos pendentes (com fallback de centroide).
       const pedidosGeocodificados = await geocodificarPedidosSemCoordenadas(pedidos);
 
       // Geocoding da origem, se necessario.
@@ -814,27 +1023,72 @@ const RoteirizadorWeb = () => {
           }
         }
       }
-      const origemCalc = temCoordenadaValida(origemAtual.latitude, origemAtual.longitude)
+      let origemCalc = temCoordenadaValida(origemAtual.latitude, origemAtual.longitude)
         ? { lat: origemAtual.latitude, lng: origemAtual.longitude }
         : undefined;
 
-      const composicaoBase: ComposicaoItem[] = composicaoEscolhida &&
-          composicaoEscolhida.length > 0
-        ? composicaoEscolhida
-        : (modoRoteirizacao === "sugestao"
-          ? sugerirVeiculosNecessarios(pedidosGeocodificados, ["seco", "refrigerado"]).map(
-            function(s) {
-              return {
-                tipo: s.tipo,
-                quantidade: s.quantidade,
-                refrigerado: s.refrigerado,
-              };
-            },
+      // Se a origem continuar sem coordenadas, usa o centroide da cidade/CEP.
+      if (!origemCalc) {
+        const centroide = obterCentroideAproximado(
+          origemAtual.cidade,
+          origemAtual.uf,
+          origemAtual.cep,
+        );
+        origemCalc = { lat: centroide.latitude, lng: centroide.longitude };
+        setOrigem((prev) => ({ ...prev, ...centroide }));
+      }
+
+      const temSelecaoRegional = Object.keys(composicaoAplicada).length > 0;
+      let composicaoBase: ComposicaoItem[];
+      if (temSelecaoRegional) {
+        composicaoBase = montarComposicaoPorRegiao(pedidosGeocodificados);
+      } else if (modoRoteirizacao === "sugestao") {
+        composicaoBase = sugerirVeiculosNecessarios(
+          pedidosGeocodificados,
+          ["seco", "refrigerado"],
+        ).map(function(s) {
+          return {
+            tipo: s.tipo,
+            quantidade: s.quantidade,
+            refrigerado: s.refrigerado,
+          };
+        });
+      } else {
+        composicaoBase = [];
+      }
+
+      // Livre de Rodízio SP: exclui placas em rodízio municipal no dia/horário da rota.
+      const restricaoRodizio = Object.values(composicaoAplicada).some(
+        (c) => c.restricaoRodizio,
+      );
+      const pedidosCentro = pedidosGeocodificados.filter(
+        (p) => identificarMacroRegiao(p.cep, p.cidade, p.bairro) === "Centro SP",
+      );
+      const cepRefRodizio = pedidosCentro[0]?.cep || undefined;
+      const janelaIniRodizio = pedidosCentro[0]?.janelaInicio || undefined;
+      const janelaFimRodizio = pedidosCentro[0]?.janelaFim || undefined;
+      const dataRotaRef = new Date();
+      const veiculosDisponiveis = restricaoRodizio
+        ? veiculos.filter(
+            (v) =>
+              !verificarRodizioMunicipalSP(
+                v.placa,
+                cepRefRodizio,
+                dataRotaRef,
+                janelaIniRodizio,
+                janelaFimRodizio,
+              ).rodizioHoje,
           )
-          : []);
+        : veiculos;
+      if (restricaoRodizio) {
+        toast.info(
+          `Livre de Rodízio SP: ${veiculosDisponiveis.length} veículo(s) liberados usados no pool.`,
+        );
+      }
+
       const veiculosParaUso = composicaoBase.length > 0
         ? construirVeiculosDaComposicao(composicaoBase)
-        : veiculos;
+        : veiculosDisponiveis;
       const res = distribuirPedidosEntreVeiculos(
         pedidosGeocodificados,
         veiculosParaUso,
@@ -843,6 +1097,7 @@ const RoteirizadorWeb = () => {
       setDistribuicaoGerada(res);
 
       // Calculo automatico de distancia/tempo de TODAS as rotas (com origem).
+      // O await é completo: o loading só encerra quando todas as rotas têm km/tempo.
       const novoMapa = new Map<number, {
         distanciaKm: number;
         tempoMin: number;
@@ -850,12 +1105,14 @@ const RoteirizadorWeb = () => {
         alertas: string[];
         routeCoordinates?: [number, number][];
       }>();
+      const comRetorno = modoPercurso === "com_retorno";
       for (let i = 0; i < res.length; i++) {
         const pedidosOrdenados = optimizarSequenciaParadas(res[i].pedidos);
         try {
           const calc = await calcularDistanciaTempoRota(
             pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude })),
             origemCalc,
+            { comRetorno },
           );
           novoMapa.set(i, {
             distanciaKm: calc.distanciaTotalKm,
@@ -912,9 +1169,16 @@ const RoteirizadorWeb = () => {
   ): string => {
     const janela = avaliarJanelasHorario(pedidosOrdenados, { inicio: "08:00" });
     const codigo = `ROTA-${String(idx + 1).padStart(2, "0")}`;
+    const volumesTotal = pedidosOrdenados.reduce(
+      (acc, p) => acc + (p.quantidadeVolumes || 0),
+      0,
+    );
     const linhas: string[] = [];
     linhas.push(`CONEXAO EXPRESS - ROTA ${codigo} (WEB)`);
     linhas.push(`Regiao: ${regiaoDaRota(resultado)}`);
+    linhas.push(
+      `Percurso: ${modoPercurso === "com_retorno" ? "Ida e volta a base" : "Somente ida"}`,
+    );
     linhas.push(
       `Veiculo: ${getNomeTipoVeiculo(resultado.veiculo.tipoVeiculo)} ${
         resultado.veiculo.placa || ""
@@ -923,7 +1187,7 @@ const RoteirizadorWeb = () => {
     linhas.push(
       `Distancia: ${calculo?.distanciaKm ?? 0} km | Tempo: ${
         calculo?.tempoMin ?? 0
-      } min | Janela: ${janela.janelaAtendida}`,
+      } min | Volumes: ${volumesTotal} | Janela: ${janela.janelaAtendida}`,
     );
     linhas.push("");
     linhas.push("PARADAS:");
@@ -1028,6 +1292,7 @@ const RoteirizadorWeb = () => {
         <div class="box"><b>Volumes</b>${volumes}</div>
         <div class="box"><b>Cubagem</b>${cubagem.toFixed(2)} m3</div>
         <div class="box"><b>Distancia/Tempo</b>${calculo?.distanciaKm ?? 0} km / ${calculo?.tempoMin ?? 0} min</div>
+        <div class="box"><b>Percurso</b>${modoPercurso === "com_retorno" ? "Ida e volta a base" : "Somente ida"}</div>
       </div>
       <div class="muted">Janela atendida: ${escaparHtml(janela.janelaAtendida)}</div>
       <table><thead><tr><th>#</th><th>Destinatario</th><th>Endereco</th><th>Horario</th><th>Vol/Kg</th><th>Contato</th><th>Conferencia</th></tr></thead><tbody>${linhasTabela}</tbody></table>
@@ -1093,6 +1358,7 @@ const RoteirizadorWeb = () => {
       const resultado = await calcularDistanciaTempoRota(
         pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude })),
         origemCoords,
+        { comRetorno: modoPercurso === "com_retorno" },
       );
 
       const novoMapa = new Map(rotasCalculadas);
@@ -1133,6 +1399,7 @@ const RoteirizadorWeb = () => {
         const calcResultado = await calcularDistanciaTempoRota(
           pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude })),
           origemCoords,
+          { comRetorno: modoPercurso === "com_retorno" },
         );
 
         const novoMapa = new Map(rotasCalculadas);
@@ -1206,77 +1473,159 @@ const RoteirizadorWeb = () => {
     toast.success("Parada movida entre roteiros.");
   };
 
+  const renderPendenciasDados = (lista: PedidoRoteirizacao[]) => {
+    const pendencias = detectarPendenciasDados(lista);
+    if (pendencias.length === 0) return null;
+    const copiarSolicitacao = async () => {
+      const texto = gerarSolicitacaoDadosWhatsApp(lista);
+      try {
+        await navigator.clipboard.writeText(texto);
+        toast.success("Solicitação copiada — cole no WhatsApp/E-mail do cliente.");
+      } catch {
+        toast.error("Não foi possível copiar automaticamente.");
+      }
+    };
+    return (
+      <Card className="border-amber-200 bg-amber-50">
+        <CardHeader className="pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-sm font-medium flex items-center gap-2 text-amber-800">
+                <AlertTriangle className="w-4 h-4" />
+                Pendências de Dados do Cliente ({pendencias.length})
+              </CardTitle>
+              <CardDescription className="text-amber-700">
+                Pedidos roteirizados com valores padrão (peso 1 kg). Solicite a
+                complementação sem travar a operação.
+              </CardDescription>
+            </div>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={copiarSolicitacao}>
+              <Copy className="w-3.5 h-3.5 mr-1" />
+              Copiar Solicitação p/ Cliente (WhatsApp/E-mail)
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="max-h-[240px] space-y-1 overflow-y-auto">
+            {pendencias.map(({ pedido, faltando }) => (
+              <div
+                key={pedido.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-white px-2 py-1 text-xs"
+              >
+                <span className="font-medium text-slate-700">
+                  {pedido.numeroPedido || pedido.id}
+                  {pedido.destinatario && pedido.destinatario !== "Não informado"
+                    ? ` — ${pedido.destinatario}`
+                    : ""}
+                </span>
+                <span className="text-amber-700">Faltando: {faltando.join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderSugestoesComparativas = () => {
     if (sugestoesComparativas.length === 0) return null;
+    const regioesAcionaveis = sugestoesComparativas.filter(
+      (s) => s.regiao !== "Consolidado geral",
+    );
+    const consolidado = sugestoesComparativas.find(
+      (s) => s.regiao === "Consolidado geral",
+    );
+    const selecionadas = Object.entries(composicaoAplicada);
     return (
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Truck className="w-4 h-4 text-indigo-500" />
-            Sugestões Comparativas de Frota
+            Sugestões Comparativas de Frota por Região
           </CardTitle>
           <CardDescription>
-            Clique em um cenário para aplicá-lo antes de gerar os roteiros
+            3 modos por região — escolha quantos veículos usar em cada região de forma independente.
+            Máxima Ocupação, Rapidez (Motos) e Livre de Rodízio SP.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {composicaoEscolhida && composicaoEscolhida.length > 0 && (
-            <div className="mb-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+          {selecionadas.length > 0 && (
+            <div className="mb-3 flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 sm:flex-row sm:items-center sm:justify-between">
               <span>
                 Composição aplicada:{" "}
-                {composicaoEscolhida.map(function(i) {
-                  return `${i.quantidade}x ${getNomeTipoVeiculo(i.tipo)}`;
-                }).join(" + ")}
+                {selecionadas
+                  .map(([regiao, c]) => `${regiao}: ${c.quantidade}x ${c.tipoNome}`)
+                  .join(" • ")}
               </span>
               <Button
                 variant="link"
                 size="sm"
-                className="h-6 text-xs"
+                className="h-6 self-start text-xs"
                 onClick={limparComposicao}
               >
-                Limpar
+                Limpar tudo
               </Button>
             </div>
           )}
           <div className="space-y-3">
-            {sugestoesComparativas.map(function(s) {
+            {regioesAcionaveis.map(function(s) {
+              const escolhida = composicaoAplicada[s.regiao];
               return (
                 <div key={s.regiao} className="rounded-lg border p-3">
-                  <p className="text-sm font-medium">
-                    {s.regiao}{" "}
-                    <span className="font-normal text-muted-foreground">
-                      ({s.paradas} paradas • {s.pesoKg.toFixed(1)} kg •{" "}
-                      {s.cubagemM3.toFixed(2)} m³)
-                    </span>
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium">
+                      {s.regiao}{" "}
+                      <span className="font-normal text-muted-foreground">
+                        ({s.paradas} paradas • {s.pesoKg.toFixed(1)} kg •{" "}
+                        {s.cubagemM3.toFixed(2)} m³)
+                      </span>
+                    </p>
+                    {escolhida && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs text-rose-600"
+                        onClick={function() { limparComposicaoRegiao(s.regiao); }}
+                      >
+                        Limpar região
+                      </Button>
+                    )}
+                  </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     {s.cenarios.map(function(c, ci) {
                       const isRec = Boolean(
-                        s.recomendado && c.tipo === s.recomendado.tipo &&
+                        s.recomendado && c.modo === s.recomendado.modo &&
+                          c.tipo === s.recomendado.tipo &&
                           c.quantidade === s.recomendado.quantidade,
                       );
+                      const isSel = Boolean(escolhida && escolhida.modo === c.modo);
                       return (
-                        <span key={c.tipo} className="inline-flex items-center gap-2">
+                        <span key={`${c.modo}-${c.tipo}`} className="inline-flex items-center gap-2">
                           {ci > 0 && (
                             <span className="text-[11px] text-slate-400">OU</span>
                           )}
                           <button
                             type="button"
-                            onClick={function() { aplicarComposicao(c); }}
+                            onClick={function() { aplicarComposicao(s.regiao, c); }}
                             className={
-                              "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors " +
-                              (isRec
+                              "inline-flex flex-col items-start gap-0.5 rounded-lg border px-3 py-1.5 text-left text-xs transition-colors " +
+                              (isSel
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300"
+                                : isRec
                                 ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
                                 : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")
                             }
-                            title="Aplicar esta composição"
+                            title={c.descricao || "Aplicar esta composição"}
                           >
-                            {c.resumo}
-                            {isRec && (
-                              <span className="ml-1 text-[10px] font-semibold">
-                                recomendado
-                              </span>
-                            )}
+                            <span className="font-semibold">{c.rotuloModo}</span>
+                            <span>
+                              {c.resumo}
+                              {isRec && !isSel && (
+                                <span className="ml-1 text-[10px] font-semibold text-indigo-600">
+                                  recomendado
+                                </span>
+                              )}
+                            </span>
                           </button>
                         </span>
                       );
@@ -1286,6 +1635,15 @@ const RoteirizadorWeb = () => {
               );
             })}
           </div>
+          {consolidado && (
+            <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <span className="font-medium text-slate-600">Consolidado geral:</span>{" "}
+              {consolidado.paradas} paradas • {consolidado.pesoKg.toFixed(1)} kg •{" "}
+              {consolidado.cubagemM3.toFixed(2)} m³
+              {consolidado.recomendado &&
+                ` · recomendado ${consolidado.recomendado.quantidade}x ${consolidado.recomendado.tipoNome}`}
+            </div>
+          )}
         </CardContent>
       </Card>
     );
@@ -1337,20 +1695,79 @@ const RoteirizadorWeb = () => {
                   variant={origem.rotulo === p.rotulo ? "default" : "outline"}
                   onClick={function() { aplicarPresetOrigem(p); }}
                 >
+                  <Home className="w-3.5 h-3.5 mr-1" />
                   {p.rotulo}
                 </Button>
               );
             })}
+            {basesPersonalizadas.map(function(b) {
+              return (
+                <span key={b.rotulo} className="inline-flex items-center rounded-md border bg-white">
+                  <Button
+                    size="sm"
+                    variant={origem.rotulo === b.rotulo ? "secondary" : "ghost"}
+                    className="rounded-r-none"
+                    onClick={function() { aplicarPresetOrigem(b); }}
+                  >
+                    {b.rotulo}
+                  </Button>
+                  <button
+                    type="button"
+                    title="Remover base"
+                    className="px-1.5 text-rose-500 hover:text-rose-700"
+                    onClick={function() { removerBasePersonalizada(b.rotulo); }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              );
+            })}
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-dashed"
+              onClick={function() { setNomeNovaBase(""); setSalvarBaseAberta(true); }}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Salvar Nova Base
+            </Button>
             <Badge variant="outline" className="ml-auto bg-white">
               {temCoordenadaValida(origem.latitude, origem.longitude)
                 ? `${origem.latitude.toFixed(4)}, ${origem.longitude.toFixed(4)}`
                 : "Origem sem coordenadas"}
             </Badge>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-white p-2">
+            <span className="text-xs font-semibold text-slate-600">Percurso:</span>
+            <Button
+              size="sm"
+              variant={modoPercurso === "sem_retorno" ? "default" : "outline"}
+              onClick={function() { setModoPercurso("sem_retorno"); }}
+            >
+              <Flag className="w-3.5 h-3.5 mr-1" />
+              Sem Retorno (Somente Ida)
+            </Button>
+            <Button
+              size="sm"
+              variant={modoPercurso === "com_retorno" ? "default" : "outline"}
+              onClick={function() { setModoPercurso("com_retorno"); }}
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              Com Retorno à Base (Ida e Volta)
+            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              {modoPercurso === "com_retorno"
+                ? "Origem → paradas → Origem (km e tempo incluem a volta)."
+                : "Origem → paradas (sem a volta à base)."}
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
             <Input
               value={origem.cep}
               onChange={function(e) { setOrigem({ ...origem, cep: e.target.value }); }}
+              onBlur={function() { void buscarCepOrigem(); }}
               placeholder="CEP"
               className="h-9"
             />
@@ -1373,7 +1790,7 @@ const RoteirizadorWeb = () => {
               className="h-9"
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -1382,10 +1799,53 @@ const RoteirizadorWeb = () => {
             >
               {geocodificandoOrigem ? "Buscando..." : "Buscar coordenadas"}
             </Button>
-            <span className="text-xs text-muted-foreground">Mapbox / Nominatim</span>
+            <span className="text-xs text-muted-foreground">
+              {buscandoCepOrigem ? "Consultando ViaCEP..." : "CEP preenche endereço via ViaCEP · Mapbox / Nominatim"}
+            </span>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={salvarBaseAberta} onOpenChange={setSalvarBaseAberta}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Salvar Nova Base</DialogTitle>
+            <DialogDescription>
+              A base fica salva neste navegador com endereço, cidade/UF e coordenadas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Nome da base</Label>
+              <Input
+                value={nomeNovaBase}
+                onChange={function(e) { setNomeNovaBase(e.target.value); }}
+                placeholder="Ex.: Base Santana"
+              />
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-2 text-xs text-slate-600">
+              <p><b>CEP:</b> {origem.cep || "—"}</p>
+              <p><b>Endereço:</b> {origem.endereco || "—"}</p>
+              <p><b>Cidade/UF:</b> {origem.cidade || "—"}/{origem.uf || "—"}</p>
+              <p>
+                <b>Coordenadas:</b>{" "}
+                {temCoordenadaValida(origem.latitude, origem.longitude)
+                  ? `${origem.latitude.toFixed(4)}, ${origem.longitude.toFixed(4)}`
+                  : "sem coordenadas"}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={function() { setSalvarBaseAberta(false); }}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarNovaBase}>
+              <Save className="w-4 h-4 mr-1" />
+              Salvar Base
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-card border w-full justify-start overflow-x-auto flex-wrap">
@@ -1517,10 +1977,25 @@ const RoteirizadorWeb = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{pedidos.length > 0 ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado']).length : veiculos.length}</p>
-                  <p className="text-sm text-muted-foreground">
-                  {(pedidos.length > 0 ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado']) : []).map(v => getNomeTipoVeiculo(v.tipo)).join(", ")}
-                </p>
+                {(() => {
+                  // 0 pedidos ⇒ 0 veículos necessários (nunca o total da frota).
+                  const plano = pedidos.length > 0
+                    ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado'])
+                    : [];
+                  const total = plano.reduce((acc, v) => acc + (v.quantidade || 0), 0);
+                  return (
+                    <>
+                      <p className="text-2xl font-bold">{total}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {plano.length > 0
+                          ? plano
+                              .map(v => `${v.quantidade}x ${getNomeTipoVeiculo(v.tipo)}`)
+                              .join(", ")
+                          : "Nenhum pedido no lote"}
+                      </p>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
             
@@ -1586,6 +2061,8 @@ const RoteirizadorWeb = () => {
           )}
 
           {renderSugestoesComparativas()}
+
+          {renderPendenciasDados(pedidos)}
 
           <Card>
             <CardHeader>
@@ -1735,15 +2212,15 @@ const RoteirizadorWeb = () => {
                       <p className="text-xl font-bold">{totaisImportados.totalPedidos}</p>
                     </div>
                     <div className="bg-white border rounded p-3 text-center">
-                      <p className="text-xs text-muted-foreground">Válidos</p>
+                      <p className="text-xs text-muted-foreground">Com endereço</p>
                       <p className="text-xl font-bold text-green-600">
-                        {importedPedidos.filter(p => !validarListaPedidos([p]).some(a => a.tipo === 'erro')).length}
+                        {importedPedidos.filter(p => p.cep || p.endereco || p.enderecoCompleto || p.cidade).length}
                       </p>
                     </div>
                     <div className="bg-white border rounded p-3 text-center">
-                      <p className="text-xs text-muted-foreground">Inválidos (Bloqueados)</p>
-                      <p className="text-xl font-bold text-red-600">
-                        {importedPedidos.filter(p => validarListaPedidos([p]).some(a => a.tipo === 'erro')).length}
+                      <p className="text-xs text-muted-foreground">Com pendência</p>
+                      <p className="text-xl font-bold text-amber-600">
+                        {importedPedidos.filter(p => (p.dadosFaltantes?.length || 0) > 0).length}
                       </p>
                     </div>
                     <div className="bg-white border rounded p-3 text-center">
@@ -1770,23 +2247,36 @@ const RoteirizadorWeb = () => {
                       </TableHeader>
                       <TableBody>
                         {importedPedidos.map((pedido, i) => {
-                          const validacoes = validarListaPedidos([pedido]);
-                          const erros = validacoes.filter(a => a.tipo === 'erro');
-                          const avisos = validacoes.filter(a => a.tipo === 'aviso');
-                          const statusColor = erros.length > 0 ? "bg-red-100 text-red-800" : avisos.length > 0 ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800";
-                          const statusLabel = erros.length > 0 ? "Inválido" : avisos.length > 0 ? "Alerta" : "Válido";
+                          const semEndereco = !pedido.cep && !pedido.endereco &&
+                            !pedido.enderecoCompleto && !pedido.cidade;
+                          const pendencias = pedido.dadosFaltantes || [];
+                          const statusColor = semEndereco
+                            ? "bg-red-100 text-red-800"
+                            : pendencias.length > 0
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-green-100 text-green-800";
+                          const statusLabel = semEndereco
+                            ? "Sem endereço"
+                            : pendencias.length > 0
+                            ? "Com pendência"
+                            : "Completo";
+                          const alertaTexto = semEndereco
+                            ? "Sem endereço — será ignorado"
+                            : pendencias.length > 0
+                            ? `Faltando: ${pendencias.join(", ")}`
+                            : "-";
                           
                           return (
-                            <TableRow key={i} className={erros.length > 0 ? "bg-red-50/50" : ""}>
+                            <TableRow key={i} className={semEndereco ? "bg-red-50/50" : ""}>
                               <TableCell><Badge variant="outline" className={statusColor}>{statusLabel}</Badge></TableCell>
                               <TableCell className="font-medium text-xs">{pedido.numeroPedido}</TableCell>
                               <TableCell className="text-xs">{pedido.destinatario}</TableCell>
                               <TableCell className="text-xs font-mono">{pedido.cep || '-'}</TableCell>
                               <TableCell className="text-xs">{pedido.cidade}/{pedido.estado}</TableCell>
-                              <TableCell className="text-xs">{pedido.pesoKg}kg</TableCell>
+                              <TableCell className="text-xs">{pedido.pesoKg}kg{pedido.pesoEstimado ? "*" : ""}</TableCell>
                               <TableCell className="text-xs">{calcularCubagemPedido(pedido).toFixed(3)}m³</TableCell>
-                              <TableCell className="text-xs max-w-xs truncate text-red-600">
-                                {erros.length > 0 ? erros[0].mensagem : (avisos.length > 0 ? avisos[0].mensagem : "-")}
+                              <TableCell className="text-xs max-w-xs truncate text-amber-700">
+                                {alertaTexto}
                               </TableCell>
                             </TableRow>
                           );
@@ -1799,6 +2289,8 @@ const RoteirizadorWeb = () => {
               {fileError && <p className="text-red-500 mt-4 text-sm font-bold text-center">{fileError}</p>}
             </CardContent>
           </Card>
+
+          {renderPendenciasDados(importedPedidos)}
 
           <Card>
             <CardHeader>
@@ -2106,7 +2598,7 @@ const RoteirizadorWeb = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                {distribuicao.length === 0 ? (
+                {distribuicaoGerada.length === 0 ? (
                   <div className="text-center py-12 bg-slate-50 rounded-lg border-2 border-dashed">
                     <Truck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">Nenhum roteiro gerado.</p>
@@ -2156,6 +2648,7 @@ const RoteirizadorWeb = () => {
                     {distribuicao.map((resultado, idx) => {
                       const pesoUsado = resultado.pedidos.reduce((acc, p) => acc + (p.pesoKg || 0), 0);
                       const cubagemUsada = resultado.pedidos.reduce((acc, p) => acc + calcularCubagemPedido(p), 0);
+                      const volumesUsados = resultado.pedidos.reduce((acc, p) => acc + (p.quantidadeVolumes || 0), 0);
                       const ocupacaoPeso = resultado.veiculo.capacidadePesoKg > 0 ? (pesoUsado / resultado.veiculo.capacidadePesoKg) * 100 : 0;
                       const ocupacaoCubagem = resultado.veiculo.capacidadeCubagemM3 > 0 ? (cubagemUsada / resultado.veiculo.capacidadeCubagemM3) * 100 : 0;
                       const pedidosOrdenadosCard = optimizarSequenciaParadas(resultado.pedidos);
@@ -2210,10 +2703,14 @@ const RoteirizadorWeb = () => {
                               </div>
                             </div>
                             
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-4">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mt-4">
                               <div className="bg-white p-2 rounded border">
-                                <p className="text-slate-500 text-xs uppercase font-semibold">Paradas / Entregas</p>
+                                <p className="text-slate-500 text-xs uppercase font-semibold">Paradas</p>
                                 <p className="font-bold text-slate-700">{resultado.pedidos.length}</p>
+                              </div>
+                              <div className="bg-white p-2 rounded border">
+                                <p className="text-slate-500 text-xs uppercase font-semibold">Volumes Totais</p>
+                                <p className="font-bold text-slate-700">{volumesUsados}</p>
                               </div>
                               <div className="bg-white p-2 rounded border">
                                 <p className="text-slate-500 text-xs uppercase font-semibold">Peso (kg)</p>
@@ -2239,9 +2736,16 @@ const RoteirizadorWeb = () => {
                                   <div>
                                     <p className="font-bold text-slate-700">{formatarDistanciaKm(rotasCalculadas.get(idx)?.distanciaKm)} km</p>
                                     <p className="text-xs text-slate-500">{rotasCalculadas.get(idx)?.tempoMin} min</p>
-                                    <Badge variant={rotasCalculadas.get(idx)?.origem === 'mapbox' ? 'default' : 'outline'} className="text-[10px] mt-1">
-                                      {rotasCalculadas.get(idx)?.origem === 'mapbox' ? 'Mapbox Directions' : 'Estimativa Haversine 1.35x'}
+                                    <Badge variant={rotasCalculadas.get(idx)?.origem === 'estimativa_local' ? 'outline' : 'default'} className="text-[10px] mt-1">
+                                      {rotasCalculadas.get(idx)?.origem === 'mapbox'
+                                        ? 'Mapbox Directions'
+                                        : rotasCalculadas.get(idx)?.origem === 'osrm'
+                                        ? 'OSRM (malha real)'
+                                        : 'Estimativa Haversine 1.35x'}
                                     </Badge>
+                                    {modoPercurso === "com_retorno" && (
+                                      <p className="text-[10px] font-semibold text-indigo-600 mt-0.5">Ida e volta à base</p>
+                                    )}
                                   </div>
                                 ) : (
                                   <p className="text-xs text-slate-400">Não calculado</p>
@@ -2325,6 +2829,15 @@ const RoteirizadorWeb = () => {
                                 >
                                   Imprimir Romaneio
                                 </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-indigo-300 text-indigo-700"
+                                  onClick={function() { setPreviaApp({ resultado, idx }); }}
+                                >
+                                  <Smartphone className="w-3.5 h-3.5 mr-1" />
+                                  Prévia App Motorista
+                                </Button>
                               </div>
                             </div>
                             {despachos[idx] && (
@@ -2352,7 +2865,12 @@ const RoteirizadorWeb = () => {
                               </TableHeader>
                               <TableBody>
                                 {resultado.pedidos.map((pedido, i) => (
-                                  <TableRow key={pedido.id} className="hover:bg-slate-50">
+                                  <TableRow
+                                    key={pedido.id}
+                                    className="cursor-pointer hover:bg-indigo-50/60"
+                                    onClick={function() { setPedidoDetalhe(pedido); }}
+                                    title="Clique para ver os detalhes da entrega"
+                                  >
                                     <TableCell className="text-center text-slate-500">{i + 1}</TableCell>
                                     <TableCell className="font-medium text-xs">
                                       {pedido.numeroPedido}
@@ -2363,14 +2881,14 @@ const RoteirizadorWeb = () => {
                                       <p className="font-medium truncate max-w-[150px]" title={nomeSeguro(pedido.destinatario)}>{nomeSeguro(pedido.destinatario)}</p>
                                       <p className="text-slate-500 truncate max-w-[150px]">{[pedido.cidade, pedido.estado].filter(Boolean).join("/") || "—"}</p>
                                     </TableCell>
-                                    <TableCell className="text-right text-xs">{pedido.pesoKg} kg</TableCell>
+                                    <TableCell className="text-right text-xs">{pedido.pesoKg} kg{pedido.pesoEstimado ? "*" : ""}</TableCell>
                                     <TableCell className="text-right text-xs">{calcularCubagemPedido(pedido).toFixed(3)} m³</TableCell>
                                     <TableCell className="text-center">
                                       <Badge variant={pedido.secoOuRefrigerado === 'refrigerado' ? 'default' : 'outline'} className="text-[10px]">
                                         {pedido.secoOuRefrigerado === 'refrigerado' ? 'Refri' : 'Seco'}
                                       </Badge>
                                     </TableCell>
-                                    <TableCell className="text-center">
+                                    <TableCell className="text-center" onClick={function(e) { e.stopPropagation(); }}>
                                       <Select
                                         value=""
                                         onValueChange={function(v) {
@@ -2462,7 +2980,8 @@ const RoteirizadorWeb = () => {
                 : [];
               if (coords.length < 2) {
                 const pts: [number, number][] = [];
-                if (temCoordenadaValida(origem.latitude, origem.longitude)) {
+                const origemVal = temCoordenadaValida(origem.latitude, origem.longitude);
+                if (origemVal) {
                   pts.push([origem.longitude, origem.latitude]);
                 }
                 optimizarSequenciaParadas(res.pedidos).forEach(p => {
@@ -2470,6 +2989,9 @@ const RoteirizadorWeb = () => {
                     pts.push([p.longitude!, p.latitude!]);
                   }
                 });
+                if (origemVal && modoPercurso === "com_retorno" && pts.length >= 2) {
+                  pts.push([origem.longitude, origem.latitude]);
+                }
                 coords = pts;
               }
               return { id: `rota-${rIdx}`, color: cor, coordinates: coords };
@@ -2483,8 +3005,18 @@ const RoteirizadorWeb = () => {
               const hull = convexHull(pts);
               if (hull.length < 3) return null;
               const buf = bufferHull(hull);
-              return { id: `rota-${rIdx}`, color: cor, coordinates: [...buf, buf[0]] };
-            }).filter(Boolean) as { id: string; color: string; coordinates: [number, number][] }[];
+              return {
+                id: `rota-${rIdx}`,
+                color: cor,
+                coordinates: [...buf, buf[0]] as [number, number][],
+                label: regiaoDaRota(res),
+              };
+            }).filter(Boolean) as {
+              id: string;
+              color: string;
+              coordinates: [number, number][];
+              label: string;
+            }[];
 
             const mapaLegend = distribuicao.map((res, rIdx) => ({
               color: CORES_ROTAS[rIdx % CORES_ROTAS.length],
@@ -2499,7 +3031,7 @@ const RoteirizadorWeb = () => {
                   <CardHeader className="pb-2">
                     <CardTitle>Mapa das Rotas por Região</CardTitle>
                     <CardDescription>
-                      Polígonos por região, traçado de todas as rotas e origem (CD/Base)
+                      Polígonos por região, traçado das rotas e origem (CD/Base)
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -2521,6 +3053,7 @@ const RoteirizadorWeb = () => {
                           regionPolygons={mapaPolygons}
                           legend={mapaLegend}
                           focusRouteId={mapaFocoId}
+                          showClustering={false}
                         />
                       </div>
                     )}
@@ -2537,14 +3070,21 @@ const RoteirizadorWeb = () => {
                       className="w-full"
                       onClick={() => setMapaFocoId(null)}
                     >
-                      Ver todas
+                      Ver todas as regiões
                     </Button>
                     {distribuicao.map((res, rIdx) => {
                       const cor = CORES_ROTAS[rIdx % CORES_ROTAS.length];
                       const peso = res.pedidos.reduce((a, p) => a + (p.pesoKg || 0), 0);
                       const calc = rotasCalculadas.get(rIdx);
+                      const emFoco = mapaFocoId === `rota-${rIdx}`;
                       return (
-                        <div key={rIdx} className="rounded-lg border p-2">
+                        <div
+                          key={rIdx}
+                          className={
+                            "rounded-lg border p-2 transition-opacity " +
+                            (mapaFocoId && !emFoco ? "opacity-50" : "")
+                          }
+                        >
                           <div className="flex items-center gap-2">
                             <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: cor }} />
                             <p className="text-xs font-medium truncate">
@@ -2552,15 +3092,15 @@ const RoteirizadorWeb = () => {
                             </p>
                           </div>
                           <p className="text-[11px] text-muted-foreground">
-                            {res.pedidos.length} paradas · {peso.toFixed(1)} kg · {calc?.distanciaKm ?? 0} km
+                            {regiaoDaRota(res)} · {res.pedidos.length} paradas · {peso.toFixed(1)} kg · {calc?.distanciaKm ?? 0} km
                           </p>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant={emFoco ? "default" : "outline"}
                             className="mt-1 h-7 w-full text-xs"
                             onClick={() => setMapaFocoId(`rota-${rIdx}`)}
                           >
-                            Focar região
+                            {emFoco ? "Região em foco" : "Focar região"}
                           </Button>
                         </div>
                       );
@@ -2651,6 +3191,206 @@ const RoteirizadorWeb = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Detalhes da entrega (parada) */}
+      <Dialog open={Boolean(pedidoDetalhe)} onOpenChange={(aberto) => { if (!aberto) setPedidoDetalhe(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Entrega</DialogTitle>
+            <DialogDescription>
+              Pedido {pedidoDetalhe?.numeroPedido} · {nomeSeguro(pedidoDetalhe?.destinatario)}
+            </DialogDescription>
+          </DialogHeader>
+          {pedidoDetalhe && (() => {
+            const p = pedidoDetalhe;
+            const endereco = [
+              p.endereco || p.enderecoCompleto,
+              p.numero,
+              p.complemento,
+              p.bairro,
+              [p.cidade, p.estado].filter(Boolean).join("/"),
+              p.cep,
+            ].filter(Boolean).join(", ");
+            const queryMaps = [p.endereco || p.enderecoCompleto, p.numero, p.bairro, p.cidade, p.estado, p.cep]
+              .filter(Boolean).join(", ");
+            return (
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Cliente</p>
+                    <p className="font-medium">{p.cliente || "—"}</p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Destinatário</p>
+                    <p className="font-medium">{nomeSeguro(p.destinatario)}</p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Contato</p>
+                    <p className="font-medium">{p.telefone || "—"}</p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Documento</p>
+                    <p className="font-medium">{p.documento || "—"}</p>
+                  </div>
+                </div>
+                <div className="rounded border p-2">
+                  <p className="text-[10px] uppercase text-slate-500">Endereço completo</p>
+                  <p className="font-medium">{endereco || "—"}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Dimensões (C x L x A)</p>
+                    <p className="font-medium">
+                      {p.comprimentoCm || 0} x {p.larguraCm || 0} x {p.alturaCm || 0} cm
+                    </p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Peso / Volumes</p>
+                    <p className="font-medium">
+                      {p.pesoKg || 0} kg{p.pesoEstimado ? " (estimado)" : ""} · {p.quantidadeVolumes || 0} vol
+                    </p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Cubagem</p>
+                    <p className="font-medium">{calcularCubagemPedido(p).toFixed(3)} m³</p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Janela</p>
+                    <p className="font-medium">
+                      {(p.janelaInicio || p.janelaFim)
+                        ? `${p.janelaInicio || "--:--"} - ${p.janelaFim || "--:--"}`
+                        : "Sem janela"}
+                    </p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Tipo</p>
+                    <p className="font-medium">
+                      {p.secoOuRefrigerado === "refrigerado" ? "Refrigerado" : "Seco"}
+                      {p.temperaturaMinima != null ? ` · ${p.temperaturaMinima}°C` : ""}
+                    </p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Prioridade</p>
+                    <p className="font-medium capitalize">{p.prioridade || "media"}</p>
+                  </div>
+                </div>
+                {p.observacoes && (
+                  <div className="rounded border p-2">
+                    <p className="text-[10px] uppercase text-slate-500">Observações</p>
+                    <p className="font-medium whitespace-pre-wrap">{p.observacoes}</p>
+                  </div>
+                )}
+                {p.dadosFaltantes && p.dadosFaltantes.length > 0 && (
+                  <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                    Dados pendentes do cliente: {p.dadosFaltantes.join(", ")}
+                  </div>
+                )}
+                <Button
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                  onClick={() => {
+                    if (!queryMaps) {
+                      toast.error("Sem endereço para abrir no Google Maps.");
+                      return;
+                    }
+                    window.open(
+                      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryMaps)}`,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }}
+                >
+                  <ExternalLink className="w-4 h-4 mr-1" />
+                  Abrir no Google Maps
+                </Button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Prévia do App Motorista (simulador mobile) */}
+      <Dialog open={Boolean(previaApp)} onOpenChange={(aberto) => { if (!aberto) setPreviaApp(null); }}>
+        <DialogContent className="max-w-md p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Prévia App Motorista</DialogTitle>
+            <DialogDescription>Simulação da sequência de paradas no aplicativo</DialogDescription>
+          </DialogHeader>
+          {previaApp && (() => {
+            const ordenados = optimizarSequenciaParadas(previaApp.resultado.pedidos);
+            const veiculo = previaApp.resultado.veiculo;
+            return (
+              <div className="mx-auto w-full max-w-[380px] rounded-[2rem] border-8 border-slate-900 bg-slate-100 shadow-2xl">
+                <div className="rounded-t-[1.4rem] bg-[#2E1065] px-4 py-3 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-orange-300">Conexão Express</p>
+                      <p className="text-sm font-bold">Minha Rota</p>
+                    </div>
+                    <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-bold">
+                      {ordenados.length} paradas
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-indigo-100">
+                    {getIconeTipoVeiculo(veiculo.tipoVeiculo)} {getNomeTipoVeiculo(veiculo.tipoVeiculo)}
+                    {veiculo.placa ? ` · ${veiculo.placa}` : ""}
+                  </p>
+                </div>
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto bg-slate-100 p-3">
+                  {ordenados.map((p, i) => (
+                    <div key={p.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="flex items-start gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-800">
+                            {nomeSeguro(p.destinatario)}
+                          </p>
+                          <p className="truncate text-[11px] text-slate-500">
+                            {[p.endereco || p.enderecoCompleto, p.numero, p.bairro, p.cidade]
+                              .filter(Boolean)
+                              .join(", ")}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-slate-400">
+                            Pedido {p.numeroPedido}
+                            {p.janelaInicio || p.janelaFim
+                              ? ` · ${p.janelaInicio || "--:--"}-${p.janelaFim || "--:--"}`
+                              : ""}
+                          </p>
+                        </div>
+                        <span className="ml-auto shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold uppercase text-amber-700">
+                          Aguardando
+                        </span>
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          className="flex-1 rounded-lg bg-emerald-600 py-1.5 text-[11px] font-semibold text-white"
+                          onClick={() => toast.info("Prévia: no App abre a câmera para o comprovante.")}
+                        >
+                          📸 Comprovante
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 rounded-lg border border-rose-300 py-1.5 text-[11px] font-semibold text-rose-600"
+                          onClick={() => toast.info("Prévia: no App registra a devolução com foto/assinatura.")}
+                        >
+                          ↩ Devolução
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-b-[1.4rem] border-t bg-white p-3">
+                  <p className="text-center text-[10px] text-slate-400">
+                    Simulação visual — o motorista vê esta sequência no App.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -33,6 +33,10 @@ export interface PedidoRoteirizacao {
   status: 'pendente' | 'alocado' | 'em_rota' | 'entregue' | 'falha';
   /** Cliente (uuid) quando o pedido veio de uma OS — usado no despacho. */
   clienteId?: string | null;
+  /** Campos que vieram em falta da planilha do cliente (peso, dimensoes, telefone, janela…). */
+  dadosFaltantes?: string[];
+  /** Peso assumido por padrão (1 kg) porque a planilha não informou. */
+  pesoEstimado?: boolean;
 }
 
 export interface VeiculoRoteirizacao {
@@ -88,6 +92,8 @@ export const CAPACIDADES_PADRAO_VEICULOS: CapacidadePadraoVeiculo[] = [
 ];
 
 /** Cenario de frota (tipo + quantidade) para um recorte de pedidos. */
+export type ModoFrotaCenario = 'maxima_ocupacao' | 'rapidez' | 'livre_rodizio';
+
 export interface SugestaoFrotaCenario {
   tipo: TipoVeiculo;
   tipoNome: string;
@@ -97,6 +103,14 @@ export interface SugestaoFrotaCenario {
   maxParadas: number;
   /** Texto pronto, ex.: "1 Fiorino (500 kg)". */
   resumo: string;
+  /** Modo de frota que originou o cenário (máxima ocupação / rapidez / livre de rodízio). */
+  modo?: ModoFrotaCenario;
+  /** Rótulo curto do modo para o operador. */
+  rotuloModo?: string;
+  /** Descrição do critério do modo. */
+  descricao?: string;
+  /** Quando true, exige veículos fora do rodízio municipal de SP. */
+  restricaoRodizio?: boolean;
 }
 
 /** Comparativo de frota para uma regiao/cluster (e para o consolidado). */
@@ -222,7 +236,10 @@ export const CABECALHO_PLANILHA = [
 
 export type ModoRoteirizacao = 'sugestao' | 'disponiveis';
 
-export type OrigemCalculoDistancia = 'mapbox' | 'estimativa_local';
+/** Percurso do roteiro: somente ida ou ida e volta à base de carregamento. */
+export type ModoPercurso = 'sem_retorno' | 'com_retorno';
+
+export type OrigemCalculoDistancia = 'mapbox' | 'osrm' | 'estimativa_local';
 
 export interface ResultadoCalculoDistancia {
   distanciaTotalKm: number;

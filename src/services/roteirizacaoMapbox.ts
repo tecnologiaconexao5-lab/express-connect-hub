@@ -3,78 +3,136 @@ interface Coordinates {
   lng: number;
 }
 
-interface DistanceResult {
-  distanciaKm: number;
-  duracaoMin: number;
-  distanciaTexto: string;
-  duracaoTexto: string;
-  provider: string;
-  coordinates?: [number, number][];
-}
 import { getMapboxToken } from "@/lib/mapboxToken";
 
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
+const OSRM_ROUTE_URL = "https://router.project-osrm.org/route/v1/driving";
 
-async function buscarRotaMapbox(
-  origemCoords: Coordinates,
-  destinoCoords: Coordinates,
-  token: string
-): Promise<DistanceResult | null> {
-  const { lat: latOrigem, lng: lngOrigem } = origemCoords;
-  const { lat: latDestino, lng: lngDestino } = destinoCoords;
+/** Mapbox Directions aceita até 25 waypoints; OSRM demo também fica seguro em 25. */
+const MAX_WAYPOINTS = 25;
 
-  const url = `${MAPBOX_DIRECTIONS_URL}/${lngOrigem},${latOrigem};${lngDestino},${latDestino}.json?access_token=${token}&overview=simplified&geometries=geojson`;
+/** Fator de tortuosidade urbana para a malha viária estimada (calibrado SP/Grande SP). */
+export const TORTUOSIDADE_URBANA = 1.35;
+/** Velocidade média urbana usada na estimativa Haversine calibrada. */
+export const VELOCIDADE_MEDIA_URBANA_KMH = 28;
+/** Tempo médio de serviço por parada (min). */
+export const TEMPO_MEDIO_PARADA_MIN = 10;
 
-  try {
-    const response = await fetch(url);
+/**
+ * Mapbox Directions multi-ponto (chunks de 25 waypoints, com continuidade entre
+ * blocos). Devolve null quando o Mapbox não responde de forma alguma.
+ */
+async function buscarRotaMapboxMulti(
+  pontos: Coordinates[],
+  token: string,
+): Promise<{ distanciaKm: number; duracaoMin: number; coordinates: [number, number][] } | null> {
+  if (pontos.length < 2) return null;
 
-    if (!response.ok) {
-      console.error(`[Roteirizacao Mapbox] Erro na rota: status ${response.status}`);
-      return null;
-    }
+  let distanciaMetros = 0;
+  let duracaoSegundos = 0;
+  const coordinates: [number, number][] = [];
+  let sucessos = 0;
 
-    const data = await response.json();
+  for (let i = 0; i < pontos.length - 1; i += MAX_WAYPOINTS - 1) {
+    const trecho = pontos.slice(i, Math.min(i + MAX_WAYPOINTS, pontos.length));
+    if (trecho.length < 2) break;
 
-    if (!data.routes || data.routes.length === 0) {
-      console.error(`[Roteirizacao Mapbox] Rota não encontrada`);
-      return null;
-    }
+    const coordsStr = trecho.map(p => `${p.lng},${p.lat}`).join(";");
+    const url =
+      `${MAPBOX_DIRECTIONS_URL}/${coordsStr}.json?access_token=${token}` +
+      `&overview=full&geometries=geojson&continue_straight=false`;
 
-    const route = data.routes[0];
-    const distance = route.distance;
-    const duration = route.duration;
-    const coordinates = route.geometry?.coordinates || [];
-
-    const distanciaKm = distance / 1000;
-    const duracaoMin = Math.round(duration / 60);
-
-    const distanciaTexto = distanciaKm.toFixed(1).replace(".", ",") + " km";
-    
-    let duracaoTexto: string;
-    if (duracaoMin < 60) {
-      duracaoTexto = `${duracaoMin} min`;
-    } else {
-      const horas = Math.floor(duracaoMin / 60);
-      const minutos = duracaoMin % 60;
-      if (minutos === 0) {
-        duracaoTexto = `${horas}h`;
-      } else {
-        duracaoTexto = `${horas}h ${minutos}min`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (sucessos === 0) return null;
+        break;
       }
+      const data = await response.json();
+      const route = data?.routes?.[0];
+      if (!route) {
+        if (sucessos === 0) return null;
+        break;
+      }
+      distanciaMetros += Number(route.distance) || 0;
+      duracaoSegundos += Number(route.duration) || 0;
+      if (Array.isArray(route.geometry?.coordinates)) {
+        coordinates.push(...route.geometry.coordinates);
+      }
+      sucessos++;
+    } catch (erro) {
+      console.warn(
+        "[Roteirizacao Mapbox] Falha no directions multi-ponto:",
+        erro instanceof Error ? erro.message : erro,
+      );
+      if (sucessos === 0) return null;
+      break;
     }
-
-    return {
-      distanciaKm,
-      duracaoMin,
-      distanciaTexto,
-      duracaoTexto,
-      provider: "mapbox",
-      coordinates
-    };
-  } catch (error) {
-    console.error(`[Roteirizacao Mapbox] Erro ao buscar rota:`, error);
-    return null;
   }
+
+  if (sucessos === 0) return null;
+  return {
+    distanciaKm: distanciaMetros / 1000,
+    duracaoMin: duracaoSegundos / 60,
+    coordinates,
+  };
+}
+
+/**
+ * OSRM público (malha viária real e gratuita) — usado quando o Mapbox não
+ * responde. Também processa em chunks de 25 pontos.
+ */
+async function buscarRotaOsrmMulti(
+  pontos: Coordinates[],
+): Promise<{ distanciaKm: number; duracaoMin: number; coordinates: [number, number][] } | null> {
+  if (pontos.length < 2) return null;
+
+  let distanciaMetros = 0;
+  let duracaoSegundos = 0;
+  const coordinates: [number, number][] = [];
+  let sucessos = 0;
+
+  for (let i = 0; i < pontos.length - 1; i += MAX_WAYPOINTS - 1) {
+    const trecho = pontos.slice(i, Math.min(i + MAX_WAYPOINTS, pontos.length));
+    if (trecho.length < 2) break;
+
+    const coordsStr = trecho.map(p => `${p.lng},${p.lat}`).join(";");
+    const url = `${OSRM_ROUTE_URL}/${coordsStr}?overview=full&geometries=geojson&steps=false`;
+
+    try {
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) {
+        if (sucessos === 0) return null;
+        break;
+      }
+      const data = await response.json();
+      const route = data?.routes?.[0];
+      if (!route) {
+        if (sucessos === 0) return null;
+        break;
+      }
+      distanciaMetros += Number(route.distance) || 0;
+      duracaoSegundos += Number(route.duration) || 0;
+      if (Array.isArray(route.geometry?.coordinates)) {
+        coordinates.push(...route.geometry.coordinates);
+      }
+      sucessos++;
+    } catch (erro) {
+      console.warn(
+        "[Roteirizacao OSRM] Falha na rota:",
+        erro instanceof Error ? erro.message : erro,
+      );
+      if (sucessos === 0) return null;
+      break;
+    }
+  }
+
+  if (sucessos === 0) return null;
+  return {
+    distanciaKm: distanciaMetros / 1000,
+    duracaoMin: duracaoSegundos / 60,
+    coordinates,
+  };
 }
 
 export interface CalculoRotaInput {
@@ -82,7 +140,10 @@ export interface CalculoRotaInput {
   longitude?: number;
 }
 
-const MAX_PONTOS_POR_BLOCO = 10;
+export interface OpcoesCalculoRota {
+  /** Quando true, soma o trecho de volta à origem (ida e volta à base). */
+  comRetorno?: boolean;
+}
 
 /** (0,0) e coordenadas fora de faixa NAO sao coordenadas validas. */
 export function temCoordenadaValida(lat?: number, lng?: number): boolean {
@@ -91,141 +152,138 @@ export function temCoordenadaValida(lat?: number, lng?: number): boolean {
     Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180;
 }
 
+function montarListaPontos(
+  paradas: CalculoRotaInput[],
+  origemCoords: Coordinates | undefined,
+  comRetorno: boolean,
+): Coordinates[] {
+  const pontos: Coordinates[] = [];
+  const temOrigem = Boolean(
+    origemCoords && temCoordenadaValida(origemCoords.lat, origemCoords.lng),
+  );
+  if (temOrigem && origemCoords) {
+    pontos.push({ lat: origemCoords.lat, lng: origemCoords.lng });
+  }
+  for (const p of paradas) {
+    if (temCoordenadaValida(p.latitude, p.longitude)) {
+      pontos.push({ lat: Number(p.latitude), lng: Number(p.longitude) });
+    }
+  }
+  if (comRetorno && temOrigem && origemCoords && pontos.length >= 2) {
+    pontos.push({ lat: origemCoords.lat, lng: origemCoords.lng });
+  }
+  return pontos;
+}
+
+function estimarHaversineCalibrado(
+  pontos: Coordinates[],
+  paradas: CalculoRotaInput[],
+  alertas: string[],
+): {
+  distanciaTotalKm: number;
+  tempoTotalMinutos: number;
+  origemCalculo: 'estimativa_local';
+  alertas: string[];
+  routeCoordinates?: [number, number][];
+} {
+  let distancia = 0;
+  for (let i = 1; i < pontos.length; i++) {
+    distancia += calcularDistanciaHaversine(
+      pontos[i - 1].lat,
+      pontos[i - 1].lng,
+      pontos[i].lat,
+      pontos[i].lng,
+    );
+  }
+  const distanciaCalibrada = distancia * TORTUOSIDADE_URBANA;
+  const tempoDeslocamento = (distanciaCalibrada / VELOCIDADE_MEDIA_URBANA_KMH) * 60;
+  const tempoServico = paradas.length * TEMPO_MEDIO_PARADA_MIN;
+  const routeCoordinates = pontos.map(p => [p.lng, p.lat] as [number, number]);
+
+  alertas.push(
+    `Estimativa Haversine calibrada (${TORTUOSIDADE_URBANA}x · ${VELOCIDADE_MEDIA_URBANA_KMH} km/h · ${TEMPO_MEDIO_PARADA_MIN} min/parada).`,
+  );
+
+  // Garante distância > 0 quando existe origem + paradas (nunca "0 km").
+  const distanciaFinal = distanciaCalibrada > 0.05
+    ? distanciaCalibrada
+    : Math.max(0.5, paradas.length * 0.5);
+
+  return {
+    distanciaTotalKm: Math.round(distanciaFinal * 10) / 10,
+    tempoTotalMinutos: Math.round(tempoDeslocamento + tempoServico),
+    origemCalculo: 'estimativa_local',
+    alertas,
+    routeCoordinates,
+  };
+}
+
 export const calcularDistanciaTempoRota = async (
   paradas: CalculoRotaInput[],
-  origemCoords?: Coordinates
+  origemCoords?: Coordinates,
+  opcoes?: OpcoesCalculoRota,
 ): Promise<{
   distanciaTotalKm: number;
   tempoTotalMinutos: number;
-  origemCalculo: 'mapbox' | 'estimativa_local';
+  origemCalculo: 'mapbox' | 'osrm' | 'estimativa_local';
   alertas: string[];
   routeCoordinates?: [number, number][];
 }> => {
   const token = getMapboxToken();
   const alertas: string[] = [];
+  const comRetorno = Boolean(opcoes?.comRetorno);
 
-  const paradasComCoords = paradas.filter(
-    p => temCoordenadaValida(p.latitude, p.longitude)
-  );
+  const pontos = montarListaPontos(paradas, origemCoords, comRetorno);
 
-  const temOrigem = Boolean(
-    origemCoords && temCoordenadaValida(origemCoords.lat, origemCoords.lng),
-  );
-  const minimoPontos = temOrigem ? 1 : 2;
-
-  if (!token || paradasComCoords.length < minimoPontos) {
-    alertas.push("Mapbox não disponível ou coordenadas insuficientes");
-    alertas.push("Usando estimativa local por falta de coordenadas");
-
-    const kmBase = 5;
-    const minBase = 10;
-    const distanciaTotal = kmBase * paradas.length;
-    const tempoTotal = minBase * paradas.length;
-
+  // Sem pontos suficientes para traçar malha viária: fallback determinístico.
+  if (pontos.length < 2) {
+    alertas.push("Coordenadas insuficientes para traçar a rota");
+    alertas.push("Usando estimativa local por paradas");
+    const total = Math.max(paradas.length, 1);
     return {
-      distanciaTotalKm: Math.round(distanciaTotal * 10) / 10,
-      tempoTotalMinutos: Math.round(tempoTotal),
+      distanciaTotalKm: Math.round(5 * total * 10) / 10,
+      tempoTotalMinutos: Math.round(10 * total),
       origemCalculo: 'estimativa_local',
       alertas,
     };
   }
 
-  let distanciaTotal = 0;
-  let tempoTotal = 0;
-  const routeCoordinates: [number, number][] = [];
-  const blocos: CalculoRotaInput[][] = [];
-
-  for (let i = 0; i < paradasComCoords.length; i += MAX_PONTOS_POR_BLOCO) {
-    blocos.push(paradasComCoords.slice(i, i + MAX_PONTOS_POR_BLOCO));
+  // Camada 1 — Mapbox Directions (multi-ponto).
+  if (token) {
+    const mapbox = await buscarRotaMapboxMulti(pontos, token);
+    if (mapbox && mapbox.distanciaKm > 0) {
+      alertas.push(
+        `Rota via Mapbox Directions: ${pontos.length} ponto(s)${comRetorno ? " · ida e volta" : ""}.`,
+      );
+      return {
+        distanciaTotalKm: Math.round(mapbox.distanciaKm * 10) / 10,
+        tempoTotalMinutos: Math.round(mapbox.duracaoMin),
+        origemCalculo: 'mapbox',
+        alertas,
+        routeCoordinates: mapbox.coordinates,
+      };
+    }
+    alertas.push("Mapbox Directions não respondeu — tentando OSRM.");
   }
 
-  let pontosProcessados = 0;
-
-  for (const bloco of blocos) {
-    if (bloco.length < 2) continue;
-
-    const origemIdx = pontosProcessados;
-    const destinoUltimo = bloco[bloco.length - 1];
-
-    if (!origemCoords && origemIdx > 0) {
-      const origemAnterior = paradasComCoords[origemIdx - 1];
-      if (!origemAnterior.latitude || !origemAnterior.longitude) continue;
-
-      const resultado = await buscarRotaMapbox(
-        { lat: origemAnterior.latitude, lng: origemAnterior.longitude },
-        { lat: destinoUltimo.latitude!, lng: destinoUltimo.longitude! },
-        token
-      );
-
-      if (resultado) {
-        distanciaTotal += resultado.distanciaKm;
-        tempoTotal += resultado.duracaoMin;
-        if (resultado.coordinates) routeCoordinates.push(...resultado.coordinates);
-      }
-    } else if (origemCoords) {
-      const primeiraParada = bloco[0];
-      if (!primeiraParada.latitude || !primeiraParada.longitude) continue;
-
-      const resultado = await buscarRotaMapbox(
-        origemCoords,
-        { lat: primeiraParada.latitude, lng: primeiraParada.longitude },
-        token
-      );
-
-      if (resultado) {
-        distanciaTotal += resultado.distanciaKm;
-        tempoTotal += resultado.duracaoMin;
-        if (resultado.coordinates) routeCoordinates.push(...resultado.coordinates);
-      }
-    }
-
-    for (let i = 0; i < bloco.length - 1; i++) {
-      const p1 = bloco[i];
-      const p2 = bloco[i + 1];
-
-      if (!p1.latitude || !p1.longitude || !p2.latitude || !p2.longitude) continue;
-
-      const resultado = await buscarRotaMapbox(
-        { lat: p1.latitude, lng: p1.longitude },
-        { lat: p2.latitude, lng: p2.longitude },
-        token
-      );
-
-      if (resultado) {
-        distanciaTotal += resultado.distanciaKm;
-        tempoTotal += resultado.duracaoMin;
-        if (resultado.coordinates) routeCoordinates.push(...resultado.coordinates);
-      }
-    }
-
-    pontosProcessados += bloco.length;
-
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-
-  if (distanciaTotal === 0) {
-    alertas.push("Mapbox não retornou resultados");
-    alertas.push("Usando estimativa local");
-
-    const kmBase = 5;
-    const minBase = 10;
+  // Camada 2 — OSRM público (malha viária real e gratuita).
+  const osrm = await buscarRotaOsrmMulti(pontos);
+  if (osrm && osrm.distanciaKm > 0) {
+    alertas.push(
+      `Rota via OSRM (malha viária real): ${pontos.length} ponto(s)${comRetorno ? " · ida e volta" : ""}.`,
+    );
     return {
-      distanciaTotalKm: Math.round(kmBase * paradas.length * 10) / 10,
-      tempoTotalMinutos: Math.round(minBase * paradas.length),
-      origemCalculo: 'estimativa_local',
+      distanciaTotalKm: Math.round(osrm.distanciaKm * 10) / 10,
+      tempoTotalMinutos: Math.round(osrm.duracaoMin),
+      origemCalculo: 'osrm',
       alertas,
+      routeCoordinates: osrm.coordinates,
     };
   }
+  alertas.push("OSRM indisponível — usando Haversine calibrado.");
 
-  alertas.push(`Calculo via Mapbox: ${paradasComCoords.length} pontos processados em ${blocos.length} blocos`);
-
-  return {
-    distanciaTotalKm: Math.round(distanciaTotal * 10) / 10,
-    tempoTotalMinutos: Math.round(tempoTotal),
-    origemCalculo: 'mapbox',
-    alertas,
-    routeCoordinates,
-  };
+  // Camada 3 — Haversine calibrado (1.35x) entre paradas/origem.
+  return estimarHaversineCalibrado(pontos, paradas, alertas);
 };
 
 export const calcularDistanciaHaversine = (

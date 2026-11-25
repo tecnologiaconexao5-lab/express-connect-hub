@@ -14,6 +14,7 @@ import {
   ResultadoCalculoDistancia,
   SugestaoFrotaCenario,
   SugestaoComparativaRegiao,
+  DadosImportacaoPlanilha,
 } from '@/types/roteirizacao';
 
 export const calcularCubagemPedido = (pedido: PedidoRoteirizacao): number => {
@@ -365,13 +366,24 @@ export const sugerirVeiculosNecessarios = (
 export const gerarSugestoesComparativasPorRegiao = (
   pedidos: PedidoRoteirizacao[],
 ): SugestaoComparativaRegiao[] => {
-  const montarCenario = (
+  const montarCenarioBase = (
     lista: PedidoRoteirizacao[],
     tipo: TipoVeiculo,
+    modo: 'maxima_ocupacao' | 'rapidez' | 'livre_rodizio',
   ): SugestaoFrotaCenario => {
     const cap = getCapacidadePadrao(tipo);
     const quantidade = dimensionarQuantidadeFrota(lista, tipo);
     const nome = getNomeTipoVeiculo(tipo);
+    const rotulos: Record<string, string> = {
+      maxima_ocupacao: "Máxima Ocupação (Econômico)",
+      rapidez: "Rapidez / Expressa (Motos)",
+      livre_rodizio: "Livre de Rodízio SP",
+    };
+    const descricoes: Record<string, string> = {
+      maxima_ocupacao: "Menor quantidade de veículos preenchendo peso e cubagem ao máximo.",
+      rapidez: "Fracionamento em motos (20 kg / 12 paradas) para entregas rápidas no trânsito.",
+      livre_rodizio: "Filtra placas fora do rodízio municipal de SP no dia/horário da rota.",
+    };
     return {
       tipo,
       tipoNome: nome,
@@ -380,7 +392,24 @@ export const gerarSugestoesComparativasPorRegiao = (
       capacidadeCubagemM3: cap?.capacidadeCubagemM3 || 0,
       maxParadas: cap?.maxParadas || 0,
       resumo: `${quantidade} ${nome} (${cap?.capacidadePesoKg || 0} kg)`,
+      modo,
+      rotuloModo: rotulos[modo],
+      descricao: descricoes[modo],
+      restricaoRodizio: modo === 'livre_rodizio',
     };
+  };
+
+  /** Melhor tipo (menor frota e menor porte) para a lista. */
+  const melhorTipoPara = (lista: PedidoRoteirizacao[]): TipoVeiculo => {
+    const candidatos = TIPOS_SUGESTAO
+      .map(tipo => ({ tipo, quantidade: dimensionarQuantidadeFrota(lista, tipo) }))
+      .filter(c => c.quantidade > 0)
+      .sort((a, b) =>
+        a.quantidade - b.quantidade ||
+        (getCapacidadePadrao(a.tipo)?.capacidadePesoKg || 0) -
+          (getCapacidadePadrao(b.tipo)?.capacidadePesoKg || 0)
+      );
+    return candidatos[0]?.tipo || 'Fiorino';
   };
 
   const criar = (
@@ -389,13 +418,15 @@ export const gerarSugestoesComparativasPorRegiao = (
   ): SugestaoComparativaRegiao => {
     const peso = lista.reduce((acc, p) => acc + (p.pesoKg || 0), 0);
     const cubagem = lista.reduce((acc, p) => acc + calcularCubagemPedido(p), 0);
-    const cenarios = TIPOS_SUGESTAO
-      .map(tipo => montarCenario(lista, tipo))
-      .filter(c => c.quantidade > 0);
-    const recomendado = [...cenarios].sort((a, b) =>
-      a.quantidade - b.quantidade ||
-      a.capacidadePesoKg - b.capacidadePesoKg
-    )[0] || null;
+    const melhor = melhorTipoPara(lista);
+
+    const cenarios: SugestaoFrotaCenario[] = [
+      montarCenarioBase(lista, melhor, 'maxima_ocupacao'),
+      montarCenarioBase(lista, 'Moto', 'rapidez'),
+      montarCenarioBase(lista, melhor, 'livre_rodizio'),
+    ].filter(c => c.quantidade > 0);
+
+    const recomendado = cenarios.find(c => c.modo === 'maxima_ocupacao') || null;
     return {
       regiao,
       paradas: lista.length,
@@ -972,6 +1003,245 @@ export const converterPedidoPlanilha = (dados: Record<string, string>): PedidoRo
     observacoes: dados.observacoes || undefined,
     status: 'pendente',
   };
+};
+
+// ===================================================================
+// Importador inteligente de planilhas + pendências de dados do cliente
+// ===================================================================
+
+function normalizarCabecalho(chave: string): string {
+  return String(chave ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** Aliases aceitos por campo (planilhas de clientes diferentes). */
+const ALIASES_PLANILHA: Record<string, string[]> = {
+  numero_pedido: ["numero_pedido", "pedido", "n_pedido", "num_pedido", "nf", "n_nf", "nota", "nota_fiscal", "order", "ordem", "os", "numero_os", "id_pedido"],
+  cliente: ["cliente", "contratante", "empresa", "razao_social", "sacado"],
+  destinatario: ["destinatario", "recebedor", "nome", "nome_destinatario", "consignatario", "contato_nome", "recebedor_nome"],
+  telefone: ["telefone", "celular", "fone", "contato", "telefone_contato", "whatsapp", "phone"],
+  documento: ["documento", "cpf", "cnpj", "cpf_cnpj", "doc", "documento_destinatario"],
+  email: ["email", "e_mail", "correio"],
+  cep: ["cep", "codigo_postal", "cod_postal", "zip", "zipcode"],
+  endereco: ["endereco", "logradouro", "rua", "avenida", "address", "endereco_completo"],
+  numero: ["numero", "num", "n", "no", "numero_endereco"],
+  complemento: ["complemento", "compl", "apto", "apartamento"],
+  bairro: ["bairro", "neighborhood", "district"],
+  cidade: ["cidade", "municipio", "city", "localidade"],
+  estado: ["estado", "uf", "state"],
+  peso_kg: ["peso_kg", "peso", "peso_bruto", "weight", "kg", "peso_total"],
+  quantidade_volumes: ["quantidade_volumes", "volumes", "qtd", "quantidade", "qtd_volumes", "volume", "caixas"],
+  comprimento_cm: ["comprimento_cm", "comprimento", "comp", "length"],
+  largura_cm: ["largura_cm", "largura", "width"],
+  altura_cm: ["altura_cm", "altura", "height"],
+  tipo_carga: ["tipo_carga", "carga", "tipo"],
+  seco_ou_refrigerado: ["seco_ou_refrigerado", "refrigerado", "temperatura_tipo", "tipo_temperatura"],
+  temperatura_minima: ["temperatura_minima", "temperatura", "temp_min", "temp"],
+  janela_inicio: ["janela_inicio", "janela", "horario", "janela_horario", "horario_inicio", "inicio", "window"],
+  janela_fim: ["janela_fim", "horario_fim", "fim"],
+  prioridade: ["prioridade", "priority", "urgencia"],
+  observacoes: ["observacoes", "observacao", "obs", "nota", "instrucoes", "comentarios"],
+};
+
+function extrairHora(valor: unknown): string {
+  const m = /(\d{1,2}):(\d{2})/.exec(String(valor ?? ""));
+  if (!m) return "";
+  return `${m[1].padStart(2, "0")}:${m[2]}`;
+}
+
+/** Separa "08:00 às 12:00" / "08:00 - 12:00" / "8h às 12h" em inicio/fim. */
+export function separarJanelaHorario(valor: unknown): { inicio: string; fim: string } {
+  const texto = String(valor ?? "").trim();
+  if (!texto) return { inicio: "", fim: "" };
+  const partes = texto.split(/\s*(?:às|as|a|-|–|—|até|ate|~)\s*/i);
+  if (partes.length >= 2) {
+    return { inicio: extrairHora(partes[0]), fim: extrairHora(partes[1]) };
+  }
+  return { inicio: extrairHora(texto), fim: "" };
+}
+
+/**
+ * Mapeia cabeçalhos de QUALQUER planilha de cliente para o formato interno.
+ * Aceita `pedido`/`nf`/`order`, `recebedor`/`nome`, `logradouro`/`rua`,
+ * `peso_bruto`/`peso`, `qtd`/`volumes`, `horario`/`janela`, etc.
+ */
+export const normalizarColunasPlanilha = (
+  row: Record<string, unknown>,
+): DadosImportacaoPlanilha => {
+  const normalizado: Record<string, unknown> = {};
+  Object.keys(row || {}).forEach((k) => {
+    const limpo = normalizarCabecalho(k);
+    if (!(limpo in normalizado) || normalizado[limpo] === "") {
+      normalizado[limpo] = row[k];
+    }
+  });
+
+  const pegar = (campo: string): string => {
+    const aliases = ALIASES_PLANILHA[campo] || [campo];
+    for (const alias of aliases) {
+      const v = normalizado[normalizarCabecalho(alias)];
+      if (v !== undefined && v !== null && String(v).trim() !== "") {
+        return String(v).trim();
+      }
+    }
+    return "";
+  };
+
+  const janelaTexto = (() => {
+    const aliases = ["janela", "horario", "janela_horario", "window", "periodo"];
+    for (const alias of aliases) {
+      const v = normalizado[normalizarCabecalho(alias)];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+    }
+    return "";
+  })();
+  const janela = separarJanelaHorario(janelaTexto);
+
+  const refrigeradoTexto = pegar("seco_ou_refrigerado").toLowerCase();
+  const secoOuRefrigerado = refrigeradoTexto.includes("refri") ||
+    refrigeradoTexto.includes("congel") || refrigeradoTexto.includes("gelad")
+    ? "refrigerado"
+    : refrigeradoTexto || "seco";
+
+  return {
+    numero_pedido: pegar("numero_pedido"),
+    cliente: pegar("cliente"),
+    destinatario: pegar("destinatario"),
+    telefone: pegar("telefone"),
+    documento: pegar("documento"),
+    email: pegar("email"),
+    cep: pegar("cep"),
+    endereco: pegar("endereco"),
+    numero: pegar("numero"),
+    complemento: pegar("complemento"),
+    bairro: pegar("bairro"),
+    cidade: pegar("cidade"),
+    estado: pegar("estado"),
+    peso_kg: pegar("peso_kg"),
+    quantidade_volumes: pegar("quantidade_volumes"),
+    comprimento_cm: pegar("comprimento_cm"),
+    largura_cm: pegar("largura_cm"),
+    altura_cm: pegar("altura_cm"),
+    tipo_carga: pegar("tipo_carga") || "seco",
+    seco_ou_refrigerado: secoOuRefrigerado,
+    temperatura_minima: pegar("temperatura_minima"),
+    janela_inicio: pegar("janela_inicio") || janela.inicio,
+    janela_fim: pegar("janela_fim") || janela.fim,
+    prioridade: pegar("prioridade") || "media",
+    observacoes: pegar("observacoes"),
+  };
+};
+
+export interface PendenciaDados {
+  pedido: PedidoRoteirizacao;
+  faltando: string[];
+}
+
+/**
+ * Lista os pedidos com dados incompletos e quais campos faltam.
+ * Peso ausente NÃO bloqueia: o pedido é roteirizado como 1 kg (pesoEstimado).
+ */
+export const detectarPendenciasDados = (
+  pedidos: PedidoRoteirizacao[],
+): PendenciaDados[] => {
+  const saida: PendenciaDados[] = [];
+  for (const p of pedidos) {
+    const faltando: string[] = [];
+    if (!p.pesoKg || p.pesoKg <= 0 || p.pesoEstimado) faltando.push("peso");
+    if (!p.comprimentoCm || !p.larguraCm || !p.alturaCm) faltando.push("dimensões");
+    if (!p.telefone) faltando.push("telefone");
+    if (!p.janelaInicio && !p.janelaFim) faltando.push("janela de horário");
+    if (!p.cep && !p.endereco && !p.enderecoCompleto) faltando.push("endereço");
+    if (faltando.length > 0) saida.push({ pedido: p, faltando });
+  }
+  return saida;
+};
+
+/** Texto educado/objetivo pronto para solicitar os dados ao cliente. */
+export const gerarSolicitacaoDadosWhatsApp = (
+  pedidos: PedidoRoteirizacao[],
+): string => {
+  const pendencias = detectarPendenciasDados(pedidos);
+  if (pendencias.length === 0) {
+    return "✅ Todos os pedidos estão com os dados completos. Podemos seguir com a roteirização!";
+  }
+  const linhas: string[] = [];
+  linhas.push(
+    "Olá! Para agendarmos a roteirização das entregas, precisamos que você complemente algumas informações:",
+  );
+  linhas.push("");
+  pendencias.forEach(({ pedido, faltando }) => {
+    const destinatario = pedido.destinatario && pedido.destinatario !== "Não informado"
+      ? ` — ${pedido.destinatario}`
+      : "";
+    linhas.push(`• Pedido ${pedido.numeroPedido || pedido.id}${destinatario}`);
+    linhas.push(`   Faltando: ${faltando.join(", ")}`);
+  });
+  linhas.push("");
+  linhas.push(
+    "Pode responder por aqui mesmo com os dados de cada pedido. Obrigado pela parceria!",
+  );
+  return linhas.join("\n");
+};
+
+/** Centroides aproximados para fallback de coordenadas (SP e Grande SP). */
+const CENTROIDES_CIDADES: Record<string, { latitude: number; longitude: number }> = {
+  "sao paulo": { latitude: -23.5505, longitude: -46.6333 },
+  "diadema": { latitude: -23.686, longitude: -46.622 },
+  "guarulhos": { latitude: -23.454, longitude: -46.533 },
+  "osasco": { latitude: -23.532, longitude: -46.792 },
+  "barueri": { latitude: -23.511, longitude: -46.876 },
+  "alphaville": { latitude: -23.499, longitude: -46.849 },
+  "santo andre": { latitude: -23.663, longitude: -46.538 },
+  "sao bernardo do campo": { latitude: -23.694, longitude: -46.565 },
+  "sao bernardo": { latitude: -23.694, longitude: -46.565 },
+  "sao caetano do sul": { latitude: -23.622, longitude: -46.554 },
+  "sao caetano": { latitude: -23.622, longitude: -46.554 },
+  "maua": { latitude: -23.668, longitude: -46.461 },
+  "ribeirao pires": { latitude: -23.716, longitude: -46.413 },
+  "carapicuiba": { latitude: -23.523, longitude: -46.835 },
+  "jandira": { latitude: -23.527, longitude: -46.902 },
+  "santana de parnaiba": { latitude: -23.443, longitude: -46.918 },
+  "taboao da serra": { latitude: -23.601, longitude: -46.753 },
+  "cotia": { latitude: -23.602, longitude: -46.919 },
+  "embu das artes": { latitude: -23.648, longitude: -46.852 },
+  "itapecerica da serra": { latitude: -23.716, longitude: -46.849 },
+  "ferraz de vasconcelos": { latitude: -23.541, longitude: -46.371 },
+  "suzano": { latitude: -23.542, longitude: -46.310 },
+  "mogi das cruzes": { latitude: -23.522, longitude: -46.188 },
+  "poa": { latitude: -23.528, longitude: -46.344 },
+};
+
+/**
+ * Coordenada aproximada a partir da cidade/UF/CEP (último recurso para que
+ * nenhuma rota com origem fique com 0 km ou "Não calculado").
+ */
+export const obterCentroideAproximado = (
+  cidade: string,
+  uf?: string,
+  cep?: string,
+): { latitude: number; longitude: number } => {
+  const chave = normalizarTextoRegiao(cidade);
+  if (chave && CENTROIDES_CIDADES[chave]) return { ...CENTROIDES_CIDADES[chave] };
+  for (const [nome, coord] of Object.entries(CENTROIDES_CIDADES)) {
+    if (chave && (chave.includes(nome) || nome.includes(chave))) {
+      return { ...coord };
+    }
+  }
+  const pref = Number(String(cep || "").replace(/\D/g, "").slice(0, 3));
+  if (Number.isFinite(pref) && pref > 0) {
+    // Espalha o CEP em torno da capital paulista (fallback determinístico).
+    const latitude = -23.55 - ((pref % 40) - 20) * 0.012;
+    const longitude = -46.63 + ((pref % 40) - 20) * 0.016;
+    return { latitude, longitude };
+  }
+  // Último recurso: capital de São Paulo.
+  return { latitude: -23.5505, longitude: -46.6333 };
 };
 
 export const getNomeTipoVeiculo = (tipo: TipoVeiculo): string => {
