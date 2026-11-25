@@ -163,7 +163,17 @@ export function getModulosVisiveis(user: User): string[] {
  * O Custo do Prestador permanece visível para todas as personas (necessário na operação).
  */
 export function podeVerReceitaEMargem(role?: UserRole | string | null): boolean {
-  return role === "super_admin" || role === "admin";
+  const r = String(role || "").trim().toLowerCase();
+  return [
+    "super_admin",
+    "adm_geral",
+    "admin_geral",
+    "administrador",
+    "administrador_geral",
+    "admin",
+    "admin_tenant",
+    "master",
+  ].includes(r);
 }
 
 /**

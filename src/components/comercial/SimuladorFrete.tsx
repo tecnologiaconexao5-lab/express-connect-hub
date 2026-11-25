@@ -9,8 +9,10 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 export default function SimuladorFrete() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [origem, setOrigem] = useState<EnderecoType>({ cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "" });
   const [destino, setDestino] = useState<EnderecoType>({ cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "" });
   
@@ -156,13 +158,17 @@ export default function SimuladorFrete() {
 
                  <div className="space-y-2 pt-2 bg-slate-50 p-4 rounded-lg border">
                     <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase"><span>Custo Repasse Viagem</span> <span className="text-slate-800 text-sm">R$ {resultado.totalCusto.toFixed(2)}</span></div>
-                    <div className="flex justify-between items-center text-xs font-bold text-emerald-700 uppercase pt-2 border-t"><span>Lucro Operacional Líquido</span> <span className="text-sm">R$ {resultado.lucroEstimado.toFixed(2)}</span></div>
-                    <div className="flex justify-between items-center text-xs font-bold text-emerald-700 uppercase">
-                       <span>Yield de Margem (%)</span> 
-                       <span className={`text-base font-black px-2 py-0.5 rounded ${resultado.margemSist > 25 ? 'bg-emerald-100' : resultado.margemSist > 15 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                         {resultado.margemSist.toFixed(1)}%
-                       </span>
-                    </div>
+                    {podeVerMargem && (
+                      <div className="flex justify-between items-center text-xs font-bold text-emerald-700 uppercase pt-2 border-t"><span>Lucro Operacional Líquido</span> <span className="text-sm">R$ {resultado.lucroEstimado.toFixed(2)}</span></div>
+                    )}
+                    {podeVerMargem && (
+                      <div className="flex justify-between items-center text-xs font-bold text-emerald-700 uppercase">
+                         <span>Yield de Margem (%)</span> 
+                         <span className={`text-base font-black px-2 py-0.5 rounded ${resultado.margemSist > 25 ? 'bg-emerald-100' : resultado.margemSist > 15 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                           {resultado.margemSist.toFixed(1)}%
+                         </span>
+                      </div>
+                    )}
                  </div>
 
                  <div className="flex flex-col gap-2 pt-2">

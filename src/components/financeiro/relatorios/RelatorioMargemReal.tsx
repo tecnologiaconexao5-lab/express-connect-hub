@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { listarComposicoesFinanceiras } from "@/services/financeiro/composicaoFinanceiraService";
 import { gerarPDFRelatorioOperacional } from "@/utils/pdfRelatorioOperacional";
 import { exportToExcel } from "@/utils/excelExport";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
+import { MargemGate } from "@/components/auth/MargemGate";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -25,6 +27,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 
 export default function RelatorioMargemReal() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [loading, setLoading] = useState(false);
   const [composicoes, setComposicoes] = useState<any[]>([]);
   const [filtroDataInicio, setFiltroDataInicio] = useState("");
@@ -60,6 +63,10 @@ export default function RelatorioMargemReal() {
   const totalMargemBruta = composicoes.reduce((acc, item) => acc + (Number(item.margem_bruta) || 0), 0);
   const totalMargemLiquida = composicoes.reduce((acc, item) => acc + (Number(item.margem_liquida) || 0), 0);
   const mediaMargemLiquida = composicoes.length > 0 ? (totalMargemLiquida / totalValorCliente) * 100 : 0;
+
+  if (!podeVerMargem) {
+    return <MargemGate titulo="Relatório de Margem Real" />;
+  }
 
   return (
     <div className="space-y-6">

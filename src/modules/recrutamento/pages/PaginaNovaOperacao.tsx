@@ -6,6 +6,7 @@ import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent } 
 import { PremiumBadge } from '../components/design-system/PremiumBadge'
 import { useOperacoes } from '../hooks/useOperacoes'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
+import { usePermissaoFinanceira } from '@/hooks/usePermissaoFinanceira'
 import { useRecrutamentoStore } from '../store/recrutamentoStore'
 import { formatCurrency, cn } from '../utils/cn'
 import type { Operacao, TipoCarga, Recurrencia, PrioridadeOperacao, FrequenciaOperacao } from '../types/recrutamento'
@@ -128,6 +129,7 @@ Operação estruturada, recorrente e com acompanhamento operacional durante toda
 }
 
 export function PaginaNovaOperacao() {
+  const { podeVerMargem } = usePermissaoFinanceira()
   const { criar } = useOperacoes()
   const { navegar } = useRecrutamentoUI()
   const { prestadores } = useRecrutamentoStore()
@@ -649,16 +651,16 @@ export function PaginaNovaOperacao() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                   <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Receita Líquida</p><p className="text-sm font-bold text-foreground">{formatCurrency(fin.receitaLiquida)}</p></div>
                   <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Custo Total</p><p className="text-sm font-bold text-foreground">{formatCurrency(fin.custoTotal)}</p></div>
-                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Lucro Unitário</p><p className="text-sm font-bold text-emerald-400">{formatCurrency(fin.lucroUnitario)}</p></div>
-                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Margem</p><p className="text-sm font-bold" style={{ color: fin.margem >= 15 ? '#34d399' : fin.margem >= 5 ? '#fbbf24' : '#f87171' }}>{fin.margem.toFixed(1)}%</p></div>
+                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Lucro Unitário</p><p className="text-sm font-bold text-emerald-400">{podeVerMargem ? formatCurrency(fin.lucroUnitario) : "---"}</p></div>
+                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Margem</p><p className="text-sm font-bold" style={{ color: fin.margem >= 15 ? '#34d399' : fin.margem >= 5 ? '#fbbf24' : '#f87171' }}>{podeVerMargem ? fin.margem.toFixed(1) : "---"}%</p></div>
                 </div>
                 <div className="p-4 rounded-lg bg-muted/20 border border-border/40">
                   <div className="flex justify-between items-center">
                     <div><p className="text-sm font-semibold text-foreground">Lucro Total Estimado</p><p className="text-xs text-muted-foreground">{(form.meta?.vagasTotais || 1)} veículos × {(form.meta?.diariasPorVaga || 1)} diárias</p></div>
-                    <p className="text-2xl font-bold text-emerald-400">{formatCurrency(fin.lucroTotal)}</p>
+                    <p className="text-2xl font-bold text-emerald-400">{podeVerMargem ? formatCurrency(fin.lucroTotal) : "---"}</p>
                   </div>
                 </div>
-                {fin.margem < 5 && (
+                {podeVerMargem && fin.margem < 5 && (
                   <div className="flex items-center gap-2 p-3 mt-3 rounded-lg bg-amber-500/10 text-amber-400 text-xs"><AlertTriangle className="w-4 h-4 shrink-0" />Margem muito baixa. Considere ajustar os valores.</div>
                 )}
               </PremiumCardContent>

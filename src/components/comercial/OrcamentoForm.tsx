@@ -3,6 +3,7 @@ import { ArrowLeft, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, 
 import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import { useRouterBlocker } from "@/hooks/useRouterBlocker";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { lerRascunhoForm, limparRascunhoForm, descartarRascunhoForm, useAutoSaveFormDraft } from "@/lib/formDraft";
 import {
   Field,
@@ -111,6 +112,7 @@ const emptyOrcamento = (): Orcamento => ({
 // ============================================================
 const ResumoOrcamentoPanel = ({ data, distanciaRota }: { data: Orcamento; distanciaRota: DistanceResult | null }) => {
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const { podeVerMargem } = usePermissaoFinanceira();
 
   const margemOk = (data.valores?.margemEstimada || 0) >= 15;
   const distanciaTxt = data.distancia_rota?.distancia_texto || distanciaRota?.distanciaTexto || "—";
@@ -137,8 +139,12 @@ const ResumoOrcamentoPanel = ({ data, distanciaRota }: { data: Orcamento; distan
       <PanelSection icon={TrendingUp} title="Financeiro" accent="emerald">
         <PanelRow label="Valor Final" value={fmt(data.valores?.valorFinal || 0)} />
         <PanelRow label="Custo Prestador" value={fmt(data.valores?.custoEstimado || 0)} />
-        <PanelRow label="Lucro Estimado" value={fmt(data.valores?.lucroEstimado || 0)} valueClass={(data.valores?.lucroEstimado || 0) >= 0 ? "text-green-600" : "text-red-600"} />
-        <PanelRow label="Margem" value={`${data.valores?.margemEstimada || 0}%`} valueClass={margemOk ? "text-green-600" : "text-amber-600"} />
+        {podeVerMargem && (
+          <PanelRow label="Lucro Estimado" value={fmt(data.valores?.lucroEstimado || 0)} valueClass={(data.valores?.lucroEstimado || 0) >= 0 ? "text-green-600" : "text-red-600"} />
+        )}
+        {podeVerMargem && (
+          <PanelRow label="Margem" value={`${data.valores?.margemEstimada || 0}%`} valueClass={margemOk ? "text-green-600" : "text-amber-600"} />
+        )}
         <div className="mt-1 flex items-center justify-between border-t border-slate-200/70 pt-2 text-xs">
           <span className="font-medium text-slate-500">Tabela</span>
           <span className="truncate font-bold text-slate-700">{data.valores?.tabelaVinculada || "Nenhuma"}</span>
@@ -225,6 +231,7 @@ const obterDocStepsOrcamento = (data: Orcamento): DocStep[] => {
 };
 
 const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar, cotacaoId }: Props) => {
+  const { podeVerMargem } = usePermissaoFinanceira();
   // AUTO-SAVE — rascunho local (localStorage) por orçamento; recupera ao voltar.
   const draftKey = `tms_orcamento_draft_v1:${orcamento?.id || "novo"}`;
   const [initialData] = useState<Orcamento>(() => {
@@ -816,8 +823,12 @@ const recalcular = () => {
         <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-6">
           <StatCard icon={DollarSign} label="Valor Final" value={fmt(data.valores?.valorFinal || 0)} tone={(data.valores?.valorFinal || 0) > 0 ? "blue" : "slate"} />
           <StatCard icon={Truck} label="Custo Prest." value={fmt(data.valores?.custoEstimado || 0)} tone={(data.valores?.custoEstimado || 0) > 0 ? "orange" : "slate"} />
-          <StatCard icon={TrendingUp} label="Lucro Est." value={fmt(data.valores?.lucroEstimado || 0)} tone={(data.valores?.lucroEstimado || 0) >= 0 ? "green" : "red"} />
-          <StatCard icon={TrendingUp} label="Margem" value={`${data.valores?.margemEstimada || 0}%`} tone={(data.valores?.margemEstimada || 0) >= 15 ? "green" : (data.valores?.margemEstimada || 0) > 0 ? "amber" : "slate"} />
+          {podeVerMargem && (
+            <StatCard icon={TrendingUp} label="Lucro Est." value={fmt(data.valores?.lucroEstimado || 0)} tone={(data.valores?.lucroEstimado || 0) >= 0 ? "green" : "red"} />
+          )}
+          {podeVerMargem && (
+            <StatCard icon={TrendingUp} label="Margem" value={`${data.valores?.margemEstimada || 0}%`} tone={(data.valores?.margemEstimada || 0) >= 15 ? "green" : (data.valores?.margemEstimada || 0) > 0 ? "amber" : "slate"} />
+          )}
           <StatCard icon={Route} label="Distância" value={data.distancia_rota?.distancia_texto || "—"} tone="slate" />
           <StatCard icon={FileText} label="Tabela" value={data.valores?.tabelaVinculada || "Nenhuma"} tone="slate" />
         </div>
@@ -1448,8 +1459,12 @@ const recalcular = () => {
                 </div>
                 <div className="pt-2 border-t border-primary/20 space-y-1 text-sm bg-white/50 p-3 rounded-lg">
                   <div className="flex justify-between"><span className="text-muted-foreground">Custo Prestador</span><span className="font-bold text-orange-600">{fmt(data.valores.custoEstimado)}</span></div>
-                  <div className="flex justify-between font-semibold text-green-600"><span>Lucro Estimado</span><span>{fmt(data.valores.lucroEstimado)}</span></div>
-                  <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Margem</span><Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{data.valores.margemEstimada}%</Badge></div>
+                  {podeVerMargem && (
+                    <div className="flex justify-between font-semibold text-green-600"><span>Lucro Estimado</span><span>{fmt(data.valores.lucroEstimado)}</span></div>
+                  )}
+                  {podeVerMargem && (
+                    <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Margem</span><Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{data.valores.margemEstimada}%</Badge></div>
+                  )}
                 </div>
                 {!data.distancia_rota?.distancia_km && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
@@ -1540,21 +1555,23 @@ const recalcular = () => {
                     <span className="font-bold text-red-600">R$ {resultadoCotacaoExterna.custoOperacionalTotal}</span>
                   </div>
                 </div>
-                <div className="flex flex-col">
-                  <label className="mb-2 text-sm text-slate-500">Margem de Lucro (%)</label>
-                  <input
-                    type="number"
-                    className="border p-2 rounded"
-                    value={margemExterna}
-                    onChange={(e) => {
-                      const newMargin = Number(e.target.value);
-                      setMargemExterna(newMargin);
-                      const novoValor = resultadoCotacaoExterna.custoOperacionalTotal * (1 + (newMargin / 100));
-                      update('valores.valorFinal', novoValor);
-                      update('valores.lucroEstimado', novoValor - resultadoCotacaoExterna.custoOperacionalTotal);
-                    }}
-                  />
-                </div>
+                {podeVerMargem && (
+                  <div className="flex flex-col">
+                    <label className="mb-2 text-sm text-slate-500">Margem de Lucro (%)</label>
+                    <input
+                      type="number"
+                      className="border p-2 rounded"
+                      value={margemExterna}
+                      onChange={(e) => {
+                        const newMargin = Number(e.target.value);
+                        setMargemExterna(newMargin);
+                        const novoValor = resultadoCotacaoExterna.custoOperacionalTotal * (1 + (newMargin / 100));
+                        update('valores.valorFinal', novoValor);
+                        update('valores.lucroEstimado', novoValor - resultadoCotacaoExterna.custoOperacionalTotal);
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4 rounded-md border border-emerald-100 bg-emerald-50/40 p-4">

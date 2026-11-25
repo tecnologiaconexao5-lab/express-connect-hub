@@ -507,7 +507,7 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
       </div>
 
       <div>
-        <Label className="text-[10px] text-muted-foreground">Referência / Instruções</Label>
+        <Label className="text-[10px] text-muted-foreground">Ponto de Referência / Portaria</Label>
         <Input 
           value={safeValue.referencia || ""} 
           onChange={(e) => handleChange("referencia", e.target.value)}

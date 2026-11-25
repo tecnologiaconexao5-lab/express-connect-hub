@@ -14,6 +14,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { TabelaValores, emptyTabelaValores, RegraFaixa, AdicionaisTaxas } from "./tabelaValoresTypes";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 const TIPOS_COBRANCA = [
   { id: 'saida', label: 'Por Saída (Valor fixo por operação)' },
@@ -44,6 +45,7 @@ const Field = ({ label, children, className = "" }: any) => (
 );
 
 export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: Props) {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [data, setData] = useState<TabelaValores>(tabela || emptyTabelaValores());
   const [isSaving, setIsSaving] = useState(false);
   const readOnly = modo === "ver";
@@ -353,7 +355,7 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                                  </div>
                                  {cfg.valorBase > 0 && cfg.percentualCliente > 0 && (
                                     <div className="bg-blue-50 border border-blue-100 rounded p-2 text-[10px] text-blue-800">
-                                       <span className="font-bold">Previsão:</span> Cliente R$ {(cfg.valorBase * cfg.percentualCliente / 100).toFixed(2)} | Prestador R$ {(cfg.valorBase * cfg.percentualCliente / 100 * cfg.percentualPrestador / 100).toFixed(2)} | Margem R$ {((cfg.valorBase * cfg.percentualCliente / 100) - (cfg.valorBase * cfg.percentualCliente / 100 * cfg.percentualPrestador / 100)).toFixed(2)}
+                                       <span className="font-bold">Previsão:</span> Cliente R$ {(cfg.valorBase * cfg.percentualCliente / 100).toFixed(2)} | Prestador R$ {(cfg.valorBase * cfg.percentualCliente / 100 * cfg.percentualPrestador / 100).toFixed(2)}{podeVerMargem ? ` | Margem R$ ${((cfg.valorBase * cfg.percentualCliente / 100) - (cfg.valorBase * cfg.percentualCliente / 100 * cfg.percentualPrestador / 100)).toFixed(2)}` : ""}
                                     </div>
                                  )}
                               </div>

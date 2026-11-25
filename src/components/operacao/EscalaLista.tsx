@@ -3,6 +3,7 @@ import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterv
 import { ptBR } from "date-fns/locale";
 import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play, Edit, Package, BarChart3, Trash2, Hash } from "lucide-react";
 import { AlocacaoCancelamentoModal } from "./escala/AlocacaoCancelamentoModal";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,6 +97,7 @@ const CORES_STATUS: any = {
 };
 
 export default function EscalaLista() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [periodo, setPeriodo] = useState<Periodo>('semanal');
   const [modalOpen, setModalOpen] = useState(false);
@@ -2730,13 +2732,13 @@ export default function EscalaLista() {
                               <div className="flex justify-between items-center">
                                 <span className="text-slate-500 font-medium">Margem Bruta (R$):</span>
                                 <span className={`font-bold ${res.margem.valor >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                  R$ {res.margem.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  R$ {(podeVerMargem ? res.margem.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : "---")}
                                 </span>
                               </div>
                               <div className="flex justify-between items-center mt-0.5">
                                 <span className="text-slate-500 font-medium">Margem (%):</span>
                                 <span className={`font-bold ${res.margem.percentual >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                  {res.margem.percentual.toFixed(1)}%
+                                  {podeVerMargem ? res.margem.percentual.toFixed(1) : "---"}%
                                 </span>
                               </div>
                             </div>
@@ -3432,10 +3434,10 @@ export default function EscalaLista() {
                               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
                                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Margem</span>
                                 <p className={`text-3xl font-black mt-1 ${margemTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                  {margemTotal !== 0 ? 'R$ ' + formatar(margemTotal) : '—'}
+                                  {margemTotal !== 0 ? 'R$ ' + (podeVerMargem ? formatar(margemTotal) : "---") : '—'}
                                 </p>
                                 <span className={`text-xs font-semibold ${margemPct >= 20 ? 'text-emerald-500' : margemPct >= 0 ? 'text-amber-500' : 'text-red-500'}`}>
-                                  {margemPct.toFixed(1)}%
+                                  {podeVerMargem ? margemPct.toFixed(1) : "---"}%
                                 </span>
                               </div>
                               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
@@ -3457,7 +3459,7 @@ export default function EscalaLista() {
                             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
                               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Margem %</span>
                               <p className={`text-2xl font-black mt-1 ${margemPct >= 20 ? 'text-emerald-600' : margemPct >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                                {margemPct.toFixed(1)}%
+                                {podeVerMargem ? margemPct.toFixed(1) : "---"}%
                               </p>
                             </div>
                           </div>
@@ -3537,7 +3539,9 @@ export default function EscalaLista() {
                                   <Legend />
                                   <Line type="monotone" dataKey="cliente" name="Valor Cliente" stroke="#3b82f6" strokeWidth={2} dot={false} />
                                   <Line type="monotone" dataKey="repasse" name="Repasse" stroke="#f97316" strokeWidth={2} dot={false} />
-                                  <Line type="monotone" dataKey="margem" name="Margem" stroke="#10b981" strokeWidth={2} dot={false} />
+                                  {podeVerMargem && (
+                                    <Line type="monotone" dataKey="margem" name="Margem" stroke="#10b981" strokeWidth={2} dot={false} />
+                                  )}
                                 </LineChart>
                               </ResponsiveContainer>
                             </CardContent>

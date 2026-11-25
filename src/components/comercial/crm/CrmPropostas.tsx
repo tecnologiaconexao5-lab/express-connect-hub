@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -45,6 +46,7 @@ const FOLLOW_UP_CONFIG = [
 ];
 
 export default function CrmPropostas() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [modelos, setModelos] = useState<PropostaModelo[]>(MODELOS_MOCK);
   const [busca, setBusca] = useState("");
   const [filtroSegmento, setFiltroSegmento] = useState("todos");
@@ -94,9 +96,11 @@ export default function CrmPropostas() {
           <p className="text-xs text-muted-foreground">Gerencie modelos de proposta por nicho e envie automaticamente.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setSimuladorOpen(true)}>
-            <Star className="w-3.5 h-3.5 text-amber-500" /> Simulador de Lucro
-          </Button>
+          {podeVerMargem && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setSimuladorOpen(true)}>
+              <Star className="w-3.5 h-3.5 text-amber-500" /> Simulador de Lucro
+            </Button>
+          )}
           <Button size="sm" className="gap-1.5 text-xs" onClick={() => setDrawerNovo(true)}>
             <Plus className="w-3.5 h-3.5" /> Novo Modelo
           </Button>
@@ -267,7 +271,7 @@ export default function CrmPropostas() {
               </div>
             </div>
 
-            {sim.receita > 0 && (
+            {podeVerMargem && sim.receita > 0 && (
               <div className="space-y-3 p-4 bg-slate-50 rounded-xl border">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Receita Bruta:</span>

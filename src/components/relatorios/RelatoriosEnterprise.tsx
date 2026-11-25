@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import {
   FileText, Download, Filter, Truck, Users, DollarSign, TrendingUp, BarChart3, Building2, CreditCard, Wallet,
   Search, Check, ChevronsUpDown, MapPin, Clock, Percent, TrendingDown, Activity, Package, Route
@@ -128,7 +129,7 @@ const carregarLogoBase64 = async (): Promise<string | null> => {
   return null;
 };
 
-const generateExtratoPDF = async (data: ExtratoOS[], filtros: any) => {
+const generateExtratoPDF = async (data: ExtratoOS[], filtros: any, podeVerMargem = false) => {
   const doc = new jsPDF("landscape", "mm", "a4");
   const logo = await carregarLogoBase64();
   const logoDimensions = logo ? await getImageDimensions(logo) : { w: 0, h: 0 };
@@ -206,7 +207,7 @@ const generateExtratoPDF = async (data: ExtratoOS[], filtros: any) => {
     os.status,
     fmtFin(os.valorCliente),
     fmtFin(os.custoPrestador),
-    `${os.margemPct.toFixed(1)}%`
+    podeVerMargem ? `${os.margemPct.toFixed(1)}%` : "---"
   ]);
 
   autoTable(doc, {
@@ -262,7 +263,7 @@ const generateExtratoPDF = async (data: ExtratoOS[], filtros: any) => {
     { label: "TOTAL OS", valor: `${data.length}`, bg: [239, 246, 255] },
     { label: "RECEITA TOTAL", valor: fmtFin(totalReceita), bg: [255, 247, 237] },
     { label: "CUSTO TOTAL", valor: fmtFin(totalCusto), bg: [254, 242, 242] },
-    { label: "MARGEM MÉDIA", valor: `${margemMedia.toFixed(1)}%`, bg: [236, 253, 245] },
+    { label: "MARGEM MÉDIA", valor: `${podeVerMargem ? margemMedia.toFixed(1) : "---"}%`, bg: [236, 253, 245] },
   ].forEach((c, idx) => {
     const cx = margin + idx * (summaryW + 5);
     doc.setFillColor(c.bg[0], c.bg[1], c.bg[2]);
@@ -550,6 +551,7 @@ const generateRelatorioPrestadoresPDF = async (
 };
 
 export default function RelatoriosEnterprise() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [view, setView] = useState("extrato");
   const [filtros, setFiltros] = useState({
     dataInicio: "",
@@ -736,9 +738,9 @@ export default function RelatoriosEnterprise() {
             <TabsTrigger value="faturamento" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
               <Building2 className="w-4 h-4"/>Faturamento Cliente
             </TabsTrigger>
-            <TabsTrigger value="margem" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
+            {podeVerMargem && (<TabsTrigger value="margem" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
               <TrendingUp className="w-4 h-4"/>Margem Operação
-            </TabsTrigger>
+            </TabsTrigger>)}
             <TabsTrigger value="prestadores" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
               <Truck className="w-4 h-4"/>Prestadores
             </TabsTrigger>
@@ -813,7 +815,7 @@ export default function RelatoriosEnterprise() {
                 { label: "Total OS", value: filteredOS.length, color: "text-slate-700" },
                 { label: "Receita", value: fmtFin(totalReceita), color: "text-blue-700" },
                 { label: "Custo", value: fmtFin(totalCusto), color: "text-red-600" },
-                { label: "Margem Média", value: `${margemMedia.toFixed(1)}%`, color: margemMedia >= 0 ? "text-green-600" : "text-red-600" },
+                { label: "Margem Média", value: `${podeVerMargem ? margemMedia.toFixed(1) : "---"}%`, color: margemMedia >= 0 ? "text-green-600" : "text-red-600" },
               ].map((kpi, i) => (
                 <Card key={i} className="border shadow-sm">
                   <CardContent className="p-3">
@@ -823,7 +825,7 @@ export default function RelatoriosEnterprise() {
                 </Card>
               ))}
             </div>
-            <Button onClick={async () => await generateExtratoPDF(filteredOS, filtros)} className="gap-2 bg-orange-500 hover:bg-orange-600 ml-4">
+            <Button onClick={async () => await generateExtratoPDF(filteredOS, filtros, podeVerMargem)} className="gap-2 bg-orange-500 hover:bg-orange-600 ml-4">
               <Download className="w-4 h-4" />
               Gerar PDF
             </Button>
@@ -862,7 +864,7 @@ export default function RelatoriosEnterprise() {
                       </TableCell>
                       <TableCell className="text-right font-mono">{fmtFin(os.valorCliente)}</TableCell>
                       <TableCell className="text-right font-mono text-red-600">{fmtFin(os.custoPrestador)}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-green-600">{fmtFin(os.margem)} ({os.margemPct.toFixed(1)}%)</TableCell>
+                      <TableCell className="text-right font-mono font-semibold text-green-600">{podeVerMargem ? `${fmtFin(os.margem)} (${os.margemPct.toFixed(1)}%)` : "---"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -889,7 +891,7 @@ export default function RelatoriosEnterprise() {
             </div>
             <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-1 shadow-sm hover:shadow-md transition">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Margem Total</p>
-              <p className="text-2xl font-extrabold text-violet-500">{fmtFin(totalMargem)}</p>
+              <p className="text-2xl font-extrabold text-violet-500">{(podeVerMargem ? fmtFin(totalMargem) : "---")}</p>
               <p className="text-xs text-muted-foreground font-semibold">{margemMedia.toFixed(1)}% de margem</p>
             </div>
           </div>
@@ -1074,7 +1076,7 @@ export default function RelatoriosEnterprise() {
         </TabsContent>
 
         {/* MARGEM POR OPERAÇÃO */}
-        <TabsContent value="margem" className="space-y-4 pt-4">
+        {podeVerMargem && (<TabsContent value="margem" className="space-y-4 pt-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader><CardTitle className="text-sm">Margem por Operação (Dispersão)</CardTitle></CardHeader>
@@ -1127,7 +1129,7 @@ export default function RelatoriosEnterprise() {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
+        </TabsContent>)}
 
         {/* PRESTADORES */}
         <TabsContent value="prestadores" className="space-y-4 pt-4">

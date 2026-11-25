@@ -8,6 +8,7 @@ import { PremiumBadge } from './design-system/PremiumBadge'
 import { StatusDot } from './design-system/StatusDot'
 import { useRecrutamentoStore } from '../store/recrutamentoStore'
 import { useOperacoes } from '../hooks/useOperacoes'
+import { usePermissaoFinanceira } from '@/hooks/usePermissaoFinanceira'
 import { formatCurrency, formatDate, statusOperacaoColor, statusLabel, prioridadeColor, cn, formatPercent } from '../utils/cn'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -19,6 +20,7 @@ interface DetalhesOperacaoSheetProps {
 }
 
 export function DetalhesOperacaoSheet({ operacaoId, open, onOpenChange }: DetalhesOperacaoSheetProps) {
+  const { podeVerMargem } = usePermissaoFinanceira()
   const { operacoes } = useRecrutamentoStore()
   const { atualizarStatus } = useOperacoes()
   const [showGerador, setShowGerador] = useState(false)
@@ -149,12 +151,12 @@ export function DetalhesOperacaoSheet({ operacaoId, open, onOpenChange }: Detalh
             {op.financeiro.percentualPrestador > 0 && (
               <InfoRow icon={<Percent className="w-4 h-4" />} label="% Prestador" value={formatPercent(op.financeiro.percentualPrestador)} />
             )}
-            {op.financeiro.margemTransportadora > 0 && (
+            {podeVerMargem && op.financeiro.margemTransportadora > 0 && (
               <InfoRow icon={<Percent className="w-4 h-4" />} label="Margem Transportadora" value={formatPercent(op.financeiro.margemTransportadora)} />
             )}
             <InfoRow icon={<DollarSign className="w-4 h-4" />} label="Receita Líquida" value={formatCurrency(op.financeiro.receitaLiquida)} />
-            <InfoRow icon={<DollarSign className="w-4 h-4" />} label="Lucro Total" value={formatCurrency(op.financeiro.lucroTotal)} />
-            <InfoRow icon={<Percent className="w-4 h-4" />} label="Margem" value={formatPercent(op.financeiro.margem)} />
+            {podeVerMargem && <InfoRow icon={<DollarSign className="w-4 h-4" />} label="Lucro Total" value={formatCurrency(op.financeiro.lucroTotal)} />}
+            {podeVerMargem && <InfoRow icon={<Percent className="w-4 h-4" />} label="Margem" value={formatPercent(op.financeiro.margem)} />}
             <InfoRow icon={<DollarSign className="w-4 h-4" />} label="Franquia KM" value={String(op.financeiro.franquiaKm)} />
             <InfoRow icon={<DollarSign className="w-4 h-4" />} label="KM Excedente" value={formatCurrency(op.financeiro.valorKmExcedente)} />
             <InfoRow icon={<Calendar className="w-4 h-4" />} label="Forma Pagamento" value={op.financeiro.formaPagamento || '---'} />

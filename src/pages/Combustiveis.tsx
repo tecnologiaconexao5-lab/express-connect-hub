@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Fuel, TrendingUp, TrendingDown, Minus, Clock, Settings, Search, FileText, AlertTriangle, Info, MapPin, SlidersHorizontal, ArrowRight, Zap } from "lucide-react";
+import { Fuel, TrendingUp, TrendingDown, Minus, Clock, Settings, Search, FileText, AlertTriangle, Info, MapPin, SlidersHorizontal, ArrowRight, Zap, CheckCircle, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +29,7 @@ function getPrecoComb(comb: Record<string, any>, nome: string): number {
 }
 
 export default function Combustiveis() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "dashboard";
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
@@ -233,7 +235,7 @@ export default function Combustiveis() {
                  </CardContent>
               </Card>
 
-              <Card className="border-2 border-indigo-100 bg-indigo-50/20">
+              {podeVerMargem && (<Card className="border-2 border-indigo-100 bg-indigo-50/20">
                  <CardHeader className="pb-4">
                     <CardTitle className="text-indigo-900 flex items-center gap-2"><SlidersHorizontal className="w-5 h-5"/> Simulador Tático de Margem</CardTitle>
                     <CardDescription>E se o Diesel subir repentinamente? Como isso afeta o mês?</CardDescription>
@@ -272,7 +274,7 @@ export default function Combustiveis() {
                        </div>
                     </div>
                  </CardContent>
-              </Card>
+              </Card>)}
             </div>
            )}
          </TabsContent>

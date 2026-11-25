@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import PaginationBar from "@/components/ui/PaginationBar";
 import { montarMargens, resumirMargens, type MargemOS, type OsInfo, type ComposicaoRow } from "@/helpers/margemOperacionalHelper";
 import { supabase } from "@/lib/supabase";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
+import { MargemGate } from "@/components/auth/MargemGate";
 
 const fmtFin = (v: number) => (Number.isFinite(v) ? v : 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${(Number.isFinite(v) ? v * 100 : 0).toFixed(1)}%`;
@@ -14,6 +16,7 @@ const fmtPct = (v: number) => `${(Number.isFinite(v) ? v * 100 : 0).toFixed(1)}%
 interface MargemOSRow extends MargemOS {}
 
 export default function MargemOperacional() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [margens, setMargens] = useState<MargemOS[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +86,10 @@ export default function MargemOperacional() {
   }, [margens, page]);
 
   const { receitaTotal, custoTotal, margemTotal, margemMedia } = useMemo(() => resumirMargens(margens), [margens]);
+
+  if (!podeVerMargem) {
+    return <MargemGate titulo="Rentabilidade e Margem Operacional" />;
+  }
 
   return (
     <div className="space-y-6">

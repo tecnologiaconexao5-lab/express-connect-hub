@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BarChart, Bar, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { calcularStatusEfetivo, hojeSP } from "@/helpers/statusVencimento";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -46,6 +47,7 @@ const KpiCard = ({ title, value, icon: Icon, colorClass, sub, trend, navigate: n
 const TabFinanceiro = () => {
   const navigate = useNavigate();
   const { filters } = useDashboardFilters();
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [loading, setLoading] = useState(true);
   const [financeiro, setFinanceiro] = useState({
     aFaturar: 0, faturado: 0,
@@ -204,7 +206,7 @@ const TabFinanceiro = () => {
     { nome: "Recebido", valor: financeiro.recebido, fill: CORES[0] },
     { nome: "A Pagar", valor: financeiro.aPagar, fill: CORES[2] },
     { nome: "Pago", valor: financeiro.pago, fill: CORES[3] },
-    { nome: "Lucro", valor: lucroB, fill: CORES[4] },
+    ...(podeVerMargem ? [{ nome: "Lucro", valor: lucroB, fill: CORES[4] }] : []),
   ];
 
   return (
@@ -226,8 +228,12 @@ const TabFinanceiro = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard title="A Pagar" value={fmt(financeiro.aPagar)} icon={ArrowUpCircle} colorClass="text-rose-500" trend="down" />
           <KpiCard title="Pago" value={fmt(financeiro.pago)} icon={Landmark} colorClass="text-emerald-600" />
-          <KpiCard title="Lucro Bruto" value={fmt(lucroB)} icon={PiggyBank} colorClass={lucroB >= 0 ? "text-emerald-500" : "text-rose-500"} trend={lucroB >= 0 ? "up" : "down"} />
-          <KpiCard title="Margem Líquida" value={`${margemPct.toFixed(1)}%`} icon={Percent} colorClass={margemPct >= 15 ? "text-emerald-500" : "text-amber-500"} />
+          {podeVerMargem && (
+            <KpiCard title="Lucro Bruto" value={fmt(lucroB)} icon={PiggyBank} colorClass={lucroB >= 0 ? "text-emerald-500" : "text-rose-500"} trend={lucroB >= 0 ? "up" : "down"} />
+          )}
+          {podeVerMargem && (
+            <KpiCard title="Margem Líquida" value={`${margemPct.toFixed(1)}%`} icon={Percent} colorClass={margemPct >= 15 ? "text-emerald-500" : "text-amber-500"} />
+          )}
         </div>
       </div>
 
@@ -336,7 +342,9 @@ const TabFinanceiro = () => {
                   <Tooltip formatter={(v: number) => fmt(v)} contentStyle={ttStyle} />
                   <Bar dataKey="receita" name="Receita" fill={CORES[0]} radius={[2, 2, 0, 0]} opacity={0.8} />
                   <Bar dataKey="custo" name="Custo" fill={CORES[2]} radius={[2, 2, 0, 0]} opacity={0.8} />
-                  <Line type="monotone" dataKey="margem" name="Margem" stroke={CORES[4]} strokeWidth={2} dot={{ r: 3 }} />
+                  {podeVerMargem && (
+                    <Line type="monotone" dataKey="margem" name="Margem" stroke={CORES[4]} strokeWidth={2} dot={{ r: 3 }} />
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (

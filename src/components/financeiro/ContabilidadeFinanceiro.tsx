@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { BookOpen, Search, Download, Plus, FileSpreadsheet, Lock, AlignJustify, UploadCloud, Banknote, Briefcase, CheckCircle, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export default function ContabilidadeFinanceiro() {
+   const { podeVerMargem } = usePermissaoFinanceira();
    const [aba, setAba] = useState("plano");
 
    return (
@@ -104,7 +106,9 @@ export default function ContabilidadeFinanceiro() {
                    <div className="flex justify-between items-center pl-8 text-slate-400"><span>(-) Impostos s/ Serviços (ICMS, ISS, PIS/COFINS)</span><span>({fmtFin(61000)})</span></div>
                    <div className="flex justify-between items-center border-t border-slate-700 pt-2"><span className="text-blue-300 font-bold">2. RECEITA OPERACIONAL LÍQUIDA</span><span className="font-bold">{fmtFin(397000)}</span></div>
                    <div className="flex justify-between items-center pl-8 text-slate-400 mt-4"><span>(-) CPV (Custos Prestadores, Combustível, Pedágio)</span><span className="text-red-300">({fmtFin(210000)})</span></div>
-                   <div className="flex justify-between items-center border-t border-slate-700 pt-2"><span className="text-green-400 font-bold">3. LUCRO BRUTO GERENCIAL</span><span className="font-bold">{fmtFin(187000)}</span></div>
+                   {podeVerMargem && (
+                    <div className="flex justify-between items-center border-t border-slate-700 pt-2"><span className="text-green-400 font-bold">3. LUCRO BRUTO GERENCIAL</span><span className="font-bold">{fmtFin(187000)}</span></div>
+                  )}
                    
                    <div className="flex justify-between items-center pl-8 text-slate-400 mt-4"><span>(-) Despesas Administrativas e Ocupação</span><span>({fmtFin(48000)})</span></div>
                    <div className="flex justify-between items-center pl-8 text-slate-400"><span>(-) Despesas Comerciais e Marketing</span><span>({fmtFin(14000)})</span></div>

@@ -96,6 +96,7 @@ import {
 } from "@/services/mobile/osMobileService";
 import type { DadosEmpresaFatura } from "@/services/financeiro/faturaService";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { toClienteInsert } from "@/lib/dbMappers";
 import { gerarMensagemComprovantePOD } from "@/lib/podComprovante";
 import { limparCacheHistoricoEnderecos, salvarEnderecoFavoritoCliente } from "@/services/clientes/historicoEnderecosCliente";
@@ -873,6 +874,7 @@ function EtapaNovaOSHeader({
 }
 
 function NovaOSView({ onAbrirEmAberto }: { onAbrirEmAberto?: () => void }) {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [etapa, setEtapa] = useState<EtapaNovaOS>(1);
   const [osCriada, setOsCriada] = useState<OSMobileLista | null>(null);
   const [clienteId, setClienteId] = useState<string | null>(null);
@@ -2362,10 +2364,18 @@ function NovaOSView({ onAbrirEmAberto }: { onAbrirEmAberto?: () => void }) {
         </div>
 
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-          <LinhaResumo label="Margem prevista" value={fmtBRL(margem)} destaque />
-          <p className="mt-1 text-[10px] text-emerald-700">
-            Receita {fmtBRL(totalCliente)} - custo {fmtBRL(custoPrestadorFinal)}
-          </p>
+          {podeVerMargem ? (
+            <>
+              <LinhaResumo label="Margem prevista" value={fmtBRL(margem)} destaque />
+              <p className="mt-1 text-[10px] text-emerald-700">
+                Receita {fmtBRL(totalCliente)} - custo {fmtBRL(custoPrestadorFinal)}
+              </p>
+            </>
+          ) : (
+            <p className="text-[11px] font-semibold text-emerald-700">
+              Receita e margem visíveis apenas para o Administrador Geral.
+            </p>
+          )}
         </div>
       </SecaoMobile>
 

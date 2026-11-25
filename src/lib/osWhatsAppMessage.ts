@@ -18,6 +18,7 @@ export interface PontoEnderecoMensagem {
   nomeLocal?: string;
   logradouro?: string;
   numero?: string;
+  complemento?: string;
   endereco?: string;
   bairro?: string;
   cidade?: string;
@@ -41,6 +42,7 @@ export interface PontoEnderecoMensagem {
   contato_telefone?: string;
   material?: string;
   instrucoes?: string;
+  referencia?: string;
   observacoes?: string;
   observacaoPonto?: string;
   volumes?: number | string;
@@ -232,7 +234,11 @@ const primeiroNaoVazio = (...valores: unknown[]): string => {
 
 /** Endereço completo (com número) — usado na orientação privada ao motoboy. */
 const enderecoCompleto = (e: PontoEnderecoMensagem): string => {
-  const linha1 = [String(e?.logradouro || "").trim(), String(e?.numero || "").trim()]
+  const linha1 = [
+    String(e?.logradouro || "").trim(),
+    String(e?.numero || "").trim(),
+    String(e?.complemento || "").trim(),
+  ]
     .filter(Boolean)
     .join(", ");
   const linha2 = [String(e?.bairro || "").trim(), [e?.cidade, e?.estado].filter(Boolean).join("/")]
@@ -268,7 +274,12 @@ const materialPonto = (e: PontoEnderecoMensagem, data: DadosMensagemMotoboy): st
   primeiroNaoVazio(e?.material, e?.volumes, data?.volumes);
 
 const instrucoesPonto = (e: PontoEnderecoMensagem): string =>
-  primeiroNaoVazio(e?.instrucoes, e?.observacoes, e?.observacaoPonto);
+  primeiroNaoVazio(
+    e?.instrucoes,
+    e?.referencia,
+    e?.observacoes,
+    e?.observacaoPonto,
+  );
 
 // ============================================================
 // TEMPLATE 1 — RESUMO DA ROTA (privacidade: sem número da porta)
@@ -276,6 +287,21 @@ const instrucoesPonto = (e: PontoEnderecoMensagem): string =>
 export const gerarMensagemWhatsAppMotoboy = (data: DadosMensagemMotoboy): string => {
   const origem = pontoOrigem(data);
   const destino = pontoDestino(data);
+  const pontos = pontosOrdenados(data);
+  const listaPontos = pontos.length > 0 ? pontos : [origem, destino];
+
+  // Suporta múltiplas paradas: 1ª = RET e demais = ENT.
+  const blocosPontos = listaPontos
+    .map((ponto, idx) => {
+      const retirada = idx === 0 || ehColeta(ponto);
+      return [
+        `${retirada ? "🟣" : "🟠"} *【 ${idx + 1} 】 ${retirada ? "RET" : "ENT"}* • ${ruaSemNumero(ponto)} - CEP: ${cepFormatado(ponto)}`,
+        `⏰ ${janela(ponto)}`,
+        `🗺️ ${linkMaps(ponto)}`,
+        "",
+      ];
+    })
+    .flat();
 
   return [
     "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
@@ -283,14 +309,7 @@ export const gerarMensagemWhatsAppMotoboy = (data: DadosMensagemMotoboy): string
     "",
     `*${bairroRota(origem)} ━➤ ${bairroRota(destino)}* | *${distanciaKm(data)} km*`,
     "",
-    `🟣 *【 1 】 RET* • ${ruaSemNumero(origem)} - CEP: ${cepFormatado(origem)}`,
-    `⏰ ${janela(origem)}`,
-    `🗺️ ${linkMaps(origem)}`,
-    "",
-    `🟠 *【 2 】 ENT* • ${ruaSemNumero(destino)} - CEP: ${cepFormatado(destino)}`,
-    `⏰ ${janela(destino)}`,
-    `🗺️ ${linkMaps(destino)}`,
-    "",
+    ...blocosPontos,
     "━━━━━━━━━━━━━━━━━",
     `💰 R$ ${fmtValor(data?.custoPrestador)} | ${formaPagamento(data)}`,
     "",
@@ -305,6 +324,8 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
   const origem = pontoOrigem(data);
   const destino = pontoDestino(data);
   const numeroOS = primeiroNaoVazio(data?.numeroOS, data?.osNumero, data?.numero);
+  const pontos = pontosOrdenados(data);
+  const listaPontos = pontos.length > 0 ? pontos : [origem, destino];
 
   // Ponto no padrão Conexão Express: `🟣 *【 1 】 RET* • Endereço...`
   const blocoPonto = (
@@ -324,6 +345,19 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
     "",
   ];
 
+  // Suporta múltiplas paradas: 1ª = RET e demais = ENT.
+  const blocosPontos = listaPontos
+    .map((ponto, idx) => {
+      const retirada = idx === 0 || ehColeta(ponto);
+      return blocoPonto(
+        retirada ? "🟣" : "🟠",
+        `${idx + 1} 】 ${retirada ? "RET" : "ENT"}`,
+        ponto,
+        retirada ? "RETIRAR" : "ENTREGAR",
+      );
+    })
+    .flat();
+
   return [
     "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
     `📋 *ORIENTAÇÃO DE EXECUÇÃO* — OS nº ${numeroOS}`,
@@ -333,8 +367,7 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
     "",
     `*${bairroRota(origem)} ━➤ ${bairroRota(destino)}* | *${distanciaKm(data)} km*`,
     "",
-    ...blocoPonto("🟣", "1 】 RET", origem, "RETIRAR"),
-    ...blocoPonto("🟠", "2 】 ENT", destino, "ENTREGAR"),
+    ...blocosPontos,
     "━━━━━━━━━━━━━━━━━",
     "📸 *COMPROVAÇÃO*",
     "Enviar o comprovante de entrega pelo WhatsApp após a conclusão.",
@@ -368,5 +401,95 @@ export const gerarMensagemWhatsAppClienteRastreio = (data: {
 // Compatibilidade — MODELO 1 (divulgação) aponta para o RESUMO DA ROTA.
 export const gerarMensagemOSGrupo = (data: DadosMensagemMotoboy): string =>
   gerarMensagemWhatsAppMotoboy(data);
+
+// ============================================================
+// TEMPLATE LIMPO — OS (sem excesso de emojis, sem linhas vazias/"—")
+// Exibe TODAS as paradas com: sequência, tipo, endereço completo (com
+// complemento), contato, telefone, janela e a Observação da Parada.
+// ============================================================
+const textoLimpo = (valor: unknown): string => {
+  const t = String(valor ?? "").trim();
+  return t && t !== "—" && t !== "-" ? t : "";
+};
+
+const rotuloTipoParada = (tipo?: string): string => {
+  const t = semAcento(tipo);
+  if (t.includes("coleta") || t.includes("retirada") || t === "origem") return "COLETA";
+  if (t.includes("devolu")) return "DEVOLUÇÃO";
+  if (t.includes("retorno")) return "RETORNO";
+  if (t.includes("apoio")) return "APOIO OPERACIONAL";
+  if (t.includes("entrega") && t.includes("retirada")) return "ENTREGA E RETIRADA";
+  if (t.includes("entrega") || t === "destino") return "ENTREGA";
+  return "PARADA";
+};
+
+const enderecoParadaCompleto = (e: PontoEnderecoMensagem): string => {
+  const logradouro = textoLimpo(e?.logradouro) ||
+    textoLimpo(String(e?.endereco || "").split(",")[0]);
+  const numero = textoLimpo(e?.numero);
+  const complemento = textoLimpo(e?.complemento);
+  const bairro = textoLimpo(e?.bairro);
+  const cidadeUf = [textoLimpo(e?.cidade), textoLimpo(e?.estado)]
+    .filter(Boolean)
+    .join("/");
+  const cep = textoLimpo(cepFormatado(e));
+
+  const ruaNumero = [logradouro, numero].filter(Boolean).join(", ");
+  return [ruaNumero, complemento, bairro, cidadeUf, cep]
+    .filter(Boolean)
+    .join(" - ");
+};
+
+export const gerarMensagemOSLimpa = (data: DadosMensagemMotoboy): string => {
+  const numeroOS = textoLimpo(data?.numeroOS || data?.osNumero || data?.numero);
+  const veiculo = textoLimpo(data?.veiculoTipo || data?.veiculo || data?.tipoVeiculo);
+  const km = distanciaKm(data);
+  const pontos = pontosOrdenados(data);
+
+  const linhas: string[] = [];
+  linhas.push(`CONEXÃO EXPRESS — OS${numeroOS ? ` nº ${numeroOS}` : ""}`);
+
+  const linhaRecursos = [
+    veiculo ? `Veículo: ${veiculo}` : "",
+    `Valor: R$ ${fmtValor(data?.custoPrestador)}`,
+    `Pagamento: ${formaPagamento(data)}`,
+  ].filter(Boolean);
+  if (linhaRecursos.length) linhas.push(linhaRecursos.join(" | "));
+
+  if (km !== "—") linhas.push(`Distância total: ${km} km`);
+  linhas.push("");
+
+  if (pontos.length === 0) {
+    const endereco = textoLimpo(data?.enderecos?.[0]?.endereco);
+    if (endereco) linhas.push(`Endereço: ${endereco}`);
+  } else {
+    pontos.forEach((ponto, idx) => {
+      linhas.push(`${idx + 1}) ${rotuloTipoParada(String(ponto?.tipo || ""))}`);
+
+      const endereco = enderecoParadaCompleto(ponto);
+      const contato = textoLimpo(contatoPonto(ponto));
+      const telefone = textoLimpo(telefonePonto(ponto));
+      const janelaTexto = textoLimpo(janela(ponto));
+      const observacao = textoLimpo(instrucoesPonto(ponto));
+
+      if (endereco) linhas.push(`Endereço: ${endereco}`);
+      if (contato) linhas.push(`Contato: ${contato}`);
+      if (telefone) linhas.push(`Telefone: ${telefone}`);
+      if (janelaTexto) linhas.push(`Janela: ${janelaTexto}`);
+      if (observacao) linhas.push(`Observação: ${observacao}`);
+      linhas.push("");
+    });
+  }
+
+  const observacaoGeral = textoLimpo(atencao(data));
+  if (observacaoGeral) {
+    linhas.push(`Observação Geral da OS: ${observacaoGeral}`);
+  }
+
+  return linhas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+};
+
+/** Alias para uso direto no formulário desktop. */
+export const gerarMensagemWhatsAppOSLimpa = gerarMensagemOSLimpa;
 
 export default gerarMensagemWhatsAppMotoboy;

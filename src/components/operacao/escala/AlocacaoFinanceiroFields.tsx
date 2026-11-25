@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira"
 
 export interface EscalaFinanceiroForm {
   valorCliente: number
@@ -56,6 +57,7 @@ export function AlocacaoFinanceiroFields({
   onFinanceiroChange,
   resumo = { valorBase: 0, totalAdicionais: 0, totalDescontos: 0, total: 0, totalPrestador: 0, totalCliente: 0, margem: 0, margemPercentual: undefined },
 }: AlocacaoFinanceiroFieldsProps) {
+  const { podeVerMargem } = usePermissaoFinanceira()
   const set = (updater: (prev: EscalaFinanceiroForm) => EscalaFinanceiroForm) => {
     onFinanceiroChange(updater)
   }
@@ -245,11 +247,11 @@ export function AlocacaoFinanceiroFields({
             <div className={`border rounded-lg p-2 mt-2 text-center ${(resumo.margem ?? 0) >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
               <p className="text-[10px] font-bold text-slate-400 uppercase">Resultado da Operação</p>
               <p className={`text-base font-black mt-0.5 ${(resumo.margem ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                R$ {fmt(resumo.margem)}
-                {resumo.margemPercentual != null && <span className="text-[11px] ml-1">({resumo.margemPercentual}%)</span>}
+                R$ {podeVerMargem ? fmt(resumo.margem) : "---"}
+                {resumo.margemPercentual != null && <span className="text-[11px] ml-1">({podeVerMargem ? resumo.margemPercentual : "---"}%)</span>}
               </p>
               <div className="mt-1 flex justify-center gap-1">
-                {resumo.margemPercentual && (
+                {podeVerMargem && resumo.margemPercentual && (
                   <>
                     {Number(resumo.margemPercentual) >= 20 ? (
                       <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[9px]">

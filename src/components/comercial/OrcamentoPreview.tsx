@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { gerarPdfOrcamento } from "@/components/comercial/orcamentoPdf";
 import type { Orcamento, OrcamentoStatus } from "./types";
 import { STATUS_CONFIG } from "./types";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 interface Props {
   orcamento: Orcamento;
@@ -23,6 +24,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function OrcamentoPreview({ orcamento, onVoltar }: Props) {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const copiarTexto = () => {
     const texto = `
       ORÇAMENTO: ${orcamento.numero}
@@ -133,12 +135,14 @@ STATUS: ${STATUS_LABELS[orcamento.status] || orcamento.status}
                   <p className="text-xs text-muted-foreground">Custo Prestador</p>
                   <p className="text-2xl font-bold text-orange-600">{formatarValor(orcamento.valores?.custoEstimado)}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Margem</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {(((orcamento.valores?.valorFinal || 0) - (orcamento.valores?.custoEstimado || 0)) / (orcamento.valores?.valorFinal || 1) * 100).toFixed(1)}%
-                  </p>
-                </div>
+                {podeVerMargem && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Margem</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {(((orcamento.valores?.valorFinal || 0) - (orcamento.valores?.custoEstimado || 0)) / (orcamento.valores?.valorFinal || 1) * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

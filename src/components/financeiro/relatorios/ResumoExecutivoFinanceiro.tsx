@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { DollarSign, TrendingUp, TrendingDown, RefreshCw, FileText, Download } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import {
   calcularResumoFinanceiro,
   resumirPorCliente,
@@ -31,6 +32,7 @@ const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currenc
 const fmtData = (d?: string | null) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
 
 export default function ResumoExecutivoFinanceiro() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const hoje = new Date();
   const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -143,7 +145,9 @@ export default function ResumoExecutivoFinanceiro() {
     { label: "Pago (realizado)", value: fmtBRL(resumo.pagoRealizado), icon: TrendingDown, color: "text-rose-500" },
     { label: "Custo Prestadores", value: fmtBRL(resumo.custoPrestador), icon: TrendingUp, color: "text-violet-500" },
     { label: "Fluxo Líquido", value: fmtBRL(resumo.fluxoLiquido), icon: TrendingUp, color: resumo.fluxoLiquido >= 0 ? "text-emerald-500" : "text-rose-500" },
-    { label: "Margem Indicativa", value: fmtBRL(resumo.margemIndicativa), icon: TrendingUp, color: resumo.margemIndicativa >= 0 ? "text-green-600" : "text-red-600" },
+    ...(podeVerMargem
+      ? [{ label: "Margem Indicativa", value: fmtBRL(resumo.margemIndicativa), icon: TrendingUp, color: resumo.margemIndicativa >= 0 ? "text-green-600" : "text-red-600" }]
+      : []),
   ];
 
   return (
@@ -195,7 +199,7 @@ export default function ResumoExecutivoFinanceiro() {
                 ["Pago (realizado)", fmtBRL(resumo.pagoRealizado)],
                 ["Custo Prestadores", fmtBRL(resumo.custoPrestador)],
                 ["Fluxo Líquido", fmtBRL(resumo.fluxoLiquido)],
-                ["Margem Indicativa", fmtBRL(resumo.margemIndicativa)],
+                ...(podeVerMargem ? [["Margem Indicativa", fmtBRL(resumo.margemIndicativa)]] : []),
               ])}>
                 <Download className="w-4 h-4" /> CSV
               </Button>

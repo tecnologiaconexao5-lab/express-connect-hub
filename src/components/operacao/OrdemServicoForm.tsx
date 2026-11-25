@@ -89,8 +89,7 @@ import {
 import { PERFORMANCE_CORES, type CategoriaPerformance } from "@/lib/performancePrestador";
 import { registrarConviteOS } from "@/services/recrutamento/convitesOSService";
 import { Users, Network } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { podeVerReceitaEMargem } from "@/lib/permissoes";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import type { PedagioInfo } from "@/services/maps/types";
 import { ColetaReversaFields, emptyReversaFields, type ReversaFields } from "./ColetaReversaFields";
 import { disparaEventoAutomacao } from "@/services/integracoes/automacaoCentralService";
@@ -249,8 +248,6 @@ const validarPendenciasFiscais = (
 
   return pendencias;
 };
-
-interface SugestaoVeiculo { tipo: string; motivo: string; }
 
 interface DocumentoOS {
   id: string;
@@ -598,10 +595,9 @@ const obterDocStepsOS = (
   const valoresOk = (data.valorCliente || 0) > 0;
   return [
     { value: "identificacao", label: "Identificação", icon: FileText, done: identOk, pending: !identOk },
-    { value: "carga", label: "Carga", icon: Package, done: cargaOk, pending: !cargaOk },
-    { value: "veiculo", label: "Veículo", icon: Truck, done: veiculoOk, pending: !veiculoOk },
+    { value: "carga", label: "Carga & Veículo", icon: Package, done: cargaOk && veiculoOk, pending: !(cargaOk && veiculoOk) },
     { value: "enderecos", label: "Rotas e Paradas", icon: MapPin, done: rotasOk, pending: !rotasOk },
-    { value: "valores", label: "Torre & Financeiro", icon: CreditCard, done: valoresOk, pending: (alertasCubagem || []).length > 0 || (pendenciasFiscais || []).length > 0 },
+    { value: "valores", label: "Alocação & Financeiro", icon: CreditCard, done: valoresOk, pending: (alertasCubagem || []).length > 0 || (pendenciasFiscais || []).length > 0 },
     { value: "historico", label: "Histórico", icon: Clock, done: (data.historico || []).length > 0 },
   ];
 };
@@ -789,8 +785,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   // ETAPA-1: rascunho local por OS/modo (sessionStorage) — restaurado antes do estado inicial
   const draftKey = getDraftKey(os?.id, modo);
   // UPGRADE-REGRAS: permissão de visualização de Receita/Margem (somente admin máximo)
-  const { user } = useAuth();
-  const verReceitaMargem = podeVerReceitaEMargem(user?.role);
+  const { podeVerMargem: verReceitaMargem } = usePermissaoFinanceira();
   // AUTO-SAVE — restaura o rascunho local (localStorage) tanto na edição quanto
   // na "Nova OS": ao trocar de aba/menu e voltar, o progresso é preservado.
   // Rascunhos expirados (TTL 48h) são descartados automaticamente.
@@ -914,6 +909,20 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [enviandoWhatsApp, setEnviandoWhatsApp] = useState(false);
   const [enviarWhatsAppAuto, setEnviarWhatsAppAuto] = useState(false);
   const [formDirty, setFormDirty] = useState(false);
+  // Etapa 5 — Registro Manual de Entrega (Prestador sem App)
+  const [manualEntrega, setManualEntrega] = useState(() => {
+    const agora = new Date();
+    return {
+      recebedor: "",
+      documento: "",
+      funcao: "Portaria",
+      data: agora.toISOString().split("T")[0],
+      hora: `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`,
+      observacao: "",
+    };
+  });
+  const [salvandoComprovanteManual, setSalvandoComprovanteManual] = useState(false);
+  const [comprovanteRefreshKey, setComprovanteRefreshKey] = useState(0);
   const initialDataRef = useRef<string>("");
   const readOnly = modo === "ver" || (!!os && (os.status === "finalizada" || os.status === "cancelada"));
 
@@ -972,7 +981,11 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [gerandoMDFe, setGerandoMDFe] = useState(false);
   const [docFiscalExistente, setDocFiscalExistente] = useState<{ nfse: boolean; nfseId?: string; cte: boolean; cteId?: string; mdfe: boolean; mdfeId?: string }>({ nfse: false, cte: false, mdfe: false });
   const [pendenciasFiscais, setPendenciasFiscais] = useState<string[]>([]);
-  const [abaAtiva, setAbaAtiva] = useState<string>(() => rascunhoInicial?.abaAtiva || "identificacao");
+  const [abaAtiva, setAbaAtiva] = useState<string>(() => {
+    const aba = rascunhoInicial?.abaAtiva || "identificacao";
+    // Rascunhos antigos podem apontar para a etapa "veiculo" (agora fundida em "carga").
+    return aba === "veiculo" ? "carga" : aba;
+  });
   const [trackingToken, setTrackingToken] = useState<string | null>(null);
   const [gerandoLink, setGerandoLink] = useState(false);
   const [showFiscalPreview, setShowFiscalPreview] = useState(false);
@@ -1621,7 +1634,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     })();
   }, [data.id]);
 
-  // TEMPLATE 1 — RESUMO DA ROTA (privacidade: sem número da porta).
+  // TEMPLATE 1 — RESUMO DA ROTA (oferta rápida ao prestador).
   const copiarWhatsApp = () => {
     const msg = gerarMensagemWhatsAppOS(data);
     navigator.clipboard.writeText(msg);
@@ -1629,8 +1642,13 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   };
 
   // TEMPLATE 2 — ORIENTAÇÃO DE EXECUÇÃO (OS completa).
+  const mensagemOrientacaoExecucao = (): string =>
+    gerarMensagemOrientacaoExecucao(
+      data as unknown as Parameters<typeof gerarMensagemOrientacaoExecucao>[0],
+    );
+
   const copiarOrientacaoExecucao = () => {
-    const msg = gerarMensagemOrientacaoExecucao(data);
+    const msg = mensagemOrientacaoExecucao();
     navigator.clipboard.writeText(msg);
     toast.success("Orientação de execução copiada!");
   };
@@ -1668,6 +1686,112 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     setGerandoLink(false);
   };
 
+  // ETAPA 5 — Registro Manual de Entrega (Prestador sem App).
+  // Persiste na OS (recebedor/localização) e no POD oficial (entregas_protocolo)
+  // quando houver alocação vinculada — sem depender do App Flutter.
+  const registrarComprovacaoManual = async () => {
+    if (!data.id) {
+      toast.error("Salve a OS antes de registrar a comprovação manual.");
+      return;
+    }
+    if (!manualEntrega.recebedor.trim()) {
+      toast.error("Informe o nome do recebedor.");
+      return;
+    }
+    if (!manualEntrega.data || !manualEntrega.hora) {
+      toast.error("Informe a data e a hora da entrega.");
+      return;
+    }
+
+    setSalvandoComprovanteManual(true);
+    try {
+      const dataHoraEntrega = new Date(
+        `${manualEntrega.data}T${manualEntrega.hora}:00`,
+      ).toISOString();
+
+      const localizacao = {
+        registrado_manualmente: true,
+        recebedor_nome: manualEntrega.recebedor.trim(),
+        recebedor_documento: manualEntrega.documento.trim() || null,
+        funcao_vinculo: manualEntrega.funcao || null,
+        data_entrega: manualEntrega.data,
+        hora_entrega: manualEntrega.hora,
+        observacao: manualEntrega.observacao.trim() || null,
+        registrado_em: new Date().toISOString(),
+      };
+
+      const { error: osError } = await supabase
+        .from("ordens_servico")
+        .update({
+          recebedor_nome: manualEntrega.recebedor.trim(),
+          recebedor_documento: manualEntrega.documento.trim() || null,
+          localizacao_entrega_json: localizacao,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", data.id);
+      if (osError) throw osError;
+
+      // POD oficial (opcional): exige alocação da OS. Se não houver, ou se o
+      // RLS/serviço impedir, a comprovação permanece registrada na própria OS.
+      try {
+        const { data: alocacao } = await supabase
+          .from("alocacoes_escala")
+          .select("id, prestador_id")
+          .eq("ordem_servico_id", data.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (alocacao?.id) {
+          const podPayload = {
+            alocacao_id: alocacao.id,
+            prestador_id: alocacao.prestador_id || null,
+            ordem_servico_id: data.id,
+            nome_recebedor: manualEntrega.recebedor.trim(),
+            documento_recebedor: manualEntrega.documento.trim() || null,
+            receiver_relationship: manualEntrega.funcao || null,
+            observacao: manualEntrega.observacao.trim() || null,
+            data_hora_entrega: dataHoraEntrega,
+            status: "entregue",
+          };
+
+          const { data: existente } = await supabase
+            .from("entregas_protocolo")
+            .select("id")
+            .eq("alocacao_id", alocacao.id)
+            .maybeSingle();
+
+          if (existente?.id) {
+            const { error: upErr } = await supabase
+              .from("entregas_protocolo")
+              .update(podPayload)
+              .eq("id", existente.id);
+            if (upErr) throw upErr;
+          } else {
+            const { error: insErr } = await supabase
+              .from("entregas_protocolo")
+              .insert([podPayload]);
+            if (insErr) throw insErr;
+          }
+        }
+      } catch (podError) {
+        console.warn(
+          "[OrdemServico] POD manual não gravado (comprovação salva na OS):",
+          podError,
+        );
+      }
+
+      setComprovanteRefreshKey((k) => k + 1);
+      toast.success("Comprovação manual registrada na OS.");
+    } catch (e) {
+      toast.error(
+        "Não foi possível registrar a comprovação: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    } finally {
+      setSalvandoComprovanteManual(false);
+    }
+  };
+
   const enviarWhatsAppPrestador = async () => {
     if (!data.prestador) {
       toast.error("Selecione um prestador antes de enviar via WhatsApp");
@@ -1697,7 +1821,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       }
 
       const telefone = prestadores[0].telefone.replace(/\D/g, '');
-      const msg = gerarMensagemWhatsAppOS(data);
+      const msg = mensagemOrientacaoExecucao();
 
       const result = await WhatsAppEnviar(telefone, msg);
 
@@ -2199,7 +2323,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
 
           if (prestadores && prestadores.length > 0 && prestadores[0].telefone) {
             const telefone = prestadores[0].telefone.replace(/\D/g, '');
-            const msg = gerarMensagemWhatsAppOS(data);
+            const msg = mensagemOrientacaoExecucao();
             const result = await WhatsAppEnviar(telefone, msg);
             
             if (result.ok) {
@@ -2508,18 +2632,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
 
       {/* Resumo horizontal do workspace — indicadores rápidos da etapa atual */}
       <div className="px-4 pb-3 pt-3 sm:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <MetaChip icon={Gauge} label="Prioridade" value={obterPrioridadeLabel(data.prioridade)} tone={data.prioridade === "urgente" ? "red" : data.prioridade === "baixa" ? "slate" : "blue"} />
-          <MetaChip icon={CheckCircle} label="Status Op." value={STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label} tone={obterToneGlobal(data.status)} />
-          <MetaChip icon={CreditCard} label="Status Fin." value={(data.statusFaturamento || "N/I").toUpperCase()} tone={data.statusFaturamento === "faturada" || data.statusFaturamento === "paga" ? "green" : data.statusFaturamento === "a faturar" ? "amber" : "slate"} />
-          <MetaChip icon={Calendar} label="Programação" value={obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")} tone={diagnosticoEscala?.status === "sincronizada" ? "emerald" : diagnosticoEscala?.status?.startsWith("divergencia") ? "red" : "amber"} />
-          {ultimaOperacaoPrestador && (
-            <span className="ml-auto text-[10px] text-slate-400">
-              Última operação do prestador: {ultimaOperacaoPrestador.data ? formatarDataBR(ultimaOperacaoPrestador.data) : 'N/A'}
-              {verReceitaMargem && ultimaOperacaoPrestador.valor ? <> • R$ {ultimaOperacaoPrestador.valor.toFixed(2)}</> : null}
-            </span>
-          )}
-        </div>
+        
         {/* UPGRADE-REGRAS: cards de Receita/Margem restritos a admin máximo (demais perfis veem "---") */}
         <div className="mt-3 grid grid-cols-4 gap-3 md:grid-cols-7">
           <StatCard icon={DollarSign} label="Receita" value={verReceitaMargem ? `R$ ${(data.valorCliente || 0).toFixed(2)}` : "---"} tone={verReceitaMargem && data.valorCliente > 0 ? "blue" : "slate"} />
@@ -2677,361 +2790,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                 </div>
               </FormSectionCard>
 
-              {/* UPGRADE-REGRAS-DE-NEGOCIO — ALOCAÇÃO DE PRESTADOR em destaque no corpo principal
-                  (antes o campo ficava apenas na sidebar / etapa Torre & Financeiro) */}
-              <FormSectionCard
-                icon={User}
-                title="Alocação de Prestador"
-                description="Selecione manualmente ou use a Sugestão Inteligente (veículo compatível com a OS + região da coleta)."
-                contentClassName="space-y-4"
-              >
-                {/* ETAPA-3 — 3 modos de alocação: Cadastrado | Enviar para a Rede | Externo / Avulso */}
-                <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
-                  {([
-                    { id: "cadastrado", label: "Cadastrado", icon: UserCheck },
-                    { id: "rede", label: "Enviar para a Rede", icon: Network },
-                    { id: "externo", label: "Externo / Avulso", icon: UserPlus },
-                  ] as const).map((op) => {
-                    const Icone = op.icon;
-                    const ativo = modoAlocacao === op.id;
-                    return (
-                      <button
-                        key={op.id}
-                        type="button"
-                        onClick={() => selecionarModoAlocacao(op.id)}
-                        disabled={readOnly}
-                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                          ativo
-                            ? "bg-primary text-primary-foreground shadow-sm"
-                            : "text-slate-600 hover:bg-white hover:text-slate-900"
-                        } disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        <Icone className="h-3.5 w-3.5" />
-                        {op.label}
-                      </button>
-                    );
-                  })}
-                </div>
 
-                {modoAlocacao === "cadastrado" && (
-                  <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-2">
-                    <Field label="Prestador / Motorista">
-                      <SearchableSelect
-                        table="prestadores"
-                        labelField="nome_completo"
-                        valueField="nome_completo"
-                        searchFields={["nome_completo"]}
-                        filters={{ status: "ativo" }}
-                        value={emRede ? "" : data.prestador}
-                        onChange={handleSelecionarPrestador}
-                        disabled={readOnly || emRede}
-                      />
-                    </Field>
-                  </div>
-                  <Field label="Placa Alocada">
-                    <Input value={data.veiculoPlaca || ""} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value)} placeholder="ABC-1234" />
-                  </Field>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={buscarSugestoesPrestador}
-                    disabled={readOnly || buscandoSugestao}
-                    className="border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800"
-                  >
-                    {buscandoSugestao ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                    {buscandoSugestao ? "Buscando prestadores..." : "Sugerir Melhores Prestadores"}
-                  </Button>
-                  {data.prestador && (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                      Alocado: {data.prestador}
-                    </span>
-                  )}
-                  {emRede && (
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                      OS ativa na Rede de Prestadores
-                    </span>
-                  )}
-                </div>
-
-                {sugestoesPrestador.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Sugestões ordenadas por compatibilidade
-                    </p>
-                    {sugestoesPrestador.map((s, i) => (
-                      <div
-                        key={s.prestadorId}
-                        className={`flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center ${
-                          i === 0 ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-white"
-                        }`}
-                      >
-                        <span className="w-6 text-[12px] font-black text-slate-500">{i + 1}º</span>
-                        <div className="min-w-[180px] flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <p className="text-sm font-bold text-slate-800">{s.nome}</p>
-                            <Badge
-                              variant="outline"
-                              className={`text-[9px] font-bold ${PERFORMANCE_CORES[s.categoriaPerformance]}`}
-                            >
-                              {s.categoriaPerformance}
-                              {s.performanceScore != null ? ` · ${s.performanceScore}` : ""}
-                            </Badge>
-                          </div>
-                          <p className="text-[11px] text-slate-500">
-                            {s.veiculo?.tipo
-                              ? `${s.veiculo.tipo}${s.veiculo.placa ? ` · ${s.veiculo.placa}` : ""}`
-                              : "Sem veículo cadastrado"}
-                            {s.veiculo?.capacidadeKg ? ` · até ${s.veiculo.capacidadeKg} kg` : ""}
-                            {s.regiao ? ` · ${s.regiao}` : ""}
-                            {s.telefone ? ` · ${s.telefone}` : ""}
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {s.motivos.slice(0, 3).map((m, mi) => (
-                              <span key={mi} className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600">
-                                {m}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <Badge className={i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}>
-                          {Math.min(100, s.score)}% de compatibilidade
-                        </Badge>
-                        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[11px]"
-                            onClick={() => setPerfilMatch(s)}
-                          >
-                            <Eye className="mr-1 h-3 w-3" /> Ver Perfil
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[11px] border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                            onClick={() => solicitarDisponibilidadeMatch(s)}
-                          >
-                            <MessageCircle className="mr-1 h-3 w-3" /> WhatsApp
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[11px] border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                            disabled={enviandoConviteMatch === s.prestadorId}
-                            onClick={() => void enviarConviteAppMatch(s)}
-                          >
-                            {enviandoConviteMatch === s.prestadorId ? (
-                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                            ) : (
-                              <Send className="mr-1 h-3 w-3" />
-                            )}
-                            Convite App
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => handleSelecionarPrestador(s.nome, { id: s.prestadorId })}
-                            disabled={readOnly || emRede}
-                            className="h-7 bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
-                          >
-                            <UserCheck className="mr-1 h-3 w-3" /> Alocar
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                  </>
-                )}
-
-                <Dialog open={!!perfilMatch} onOpenChange={(open) => { if (!open) setPerfilMatch(null); }}>
-                  <DialogContent className="max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <UserCheck className="h-5 w-5 text-indigo-600" /> Perfil do parceiro sugerido
-                      </DialogTitle>
-                      <DialogDescription>
-                        Dados operacionais usados pelo motor de match. A IA apenas sugere — a alocação é sua decisão.
-                      </DialogDescription>
-                    </DialogHeader>
-                    {perfilMatch && (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex items-center justify-between">
-                          <p className="font-bold">{perfilMatch.nome}</p>
-                          <Badge className="bg-indigo-600 text-white">
-                            {perfilMatch.score}% de compatibilidade
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="rounded-lg bg-muted/40 p-2">
-                            <p className="text-[10px] uppercase text-muted-foreground">Veículo</p>
-                            <p className="font-semibold">{perfilMatch.veiculo?.tipo || "—"} {perfilMatch.veiculo?.placa || ""}</p>
-                            <p className="text-muted-foreground">
-                              {perfilMatch.veiculo?.capacidadeKg ? `${perfilMatch.veiculo.capacidadeKg} kg` : "Capacidade não informada"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-2">
-                            <p className="text-[10px] uppercase text-muted-foreground">Região</p>
-                            <p className="font-semibold">{perfilMatch.regiao || [perfilMatch.cidade, perfilMatch.uf].filter(Boolean).join(" - ") || "—"}</p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-2">
-                            <p className="text-[10px] uppercase text-muted-foreground">Telefone</p>
-                            <p className="font-semibold">{perfilMatch.telefone || perfilMatch.whatsapp || "—"}</p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-2">
-                            <p className="text-[10px] uppercase text-muted-foreground">E-mail</p>
-                            <p className="truncate font-semibold">{perfilMatch.email || "—"}</p>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Por que foi sugerido</p>
-                          <ul className="space-y-1">
-                            {perfilMatch.motivos.map((motivo) => (
-                              <li key={motivo} className="flex items-center gap-1.5 text-xs text-slate-600">
-                                <Check className="h-3 w-3 text-emerald-600" /> {motivo}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setPerfilMatch(null)}>Fechar</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-
-                {modoAlocacao === "rede" && (
-                  <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
-                    <div className="flex items-start gap-3">
-                      <Network className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-bold text-indigo-900">A OS será disparada no App da Conexão Express</p>
-                        <p className="text-xs text-indigo-700">
-                          A oportunidade fica disponível para os prestadores compatíveis aceitarem direto no app. O
-                          acompanhamento do aceite fica na aba <strong>Torre &amp; Financeiro</strong>.
-                        </p>
-                      </div>
-                    </div>
-
-                    {emRede ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className="bg-indigo-600 text-white">OS ativa na Rede</Badge>
-                        {redeOportunidade && (
-                          <span className="text-xs font-semibold text-indigo-800">
-                            Valor do repasse: R$ {redeOportunidade.valor_prestador.toFixed(2)}
-                          </span>
-                        )}
-                        {!readOnly && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleCancelarRede}
-                            className="border-red-200 text-red-600 hover:bg-red-50"
-                          >
-                            Cancelar publicação
-                          </Button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {!data.id && (
-                          <p className="text-xs font-medium text-amber-700">Salve a OS antes de publicar na Rede.</p>
-                        )}
-                        {data.prestador && (
-                          <p className="text-xs font-medium text-amber-700">Remova o prestador cadastrado para publicar na Rede.</p>
-                        )}
-                        {data.custoPrestador <= 0 && (
-                          <p className="text-xs font-medium text-amber-700">Calcule o valor do repasse antes de publicar.</p>
-                        )}
-                        <Button
-                          type="button"
-                          onClick={handleEnviarParaRede}
-                          disabled={readOnly || carregandoRede || !data.id || !!data.prestador || data.custoPrestador <= 0}
-                          className="bg-indigo-600 text-white hover:bg-indigo-700"
-                        >
-                          {carregandoRede ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Network className="mr-2 h-4 w-4" />}
-                          {carregandoRede ? "Publicando..." : "Enviar para Rede de Prestadores"}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {modoAlocacao === "externo" && (
-                  <div className="space-y-4">
-                    <div className="space-y-4 rounded-xl border border-orange-200 bg-orange-50/50 p-4">
-                      <p className="text-xs font-bold uppercase tracking-wider text-orange-700">Identificação do prestador externo</p>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        <Field label="Nome Completo" required>
-                          <Input value={portadorExterno.nome} readOnly={readOnly} onChange={(e) => updatePortador("nome", e.target.value)} placeholder="Nome completo" />
-                        </Field>
-                        <Field label="Placa do Veículo" required>
-                          <Input value={portadorExterno.placaMoto} readOnly={readOnly} onChange={(e) => updatePortador("placaMoto", e.target.value.toUpperCase())} placeholder="ABC-1D23" className="font-mono" />
-                        </Field>
-                        <Field label="Documento / CPF (opcional)">
-                          <Input value={portadorExterno.cpf} readOnly={readOnly} onChange={(e) => updatePortador("cpf", e.target.value)} placeholder="000.000.000-00" />
-                        </Field>
-                        <Field label="Telefone / WhatsApp">
-                          <Input type="tel" value={portadorExterno.telefoneWhatsapp || ""} readOnly={readOnly} onChange={(e) => updatePortador("telefoneWhatsapp", e.target.value)} placeholder="(11) 99999-9999" />
-                        </Field>
-                        <Field label="Origem do Prestador" className="md:col-span-2">
-                          <Input value={portadorExterno.grupoOrigem} readOnly={readOnly} onChange={(e) => updatePortador("grupoOrigem", e.target.value)} placeholder="Ex.: Indicação, FreteBras, Grupo de WhatsApp" />
-                        </Field>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <CreditCard className="h-4 w-4 text-slate-600" />
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Dados bancários / PIX</p>
-                        <span className="text-[11px] text-muted-foreground">— opcional na alocação; pode ser informado na baixa</span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        <Field label="Tipo de PIX">
-                          <Select value={portadorExterno.pixTipo || "CPF/CNPJ"} onValueChange={(v) => updatePortador("pixTipo", v)} disabled={readOnly}>
-                            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                            <SelectContent>
-                              {OPCOES_PIX_TIPO_FORM.map((t) => (
-                                <SelectItem key={t} value={t}>{t}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label="Chave PIX">
-                          <Input value={portadorExterno.pixChave || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixChave", e.target.value)} placeholder="Chave PIX do prestador" />
-                        </Field>
-                        <Field label="Favorecido (se a conta não for do prestador)">
-                          <Input value={portadorExterno.pixFavorecido || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixFavorecido", e.target.value)} placeholder="Nome do titular da conta" />
-                        </Field>
-                        <Field label="Banco">
-                          <Input value={portadorExterno.banco || ""} readOnly={readOnly} onChange={(e) => updatePortador("banco", e.target.value)} placeholder="Ex.: Itaú, Bradesco, Nubank" />
-                        </Field>
-                        <Field label="Agência">
-                          <Input value={portadorExterno.agencia || ""} readOnly={readOnly} onChange={(e) => updatePortador("agencia", e.target.value)} placeholder="0000" />
-                        </Field>
-                        <Field label="Conta">
-                          <Input value={portadorExterno.conta || ""} readOnly={readOnly} onChange={(e) => updatePortador("conta", e.target.value)} placeholder="00000-0" />
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </FormSectionCard>
-
-              <FormSectionCard icon={ListChecks} title="Instruções e Operação" description="Orientação operacional da coleta e entrega." contentClassName="space-y-4">
+              <FormSectionCard icon={ListChecks} title="Observação Geral da OS" description="Uma única observação geral da ordem de serviço (vai para o App e para o WhatsApp)." contentClassName="space-y-4">
                   <div className="md:col-span-3 lg:col-span-4">
-                    <Field label="Instruções Operacionais da OS">
+                    <Field label="Observação Geral da OS">
                       <Textarea value={data.instrucoesOperacionaisOS} readOnly={readOnly} onChange={(e) => update("instrucoesOperacionaisOS", e.target.value)} rows={3} placeholder="Descreva aqui orientações importantes para a coleta, entrega e restrições do cliente..." />
                     </Field>
                   </div>
@@ -3771,7 +3533,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                                 e[idx] = { 
                                   ...e[idx], 
                                   ...obj, 
-                                  instrucoes: obj.referencia ?? e[idx].instrucoes,
+                                  referencia: obj.referencia ?? e[idx].referencia,
                                   logradouro: obj.logradouro || log,
                                   numero: obj.numero || num,
                                   bairro: obj.bairro || end.bairro || "",
@@ -3838,7 +3600,15 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                                 <Input type="time" value={end.janelaFim || ""} readOnly={readOnly} onChange={(e) => { const t = [...(data.enderecos || [])]; t[idx].janelaFim = e.target.value; update("enderecos", t); }} />
                               </div>
                             </Field>
-                            <Field label="Observação do Ponto"><Textarea value={end.observacaoPonto || ""} readOnly={readOnly} onChange={(e) => { const t = [...(data.enderecos || [])]; t[idx].observacaoPonto = e.target.value; update("enderecos", t); }} rows={2} /></Field>
+                            <Field label="Observação da Parada">
+                              <Textarea
+                                value={end.instrucoes || ""}
+                                readOnly={readOnly}
+                                onChange={(e) => { const t = [...(data.enderecos || [])]; t[idx].instrucoes = e.target.value; update("enderecos", t); }}
+                                rows={2}
+                                placeholder="Instrução específica deste endereço (vai para o App e para o WhatsApp)"
+                              />
+                            </Field>
                          </div>
                       </CardContent>
                     </Card>
@@ -4135,24 +3905,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
 
-            <TabsContent value="veiculo" className="space-y-4">
               <Card className="border-none shadow-md rounded-2xl overflow-hidden">
                 <CardHeader className="bg-slate-50/50 border-b pb-4">
                   <CardTitle className="text-base font-bold flex items-center gap-2"><Truck className="w-5 h-5 text-primary"/> Dados do Veiculo</CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Placa do Veiculo" required><Input value={data.veiculoPlaca || ''} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value.toUpperCase())} placeholder="ABC-1234" className="font-mono" /></Field>
-                    <Field label="Tipo de Veiculo">
-                      <select value={data.veiculoTipo || ''} onChange={(e) => update("veiculoTipo", e.target.value)} disabled={readOnly} className="w-full h-10 rounded-lg border px-3 text-sm">
-                        <option value="">Selecionar...</option>
-                        {TIPOS_VEICULO.map((t) => (
-                          <option key={t.value} value={t.value}>{t.label}</option>
-                        ))}
-                      </select>
-                    </Field>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="Placa do Veículo"><Input value={data.veiculoPlaca || ''} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value.toUpperCase())} placeholder="ABC-1234" className="font-mono" /></Field>
                   </div>
                 </CardContent>
               </Card>
@@ -4243,7 +4003,358 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
               </Card>
             </TabsContent>
 
+
 <TabsContent value="valores" className="space-y-4">
+
+              {/* UPGRADE-REGRAS-DE-NEGOCIO — ALOCAÇÃO DE PRESTADOR em destaque no corpo principal
+                  (centralizada na etapa Aloca��o & Financeiro) */}
+              <FormSectionCard
+                icon={User}
+                title="Alocação de Prestador"
+                description="Selecione manualmente ou use a Sugestão Inteligente (veículo compatível com a OS + região da coleta)."
+                contentClassName="space-y-4"
+              >
+                {/* ETAPA-3 — 3 modos de alocação: Cadastrado | Enviar para a Rede | Externo / Avulso */}
+                <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+                  {([
+                    { id: "cadastrado", label: "Cadastrado", icon: UserCheck },
+                    { id: "rede", label: "Enviar para a Rede", icon: Network },
+                    { id: "externo", label: "Externo / Avulso", icon: UserPlus },
+                  ] as const).map((op) => {
+                    const Icone = op.icon;
+                    const ativo = modoAlocacao === op.id;
+                    return (
+                      <button
+                        key={op.id}
+                        type="button"
+                        onClick={() => selecionarModoAlocacao(op.id)}
+                        disabled={readOnly}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                          ativo
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-slate-600 hover:bg-white hover:text-slate-900"
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        <Icone className="h-3.5 w-3.5" />
+                        {op.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {modoAlocacao === "cadastrado" && (
+                  <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="md:col-span-2">
+                    <Field label="Prestador / Motorista">
+                      <SearchableSelect
+                        table="prestadores"
+                        labelField="nome_completo"
+                        valueField="nome_completo"
+                        searchFields={["nome_completo"]}
+                        filters={{ status: "ativo" }}
+                        value={emRede ? "" : data.prestador}
+                        onChange={handleSelecionarPrestador}
+                        disabled={readOnly || emRede}
+                      />
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={buscarSugestoesPrestador}
+                    disabled={readOnly || buscandoSugestao}
+                    className="border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800"
+                  >
+                    {buscandoSugestao ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                    {buscandoSugestao ? "Buscando prestadores..." : "Sugerir Melhores Prestadores"}
+                  </Button>
+                  {data.prestador && (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      Alocado: {data.prestador}
+                    </span>
+                  )}
+                  {emRede && (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                      OS ativa na Rede de Prestadores
+                    </span>
+                  )}
+                </div>
+
+                {sugestoesPrestador.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Sugestões ordenadas por compatibilidade
+                    </p>
+                    {sugestoesPrestador.map((s, i) => (
+                      <div
+                        key={s.prestadorId}
+                        className={`flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center ${
+                          i === 0 ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <span className="w-6 text-[12px] font-black text-slate-500">{i + 1}º</span>
+                        <div className="min-w-[180px] flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-bold text-slate-800">{s.nome}</p>
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] font-bold ${PERFORMANCE_CORES[s.categoriaPerformance]}`}
+                            >
+                              {s.categoriaPerformance}
+                              {s.performanceScore != null ? ` · ${s.performanceScore}` : ""}
+                            </Badge>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {s.veiculo?.tipo
+                              ? `${s.veiculo.tipo}${s.veiculo.placa ? ` · ${s.veiculo.placa}` : ""}`
+                              : "Sem veículo cadastrado"}
+                            {s.veiculo?.capacidadeKg ? ` · até ${s.veiculo.capacidadeKg} kg` : ""}
+                            {s.regiao ? ` · ${s.regiao}` : ""}
+                            {s.telefone ? ` · ${s.telefone}` : ""}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {s.motivos.slice(0, 3).map((m, mi) => (
+                              <span key={mi} className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600">
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <Badge className={i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}>
+                          {Math.min(100, s.score)}% de compatibilidade
+                        </Badge>
+                        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px]"
+                            onClick={() => setPerfilMatch(s)}
+                          >
+                            <Eye className="mr-1 h-3 w-3" /> Ver Perfil
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            onClick={() => solicitarDisponibilidadeMatch(s)}
+                          >
+                            <MessageCircle className="mr-1 h-3 w-3" /> WhatsApp
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                            disabled={enviandoConviteMatch === s.prestadorId}
+                            onClick={() => void enviarConviteAppMatch(s)}
+                          >
+                            {enviandoConviteMatch === s.prestadorId ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="mr-1 h-3 w-3" />
+                            )}
+                            Convite App
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSelecionarPrestador(s.nome, { id: s.prestadorId })}
+                            disabled={readOnly || emRede}
+                            className="h-7 bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                          >
+                            <UserCheck className="mr-1 h-3 w-3" /> Alocar
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                  </>
+                )}
+
+                <Dialog open={!!perfilMatch} onOpenChange={(open) => { if (!open) setPerfilMatch(null); }}>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <UserCheck className="h-5 w-5 text-indigo-600" /> Perfil do parceiro sugerido
+                      </DialogTitle>
+                      <DialogDescription>
+                        Dados operacionais usados pelo motor de match. A IA apenas sugere — a alocação é sua decisão.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {perfilMatch && (
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <p className="font-bold">{perfilMatch.nome}</p>
+                          <Badge className="bg-indigo-600 text-white">
+                            {perfilMatch.score}% de compatibilidade
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">Veículo</p>
+                            <p className="font-semibold">{perfilMatch.veiculo?.tipo || "—"} {perfilMatch.veiculo?.placa || ""}</p>
+                            <p className="text-muted-foreground">
+                              {perfilMatch.veiculo?.capacidadeKg ? `${perfilMatch.veiculo.capacidadeKg} kg` : "Capacidade não informada"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">Região</p>
+                            <p className="font-semibold">{perfilMatch.regiao || [perfilMatch.cidade, perfilMatch.uf].filter(Boolean).join(" - ") || "—"}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">Telefone</p>
+                            <p className="font-semibold">{perfilMatch.telefone || perfilMatch.whatsapp || "—"}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">E-mail</p>
+                            <p className="truncate font-semibold">{perfilMatch.email || "—"}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Por que foi sugerido</p>
+                          <ul className="space-y-1">
+                            {perfilMatch.motivos.map((motivo) => (
+                              <li key={motivo} className="flex items-center gap-1.5 text-xs text-slate-600">
+                                <Check className="h-3 w-3 text-emerald-600" /> {motivo}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setPerfilMatch(null)}>Fechar</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {modoAlocacao === "rede" && (
+                  <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                    <div className="flex items-start gap-3">
+                      <Network className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-indigo-900">A OS será disparada no App da Conexão Express</p>
+                        <p className="text-xs text-indigo-700">
+                          A oportunidade fica disponível para os prestadores compatíveis aceitarem direto no app. O
+                          acompanhamento do aceite fica na aba <strong>Torre &amp; Financeiro</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {emRede ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className="bg-indigo-600 text-white">OS ativa na Rede</Badge>
+                        {redeOportunidade && (
+                          <span className="text-xs font-semibold text-indigo-800">
+                            Valor do repasse: R$ {redeOportunidade.valor_prestador.toFixed(2)}
+                          </span>
+                        )}
+                        {!readOnly && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCancelarRede}
+                            className="border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            Cancelar publicação
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {!data.id && (
+                          <p className="text-xs font-medium text-amber-700">Salve a OS antes de publicar na Rede.</p>
+                        )}
+                        {data.prestador && (
+                          <p className="text-xs font-medium text-amber-700">Remova o prestador cadastrado para publicar na Rede.</p>
+                        )}
+                        {data.custoPrestador <= 0 && (
+                          <p className="text-xs font-medium text-amber-700">Calcule o valor do repasse antes de publicar.</p>
+                        )}
+                        <Button
+                          type="button"
+                          onClick={handleEnviarParaRede}
+                          disabled={readOnly || carregandoRede || !data.id || !!data.prestador || data.custoPrestador <= 0}
+                          className="bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          {carregandoRede ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Network className="mr-2 h-4 w-4" />}
+                          {carregandoRede ? "Publicando..." : "Enviar para Rede de Prestadores"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {modoAlocacao === "externo" && (
+                  <div className="space-y-4">
+                    <div className="space-y-4 rounded-xl border border-orange-200 bg-orange-50/50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wider text-orange-700">Identificação do prestador externo</p>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <Field label="Nome Completo" required>
+                          <Input value={portadorExterno.nome} readOnly={readOnly} onChange={(e) => updatePortador("nome", e.target.value)} placeholder="Nome completo" />
+                        </Field>
+                        <Field label="Placa do Veículo" required>
+                          <Input value={portadorExterno.placaMoto} readOnly={readOnly} onChange={(e) => updatePortador("placaMoto", e.target.value.toUpperCase())} placeholder="ABC-1D23" className="font-mono" />
+                        </Field>
+                        <Field label="Documento / CPF (opcional)">
+                          <Input value={portadorExterno.cpf} readOnly={readOnly} onChange={(e) => updatePortador("cpf", e.target.value)} placeholder="000.000.000-00" />
+                        </Field>
+                        <Field label="Telefone / WhatsApp">
+                          <Input type="tel" value={portadorExterno.telefoneWhatsapp || ""} readOnly={readOnly} onChange={(e) => updatePortador("telefoneWhatsapp", e.target.value)} placeholder="(11) 99999-9999" />
+                        </Field>
+                        <Field label="Origem do Prestador" className="md:col-span-2">
+                          <Input value={portadorExterno.grupoOrigem} readOnly={readOnly} onChange={(e) => updatePortador("grupoOrigem", e.target.value)} placeholder="Ex.: Indicação, FreteBras, Grupo de WhatsApp" />
+                        </Field>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-slate-600" />
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Dados bancários / PIX</p>
+                        <span className="text-[11px] text-muted-foreground">— opcional na alocação; pode ser informado na baixa</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <Field label="Tipo de PIX">
+                          <Select value={portadorExterno.pixTipo || "CPF/CNPJ"} onValueChange={(v) => updatePortador("pixTipo", v)} disabled={readOnly}>
+                            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                            <SelectContent>
+                              {OPCOES_PIX_TIPO_FORM.map((t) => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Chave PIX">
+                          <Input value={portadorExterno.pixChave || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixChave", e.target.value)} placeholder="Chave PIX do prestador" />
+                        </Field>
+                        <Field label="Favorecido (se a conta não for do prestador)">
+                          <Input value={portadorExterno.pixFavorecido || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixFavorecido", e.target.value)} placeholder="Nome do titular da conta" />
+                        </Field>
+                        <Field label="Banco">
+                          <Input value={portadorExterno.banco || ""} readOnly={readOnly} onChange={(e) => updatePortador("banco", e.target.value)} placeholder="Ex.: Itaú, Bradesco, Nubank" />
+                        </Field>
+                        <Field label="Agência">
+                          <Input value={portadorExterno.agencia || ""} readOnly={readOnly} onChange={(e) => updatePortador("agencia", e.target.value)} placeholder="0000" />
+                        </Field>
+                        <Field label="Conta">
+                          <Input value={portadorExterno.conta || ""} readOnly={readOnly} onChange={(e) => updatePortador("conta", e.target.value)} placeholder="00000-0" />
+                        </Field>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </FormSectionCard>
+
               <Card className="border-none shadow-md rounded-2xl overflow-hidden bg-blue-50/30 border-blue-100">
                 <CardContent className="p-4">
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
@@ -4692,7 +4803,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base font-bold flex items-center gap-2 text-green-700"><MessageCircle className="w-5 h-5"/> Mensagens de WhatsApp</CardTitle>
                     <CardDescription className="text-green-600">
-                      Template 1 — Resumo da Rota (privacidade: sem número da porta). Template 2 — Orientação de Execução (OS completa). E a mensagem de rastreio para o cliente/destinatário.
+                      Template 1 — Resumo da Rota (oferta rápida ao prestador). Template 2 — Orientação de Execução (OS completa, para prestador sem App). E a mensagem de rastreio para o cliente/destinatário.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-6 space-y-4">
@@ -4700,14 +4811,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                       <p className="text-xs font-bold uppercase tracking-wide text-green-700 mb-1">Template 1 — Resumo da Rota</p>
                       <Textarea value={gerarMensagemWhatsAppOS(data)} readOnly className="bg-white font-mono text-sm h-56 border-green-200" />
                       <Button onClick={copiarWhatsApp} className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white">
-                        <CopyIcon className="w-4 h-4 mr-2" /> Copiar WhatsApp
+                        <CopyIcon className="w-4 h-4 mr-2" /> Copiar WhatsApp (Resumo)
                       </Button>
                     </div>
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 mb-1">Template 2 — Orientação de Execução</p>
-                      <Textarea value={gerarMensagemOrientacaoExecucao(data)} readOnly className="bg-white font-mono text-sm h-64 border-emerald-200" />
+                      <Textarea value={mensagemOrientacaoExecucao()} readOnly className="bg-white font-mono text-sm h-72 border-emerald-200" />
                       <Button onClick={copiarOrientacaoExecucao} className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white">
-                        <ListChecks className="w-4 h-4 mr-2" /> Copiar Orientação (OS Completa)
+                        <CopyIcon className="w-4 h-4 mr-2" /> Copiar Orientação (OS Completa)
                       </Button>
                     </div>
                     <div>
@@ -4855,50 +4966,114 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                      <CardTitle className="text-base font-bold flex items-center gap-2"><Shield className="w-5 h-5 text-primary"/> Entregas e Comprovantes</CardTitle>
                      <CardDescription>Entregas reais da OS com comprovantes (POD) enviados pelo App Prestador</CardDescription>
                    </CardHeader>
-                   <CardContent className="p-6 space-y-6">
-                     {/* POD REAL — fonte oficial entregas_protocolo (A23-A/C) */}
-                     {data.id ? (
-                       <EntregasComprovantes osId={data.id} numeroOs={data.numero} />
-                     ) : (
-                       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-6 text-center">
-                         <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                         <p className="text-xs text-slate-500">Salve a OS para carregar as entregas e comprovantes reais.</p>
-                       </div>
-                     )}
+                    <CardContent className="p-6 space-y-6">
+                      {/* POD REAL — fonte oficial entregas_protocolo (A23-A/C) */}
+                      {data.id ? (
+                        <EntregasComprovantes key={comprovanteRefreshKey} osId={data.id} numeroOs={data.numero} />
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-6 text-center">
+                          <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                          <p className="text-xs text-slate-500">Salve a OS para carregar as entregas e comprovantes reais.</p>
+                        </div>
+                      )}
 
-                     <div className="pt-4 border-t border-slate-100">
-                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-2">
-                         <Hash className="w-3.5 h-3.5 text-primary" /> Dados Planejados / Manual da OS
-                       </p>
-                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                         <Field label="Recebedor Nome"><Input value={ (data as any).recebedorNome || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, recebedorNome: e.target.value }))} /></Field>
-                         <Field label="Recebedor Documento"><Input value={ (data as any).recebedorDocumento || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, recebedorDocumento: e.target.value }))} /></Field>
-                         <Field label="Função/Vínculo">
-                           <Select value={ (data as any).recebedorFuncao || "" } onValueChange={(v) => setData(p => ({ ...p, recebedorFuncao: v }))} disabled={readOnly}>
-                             <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                             <SelectContent>
-                               <SelectItem value="Porteiro">Porteiro</SelectItem>
-                               <SelectItem value="Recepção">Recepção</SelectItem>
-                               <SelectItem value="Almoxarifado">Almoxarifado</SelectItem>
-                               <SelectItem value="Segurança">Segurança</SelectItem>
-                               <SelectItem value="Morador">Morador</SelectItem>
-                               <SelectItem value="Vizinho">Vizinho</SelectItem>
-                               <SelectItem value="Familiar">Familiar</SelectItem>
-                               <SelectItem value="Funcionário">Funcionário</SelectItem>
-                               <SelectItem value="Outro">Outro</SelectItem>
-                             </SelectContent>
-                           </Select>
-                         </Field>
+                      {/* REGISTRO MANUAL — prestador sem App Flutter */}
+                      <div className="pt-5 border-t border-slate-200">
+                        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-primary" /> Registro Manual de Entrega (Prestador sem App)
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              Use quando o prestador não utiliza o aplicativo. A comprovação fica
+                              gravada na OS e, havendo alocação, também no POD oficial.
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={data.id
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-amber-200 bg-amber-50 text-amber-700"}
+                          >
+                            {data.id ? `OS ${data.numero || ""}` : "Salve a OS primeiro"}
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <Field label="Recebedor Nome" required>
+                            <Input
+                              value={manualEntrega.recebedor}
+                              onChange={(e) => setManualEntrega((p) => ({ ...p, recebedor: e.target.value }))}
+                              placeholder="Nome de quem recebeu"
+                            />
+                          </Field>
+                          <Field label="Recebedor Documento (RG/CPF)">
+                            <Input
+                              value={manualEntrega.documento}
+                              onChange={(e) => setManualEntrega((p) => ({ ...p, documento: e.target.value }))}
+                              placeholder="000.000.000-00"
+                            />
+                          </Field>
+                          <Field label="Função / Vínculo">
+                            <Select
+                              value={manualEntrega.funcao}
+                              onValueChange={(v) => setManualEntrega((p) => ({ ...p, funcao: v }))}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                              <SelectContent>
+                                {[
+                                  "Portaria",
+                                  "Recepção",
+                                  "Almoxarifado",
+                                  "Próprio Destinatário",
+                                  "Encarregado",
+                                  "Segurança",
+                                  "Familiar",
+                                  "Outro",
+                                ].map((opcao) => (
+                                  <SelectItem key={opcao} value={opcao}>{opcao}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                          <Field label="Data Entrega" required>
+                            <Input
+                              type="date"
+                              value={manualEntrega.data}
+                              onChange={(e) => setManualEntrega((p) => ({ ...p, data: e.target.value }))}
+                            />
+                          </Field>
+                          <Field label="Hora Entrega" required>
+                            <Input
+                              type="time"
+                              value={manualEntrega.hora}
+                              onChange={(e) => setManualEntrega((p) => ({ ...p, hora: e.target.value }))}
+                            />
+                          </Field>
+                          <Field label="Observação da Entrega" className="md:col-span-2">
+                            <Textarea
+                              value={manualEntrega.observacao}
+                              onChange={(e) => setManualEntrega((p) => ({ ...p, observacao: e.target.value }))}
+                              rows={2}
+                              placeholder="Ex.: entregue na portaria, volume conferido, ressalva do recebedor..."
+                            />
+                          </Field>
+                        </div>
+
+                        <Button
+                          type="button"
+                          onClick={registrarComprovacaoManual}
+                          disabled={!data.id || salvandoComprovanteManual}
+                          className="mt-3 w-full bg-emerald-600 hover:bg-emerald-700 text-white sm:w-auto"
+                        >
+                          {salvandoComprovanteManual ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Registrando...</>
+                          ) : (
+                            <><FileText className="mr-2 h-4 w-4" /> Registrar Comprovação Manual</>
+                          )}
+                        </Button>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                         <Field label="Data Entrega (planejada)"><Input type="date" value={ (data as any).dataEntrega || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, dataEntrega: e.target.value }))} /></Field>
-                         <Field label="Hora Entrega (planejada)"><Input type="time" value={ (data as any).dataEntrega ? new Date((data as any).dataEntrega).toTimeString().slice(0,5) : "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, horaEntrega: e.target.value }))} /></Field>
-                      </div>
-
-                      <Field label="Observação da Entrega"><Textarea value={ (data as any).observacaoEntrega || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, observacaoEntrega: e.target.value }))} rows={2} /></Field>
-                     </div>
-                   </CardContent>
+                    </CardContent>
                  </Card>
                 </div>
               </TabsContent>

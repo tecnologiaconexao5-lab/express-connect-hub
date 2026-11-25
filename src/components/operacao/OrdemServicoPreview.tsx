@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } from "@/lib/pdfGenerator";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
 import type { OrdemServico, OSEndereco, OSCarga, OSStatus } from "./osTypes";
 import { STATUS_CORES, obterStatusGlobalOS } from "./osTypes";
@@ -121,6 +122,7 @@ function TimelineRastreio({ status }: { status?: string }) {
 }
 
 export default function OrdemServicoPreview({ os, onVoltar }: Props) {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [fiscalData, setFiscalData] = useState<any>({ ctes: [], mdfes: [], nfses: [], xmls: [], timeline: [] });
   const [fiscalLoading, setFiscalLoading] = useState(true);
   // FIX UUID — resolve nome do prestador/cliente quando o registro traz o id.
@@ -522,7 +524,11 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                   <TrendingDown className="h-3.5 w-3.5" /> Custo
                 </div>
                 <p className="mt-1 text-sm font-bold text-rose-700">{formatarValor(os.custoPrestador)}</p>
-                <p className="text-[11px] text-slate-500">Margem: {formatarValor((os.valorCliente || 0) - (os.custoPrestador || 0))}</p>
+                <p className="text-[11px] text-slate-500">
+                  {podeVerMargem
+                    ? `Margem: ${formatarValor((os.valorCliente || 0) - (os.custoPrestador || 0))}`
+                    : "Margem: ---"}
+                </p>
               </CardContent>
             </Card>
 

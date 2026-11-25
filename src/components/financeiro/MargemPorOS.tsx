@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
+import { MargemGate } from "@/components/auth/MargemGate";
 import {
   DollarSign, TrendingUp, TrendingDown, Percent, FileText,
   RefreshCw, Search, SlidersHorizontal, Printer
@@ -41,6 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function MargemPorOS() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [linhas, setLinhas] = useState<LinhaMargemOs[]>([]);
   const [filtradas, setFiltradas] = useState<LinhaMargemOs[]>([]);
   const [indicadores, setIndicadores] = useState<IndicadoresMargem | null>(null);
@@ -257,6 +260,10 @@ export default function MargemPorOS() {
     { label: "OS com Margem Negativa", value: indicadores?.osNegativas ?? 0, icon: TrendingDown, accent: "bg-amber-500", color: "text-amber-500" },
     { label: "Quantidade de OS", value: indicadores?.quantidadeOs ?? 0, icon: FileText, accent: "bg-blue-500", color: "text-blue-500" },
   ];
+
+  if (!podeVerMargem) {
+    return <MargemGate titulo="Margem por OS" />;
+  }
 
   return (
     <div className="space-y-5">

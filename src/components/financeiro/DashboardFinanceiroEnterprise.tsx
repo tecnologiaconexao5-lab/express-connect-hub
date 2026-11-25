@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, Line, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { calcularStatusEfetivo } from "@/helpers/statusVencimento";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 const fmtFin = (v: number) => v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) || "—";
 const fmtPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
@@ -57,6 +58,7 @@ const KPICard = ({ title, value, subValue, icon: Icon, gradient, iconBg, trend, 
 };
 
 export default function DashboardFinanceiroEnterprise() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [isLoading, setIsLoading] = useState(true);
   const [dadosMesAtual, setDadosMesAtual] = useState<any[]>([]);
   const [dadosMesAnterior, setDadosMesAnterior] = useState<any[]>([]);
@@ -392,8 +394,8 @@ export default function DashboardFinanceiroEnterprise() {
             />
             <KPICard
               title="Resultado Líquido"
-              value={fmtFin(kpis.resultado)}
-              subValue={`Margem Operacional: ${kpis.margemOp.toFixed(1)}%`}
+              value={podeVerMargem ? fmtFin(kpis.resultado) : "---"}
+              subValue={`Margem Operacional: ${podeVerMargem ? kpis.margemOp.toFixed(1) : "---"}%`}
               icon={DollarSign}
               gradient={kpis.resultado >= 0 ? "bg-gradient-to-r from-emerald-500 to-green-600" : "bg-gradient-to-r from-red-600 to-rose-700"}
               iconBg={kpis.resultado >= 0 ? "bg-gradient-to-br from-emerald-500 to-green-700" : "bg-gradient-to-br from-red-600 to-rose-800"}
@@ -401,7 +403,7 @@ export default function DashboardFinanceiroEnterprise() {
             />
             <KPICard
               title="Margem Média"
-              value={kpis.margemMedia > 0 ? `${kpis.margemMedia.toFixed(1)}%` : "—"}
+              value={kpis.margemMedia > 0 ? `${podeVerMargem ? kpis.margemMedia.toFixed(1) : "---"}%` : "—"}
               subValue={kpis.margemMedia > 0 ? `${kpis.qtdOS} OS no período` : "Dados insuficientes"}
               icon={Activity}
               gradient="bg-gradient-to-r from-violet-500 to-purple-600"
@@ -473,8 +475,8 @@ export default function DashboardFinanceiroEnterprise() {
             />
             <KPICard
               title="Lucro Operacional Est."
-              value={fmtFin(kpis.resultado)}
-              subValue={`Margem: ${kpis.margemOp.toFixed(1)}%`}
+              value={podeVerMargem ? fmtFin(kpis.resultado) : "---"}
+              subValue={`Margem: ${podeVerMargem ? kpis.margemOp.toFixed(1) : "---"}%`}
               icon={Activity}
               gradient="bg-gradient-to-r from-indigo-500 to-indigo-600"
               iconBg="bg-gradient-to-br from-indigo-500 to-indigo-700"
@@ -581,7 +583,7 @@ export default function DashboardFinanceiroEnterprise() {
                           </TableCell>
                           <TableCell className="text-xs text-right font-semibold">{fmtFin(c.receita)}</TableCell>
                           <TableCell className="text-xs text-right font-bold" style={{ color: c.margem >= 0 ? '#16a34a' : '#dc2626' }}>
-                            {c.margem.toFixed(1)}%
+                            {podeVerMargem ? `${c.margem.toFixed(1)}%` : "---"}
                           </TableCell>
                           <TableCell className="text-xs text-right px-3 text-muted-foreground">{c.qtd}</TableCell>
                         </TableRow>
@@ -624,7 +626,7 @@ export default function DashboardFinanceiroEnterprise() {
                           </TableCell>
                           <TableCell className="text-xs text-right">{fmtFin(o.receita)}</TableCell>
                           <TableCell className="text-xs text-right text-red-600 font-medium">{fmtFin(o.custo)}</TableCell>
-                          <TableCell className="text-xs text-right px-3 font-bold text-red-600">{o.margem.toFixed(1)}%</TableCell>
+                          <TableCell className="text-xs text-right px-3 font-bold text-red-600">{podeVerMargem ? `${o.margem.toFixed(1)}%` : "---"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

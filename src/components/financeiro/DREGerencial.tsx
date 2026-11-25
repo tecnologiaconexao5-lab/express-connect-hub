@@ -10,6 +10,8 @@ import autoTable from "jspdf-autotable";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { carregarLogoBase64Utils } from "@/utils/pdfGenerator";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
+import { MargemGate } from "@/components/auth/MargemGate";
 import {
   calcularDRE,
   periodoParaDatas,
@@ -53,6 +55,7 @@ const periodos: { value: PeriodoDre; label: string }[] = [
 ];
 
 export default function DREGerencial() {
+  const { podeVerMargem } = usePermissaoFinanceira();
   const hoje = new Date();
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const [loading, setLoading] = useState(true);
@@ -353,6 +356,10 @@ export default function DREGerencial() {
   };
 
   const labelPeriodo = periodos.find(p => p.value === periodo)?.label || periodo;
+
+  if (!podeVerMargem) {
+    return <MargemGate titulo="DRE Gerencial" />;
+  }
 
   return (
     <div className="space-y-6">

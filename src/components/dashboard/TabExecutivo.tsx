@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesWidget";
 import AlertaOscotacaoExpress from "@/components/dashboard/AlertaOscotacaoExpress";
 import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -44,6 +45,7 @@ const KpiCard = ({ title, value, icon: Icon, trend, sub, accent }: {
 
 const TabExecutivo = () => {
   const { filters } = useDashboardFilters();
+  const { podeVerMargem } = usePermissaoFinanceira();
   const [loading, setLoading] = useState(true);
   const [clientes, setClientes] = useState(0);
   const [prestadores, setPrestadores] = useState(0);
@@ -188,7 +190,9 @@ const TabExecutivo = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard title="Faturamento Total" value={fmt(faturamento)} icon={DollarSign} trend="up" accent="bg-emerald-500/60" />
         <KpiCard title="Custo Total" value={fmt(custoTotal)} icon={TrendingDown} accent="bg-rose-500/60" />
-        <KpiCard title="Margem Líquida" value={`${margemLiq.toFixed(1)}%`} icon={Target} trend={margemLiq > 15 ? "up" : "down"} accent="bg-violet-500/60" />
+        {podeVerMargem && (
+          <KpiCard title="Margem Líquida" value={`${margemLiq.toFixed(1)}%`} icon={Target} trend={margemLiq > 15 ? "up" : "down"} accent="bg-violet-500/60" />
+        )}
         <KpiCard title="Ticket Médio" value={fmt(ticketMedio)} icon={Receipt} sub="por OS" accent="bg-blue-500/60" />
       </div>
 
@@ -211,7 +215,7 @@ const TabExecutivo = () => {
       <Card className="shadow-sm hover:shadow-md transition">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary" /> Evolução Mensal — Receita × Custo × Margem
+            <TrendingUp className="w-4 h-4 text-primary" /> Evolução Mensal — Receita × Custo{podeVerMargem ? " × Margem" : ""}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -224,7 +228,9 @@ const TabExecutivo = () => {
               <Legend wrapperStyle={{ fontSize: "12px" }} />
               <Area type="monotone" dataKey="receita" name="Receita" fill={CORES[2] + "33"} stroke={CORES[2]} strokeWidth={2} />
               <Area type="monotone" dataKey="custo" name="Custo" fill={CORES[3] + "33"} stroke={CORES[3]} strokeWidth={2} />
-              <Line type="monotone" dataKey="margem" name="Margem" stroke={CORES[0]} strokeWidth={2.5} dot={{ r: 4 }} />
+              {podeVerMargem && (
+                <Line type="monotone" dataKey="margem" name="Margem" stroke={CORES[0]} strokeWidth={2.5} dot={{ r: 4 }} />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>

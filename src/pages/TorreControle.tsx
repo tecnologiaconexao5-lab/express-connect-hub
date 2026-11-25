@@ -36,8 +36,7 @@ import type { TipoEventoTimeline, TimelineEvent } from "@/components/torre-contr
 import { TIMELINE_LABELS, TIMELINE_ICONS, TIMELINE_COLORS, SEVERIDADE_BADGE } from "@/components/torre-controle/timelineVisuals";
 import { ExecutiveKpis, KpiItem } from "@/components/torre-controle/ExecutiveKpis";
 import { CentralAlertas, ResumoAlertas } from "@/components/torre-controle/CentralAlertas";
-import { useAuth } from "@/contexts/AuthContext";
-import { podeVerReceitaEMargem } from "@/lib/permissoes";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 /**
  * REGRA OPERACIONAL — Torre de Controle.
@@ -157,8 +156,7 @@ const TorreControle = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
   // UPGRADE-REGRAS: valores financeiros (Valor Operacional) restritos a admin máximo
-  const { user } = useAuth();
-  const verReceitaMargem = podeVerReceitaEMargem(user?.role);
+  const { podeVerMargem: verReceitaMargem } = usePermissaoFinanceira();
   const [osAtivas, setOsAtivas] = useState<OSRecord[]>([]);
   const [ocorrencias, setOcorrencias] = useState<any[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);

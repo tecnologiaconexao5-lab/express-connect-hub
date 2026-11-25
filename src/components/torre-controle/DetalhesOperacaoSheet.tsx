@@ -21,8 +21,7 @@ import { ActionItem, ComprovantePendente, calcularRiscoOperacional } from "@/lib
 import { extrairIdAlocacaoDeMarcador } from "./markerAdapter";
 import { TIMELINE_LABELS, TIMELINE_ICONS, TIMELINE_COLORS, SEVERIDADE_BADGE } from "./timelineVisuals";
 import { ChatOperacaoPanel } from "./ChatOperacaoPanel";
-import { useAuth } from "@/contexts/AuthContext";
-import { podeVerReceitaEMargem } from "@/lib/permissoes";
+import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 import { formatarDataBR, formatarDataHoraBR } from "@/lib/formatDates";
 
 const fmtFin = (v: number | null | undefined) =>
@@ -118,8 +117,7 @@ export function DetalhesOperacaoSheet({
   const [tab, setTab] = useState("visao-geral");
   const [loading, setLoading] = useState(false);
   // UPGRADE-REGRAS: receita e margens restritas a admin máximo ("---" para os demais)
-  const { user } = useAuth();
-  const verReceitaMargem = podeVerReceitaEMargem(user?.role);
+  const { podeVerMargem: verReceitaMargem } = usePermissaoFinanceira();
   const [alocacoes, setAlocacoes] = useState<AlocacaoRow[]>([]);
   const [pod, setPod] = useState<PODData | null>(null);
   const [tracking, setTracking] = useState<TrackingPosition | null>(null);
