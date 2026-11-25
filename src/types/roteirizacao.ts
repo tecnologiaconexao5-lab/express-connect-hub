@@ -41,11 +41,14 @@ export interface VeiculoRoteirizacao {
   temperaturaMinima?: number;
   disponivel: boolean;
   contratoOuAvulso: 'contrato' | 'avulso';
+  /** Online no App do motorista (prestadores.metadata.disponivel_app). */
+  onlineApp?: boolean;
 }
 
 export type TipoVeiculo = 
   | 'Moto' 
   | 'Fiorino' 
+  | 'HR_Bongo'
   | 'Van_VUC' 
   | 'Caminhao_34' 
   | 'Caminhao_Toco' 
@@ -56,18 +59,43 @@ export interface CapacidadePadraoVeiculo {
   tipo: TipoVeiculo;
   capacidadePesoKg: number;
   capacidadeCubagemM3: number;
+  /** Maximo recomendado de paradas por turno (evita rota impossivel). */
+  maxParadas?: number;
   observacao?: string;
 }
 
 export const CAPACIDADES_PADRAO_VEICULOS: CapacidadePadraoVeiculo[] = [
-  { tipo: 'Moto', capacidadePesoKg: 20, capacidadeCubagemM3: 0.09, observacao: 'baú 90 litros' },
-  { tipo: 'Fiorino', capacidadePesoKg: 500, capacidadeCubagemM3: 2.5 },
-  { tipo: 'Van_VUC', capacidadePesoKg: 1200, capacidadeCubagemM3: 6 },
-  { tipo: 'Caminhao_34', capacidadePesoKg: 3000, capacidadeCubagemM3: 15 },
-  { tipo: 'Caminhao_Toco', capacidadePesoKg: 6000, capacidadeCubagemM3: 30 },
-  { tipo: 'Caminhao_Truck', capacidadePesoKg: 12000, capacidadeCubagemM3: 55 },
-  { tipo: 'Carreta', capacidadePesoKg: 25000, capacidadeCubagemM3: 90 },
+  { tipo: 'Moto', capacidadePesoKg: 20, capacidadeCubagemM3: 0.09, maxParadas: 12, observacao: 'baú 90 litros' },
+  { tipo: 'Fiorino', capacidadePesoKg: 500, capacidadeCubagemM3: 2.5, maxParadas: 20 },
+  { tipo: 'HR_Bongo', capacidadePesoKg: 1500, capacidadeCubagemM3: 9.0, maxParadas: 25, observacao: 'Hyundai HR / Bongo' },
+  { tipo: 'Van_VUC', capacidadePesoKg: 1200, capacidadeCubagemM3: 6, maxParadas: 30 },
+  { tipo: 'Caminhao_34', capacidadePesoKg: 3000, capacidadeCubagemM3: 15, maxParadas: 35 },
+  { tipo: 'Caminhao_Toco', capacidadePesoKg: 6000, capacidadeCubagemM3: 30, maxParadas: 40 },
+  { tipo: 'Caminhao_Truck', capacidadePesoKg: 12000, capacidadeCubagemM3: 55, maxParadas: 45 },
+  { tipo: 'Carreta', capacidadePesoKg: 25000, capacidadeCubagemM3: 90, maxParadas: 50 },
 ];
+
+/** Cenario de frota (tipo + quantidade) para um recorte de pedidos. */
+export interface SugestaoFrotaCenario {
+  tipo: TipoVeiculo;
+  tipoNome: string;
+  quantidade: number;
+  capacidadePesoKg: number;
+  capacidadeCubagemM3: number;
+  maxParadas: number;
+  /** Texto pronto, ex.: "1 Fiorino (500 kg)". */
+  resumo: string;
+}
+
+/** Comparativo de frota para uma regiao/cluster (e para o consolidado). */
+export interface SugestaoComparativaRegiao {
+  regiao: string;
+  paradas: number;
+  pesoKg: number;
+  cubagemM3: number;
+  recomendado: SugestaoFrotaCenario | null;
+  cenarios: SugestaoFrotaCenario[];
+}
 
 export interface RotaGerada {
   id: string;

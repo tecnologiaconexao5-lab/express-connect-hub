@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -46,7 +46,8 @@ import {
   TipoVeiculo,
   CAPACIDADES_PADRAO_VEICULOS,
   CABECALHO_PLANILHA,
-  ModoRoteirizacao
+  ModoRoteirizacao,
+  SugestaoFrotaCenario
 } from "@/types/roteirizacao";
 import {
   calcularCubagemPedido,
@@ -59,12 +60,21 @@ import {
   distribuirPedidosEntreVeiculos,
   gerarResumoRoteirizacao,
   gerarAlertasPorDemandaxFrota,
+  gerarSugestoesComparativasPorRegiao,
+  getCapacidadePadrao,
   getNomeTipoVeiculo,
   getIconeTipoVeiculo,
+  normalizarTipoVeiculo,
   optimizarSequenciaParadas,
   estimarDistanciaTempoLocal
 } from "@/services/roteirizacaoService";
 import { calcularDistanciaTempoRota } from "@/services/roteirizacaoMapbox";
+
+type ComposicaoItem = {
+  tipo: TipoVeiculo;
+  quantidade: number;
+  refrigerado?: boolean;
+};
 
 const RoteirizadorWeb = () => {
   const [activeTab, setActiveTab] = useState("visao_geral");
@@ -76,132 +86,104 @@ const RoteirizadorWeb = () => {
   const [importedPedidos, setImportedPedidos] = useState<PedidoRoteirizacao[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [fileError, setFileError] = useState("");
+  const [carregandoOs, setCarregandoOs] = useState(false);
+  const [composicaoEscolhida, setComposicaoEscolhida] = useState<ComposicaoItem[] | null>(null);
+
+  const sugestoesComparativas = useMemo(function() {
+    if (pedidos.length === 0) return [];
+    return gerarSugestoesComparativasPorRegiao(pedidos);
+  }, [pedidos]);
   
-  // Carregar dados reais do Supabase
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        // Carregar pedidos reais de ordens_servico com enderecos
-        const { data: ordens } = await supabase
-          .from("ordens_servico")
-          .select("id, numero, cliente_id, cliente, enderecos, peso, volumes, cubagem, tipo_operacao, prioridade, carga_refrigerada, carga_tipo, instrucoes_operacionais_os, data_programada, status, created_at")
-          .in("status", ["pendente", "agendada", "em_aberto"])
-          .order("created_at", { ascending: false })
-          .limit(200);
-        
-        if (ordens && ordens.length > 0) {
-          const pedidosReais: PedidoRoteirizacao[] = [];
-          for (const os of ordens) {
-            const enderecos = os.enderecos ? (typeof os.enderecos === 'string' ? JSON.parse(os.enderecos) : os.enderecos) : [];
-            if (Array.isArray(enderecos)) {
-              enderecos.forEach((end: any, idx: number) => {
-                if (end.cidade) {
-                  pedidosReais.push({
-                    id: `${os.id}-${idx}`,
-                    numeroPedido: os.numero || `OS-${os.id?.toString().slice(0,8)}`,
-                    cliente: os.cliente || "N/I",
-                    destinatario: end.nome_destinatario || end.nome || os.cliente || "N/I",
-                    telefone: end.telefone || "",
-                    cep: (end.cep || "").toString().replace(/\D/g, ''),
-                    enderecoCompleto: `${end.logradouro || end.endereco || ""}, ${end.numero || ""} - ${end.bairro || ""}`,
-                    bairro: end.bairro || "",
-                    cidade: end.cidade || "",
-                    estado: end.uf || "",
-                    latitude: parseFloat(end.latitude) || 0,
-                    longitude: parseFloat(end.longitude) || 0,
-                    pesoKg: os.peso ? os.peso / Math.max(enderecos.length, 1) : 0,
-                    quantidadeVolumes: os.volumes ? Math.ceil(os.volumes / Math.max(enderecos.length, 1)) : 0,
-                    comprimentoCm: 0, larguraCm: 0, alturaCm: 0,
-                    cubagemM3: os.cubagem ? os.cubagem / Math.max(enderecos.length, 1) : 0,
-                    tipoCarga: os.carga_tipo || "seco",
-                    secoOuRefrigerado: os.carga_refrigerada ? "refrigerado" : "seco",
-                    prioridade: os.prioridade || "normal",
-                    observacoes: os.instrucoes_operacionais_os || "",
-                    status: "pendente" as const
-                  });
-                }
-              });
-            }
-            // Se não tem enderecos, usar origem/destino
-            if (enderecos.length === 0 && os.cliente) {
-              pedidosReais.push({
-                id: os.id || `os-${Date.now()}`,
-                numeroPedido: os.numero || `OS-${os.id?.toString().slice(0,8)}`,
-                cliente: os.cliente || "N/I",
-                destinatario: os.cliente || "N/I",
-                telefone: "",
-                cep: "",
-                enderecoCompleto: "",
-                bairro: "", cidade: "", estado: "",
-                latitude: 0, longitude: 0,
-                pesoKg: os.peso || 0,
-                quantidadeVolumes: os.volumes || 0,
-                comprimentoCm: 0, larguraCm: 0, alturaCm: 0,
-                cubagemM3: os.cubagem || 0,
-                tipoCarga: os.carga_tipo || "seco",
-                secoOuRefrigerado: os.carga_refrigerada ? "refrigerado" : "seco",
-                prioridade: os.prioridade || "normal",
-                observacoes: os.instrucoes_operacionais_os || "",
-                status: "pendente" as const
-              });
-            }
-          }
-          setPedidos(pedidosReais);
-        }
+  // Inferir termico/refrigerado a partir de colunas REAIS do veiculo.
+  const inferirVeiculoRefrigerado = (v: Record<string, any>): boolean => {
+    const texto = `${v.tipo_veiculo || ""} ${v.tipo_carga || ""} ${v.observacoes || ""}`
+      .toLowerCase();
+    if (/refrig|t[eé]rmic/.test(texto)) return true;
+    return v.temperatura_min != null || v.temperatura_max != null;
+  };
 
-        // Carregar veículos reais de prestadores + veiculos
-        const { data: prestadores } = await supabase
-          .from("prestadores")
-          .select("id, nome_completo, veiculos, status, cep, regiao_principal")
-          .eq("status", "ativo")
-          .limit(50);
+  // FROTA: veiculos + prestadores usando SOMENTE colunas existentes no banco.
+  const carregarFrota = async () => {
+    try {
+      setLoading(true);
 
-        const { data: veiculosData } = await supabase
-          .from("veiculos")
-          .select("id, tipo_veiculo, placa, capacidade_kg, capacidade_m3, prestador_vinculado, termica, status")
-          .eq("status", "Ativo")
-          .limit(100);
-
-        if (veiculosData && veiculosData.length > 0) {
-          const veiculosMap = new Map<string, any[]>();
-          veiculosData.forEach(v => {
-            const key = v.prestador_vinculado?.toString() || 'unknown';
-            if (!veiculosMap.has(key)) veiculosMap.set(key, []);
-            veiculosMap.get(key)!.push(v);
-          });
-
-          const veiculosReais: VeiculoRoteirizacao[] = [];
-          const prestadorMap = new Map<string, any>();
-          if (prestadores) prestadores.forEach(p => prestadorMap.set(p.id, p));
-
-          for (const v of veiculosData) {
-            const prest = v.prestador_vinculado ? prestadorMap.get(v.prestador_vinculado.toString()) : null;
-            veiculosReais.push({
-              id: v.id,
-              tipoVeiculo: v.tipo_veiculo || "VUC",
-              placa: v.placa || "SEM PLACA",
-              motorista: prest?.nome_completo || "N/I",
-              prestadorId: v.prestador_vinculado?.toString() || "",
-              cepBasePrestador: prest?.cep || "",
-              regiaoBase: prest?.regiao_principal || "",
-              capacidadePesoKg: v.capacidade_kg || CAPACIDADES_PADRAO_VEICULOS[v.tipo_veiculo as TipoVeiculo]?.capacidadeKg || 1000,
-              capacidadeCubagemM3: v.capacidade_m3 || CAPACIDADES_PADRAO_VEICULOS[v.tipo_veiculo as TipoVeiculo]?.capacidadeM3 || 5,
-              tipoOperacao: v.termica === "refrigerado" ? "refrigerado" : "seco",
-              disponivel: true,
-              contratoOuAvulso: "contrato"
-            });
-          }
-          setVeiculos(veiculosReais);
-        }
-      } catch (e: any) {
-        console.warn("[Roteirizador] Erro ao carregar dados:", e.message);
-      } finally {
-        setLoading(false);
+      const { data: prestadores, error: prestadoresError } = await supabase
+        .from("prestadores")
+        .select("id, nome_completo, telefone, status, regiao_principal, endereco, metadata")
+        .limit(300);
+      if (prestadoresError) {
+        console.warn("[Roteirizador] prestadores:", prestadoresError.message);
       }
-    };
-    loadData();
-  });
+
+      const { data: veiculosData, error: veiculosError } = await supabase
+        .from("veiculos")
+        .select(
+          "id, tipo_veiculo, placa, capacidade_kg, capacidade_m3, prestador_vinculado, status, tipo_carga, temperatura_min, temperatura_max, observacoes",
+        )
+        .limit(300);
+      if (veiculosError) {
+        console.warn("[Roteirizador] veiculos:", veiculosError.message);
+      }
+
+      const prestadorMap = new Map<string, any>();
+      (prestadores || []).forEach(function(p: any) {
+        prestadorMap.set(p.id, p);
+      });
+
+      const veiculosReais: VeiculoRoteirizacao[] = [];
+      (veiculosData || []).forEach(function(v: any) {
+        // Aceita 'disponivel' / 'ativo' / 'Ativo' (case-insensitive).
+        const statusLower = String(v.status || "").toLowerCase();
+        const statusPermitido = statusLower === "" || statusLower === "disponivel" ||
+          statusLower === "ativo";
+        if (!statusPermitido) return;
+
+        const tipo = normalizarTipoVeiculo(v.tipo_veiculo);
+        const capPadrao = CAPACIDADES_PADRAO_VEICULOS.find(function(c) {
+          return c.tipo === tipo;
+        });
+        const prest = v.prestador_vinculado
+          ? prestadorMap.get(v.prestador_vinculado.toString())
+          : null;
+        const enderecoPrestador = (prest?.endereco && typeof prest.endereco === "object")
+          ? prest.endereco
+          : {};
+        const disponivelApp = prest?.metadata?.disponivel_app;
+        const onlineApp = disponivelApp === true || disponivelApp === "true" ||
+          disponivelApp === 1;
+
+        veiculosReais.push({
+          id: v.id,
+          tipoVeiculo: tipo,
+          placa: v.placa || "SEM PLACA",
+          motorista: prest?.nome_completo || "N/I",
+          prestadorId: v.prestador_vinculado?.toString() || "",
+          cepBasePrestador: String(enderecoPrestador.cep || "").replace(/\D/g, ""),
+          regiaoBase: prest?.regiao_principal || "",
+          capacidadePesoKg: Number(v.capacidade_kg) || capPadrao?.capacidadePesoKg || 1000,
+          capacidadeCubagemM3: Number(v.capacidade_m3) || capPadrao?.capacidadeCubagemM3 || 5,
+          tipoOperacao: inferirVeiculoRefrigerado(v) ? "refrigerado" : "seco",
+          temperaturaMinima: v.temperatura_min != null
+            ? Number(v.temperatura_min)
+            : undefined,
+          disponivel: true,
+          contratoOuAvulso: prest ? "contrato" : "avulso",
+          onlineApp,
+        });
+      });
+      setVeiculos(veiculosReais);
+    } catch (e: any) {
+      console.warn("[Roteirizador] Erro ao carregar frota:", e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Carga inicial: apenas a frota. Pedidos comecam vazios (sem OS antigas).
+  useEffect(() => {
+    void carregarFrota();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const processImportData = (data: any[]) => {
     const novosPedidos: PedidoRoteirizacao[] = data.map((row, index) => {
@@ -353,7 +335,7 @@ const RoteirizadorWeb = () => {
       secoOuRefrigerado: novoPedido.tipoCarga?.includes("refri") ? "refrigerado" : "seco",
       status: "pendente",
       prioridade: "normal",
-    } as PedidoRoteirizacao;
+    } as unknown as PedidoRoteirizacao;
 
     // Simulate geocoding via Mapbox if available, but for now we just push.
     // Geocoding can be done automatically via a separate mapbox geocode call.
@@ -415,13 +397,168 @@ const RoteirizadorWeb = () => {
     }
   };
 
+  // PEDIDOS: carrega SOMENTE enderecos de entrega/destino das OS pendentes.
+  const carregarPedidosDasOS = async () => {
+    try {
+      setCarregandoOs(true);
+      const { data: ordens, error } = await supabase
+        .from("ordens_servico")
+        .select("id, numero, cliente_id, cliente, enderecos, peso, volumes, cubagem, tipo_operacao, prioridade, carga_refrigerada, carga_tipo, instrucoes_operacionais_os, data_programada, status, created_at")
+        .in("status", ["pendente", "agendada", "em_aberto"])
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+
+      const pedidosReais: PedidoRoteirizacao[] = [];
+      (ordens || []).forEach(function(os: any) {
+        let enderecos: any[] = [];
+        try {
+          enderecos = os.enderecos
+            ? (typeof os.enderecos === "string" ? JSON.parse(os.enderecos) : os.enderecos)
+            : [];
+        } catch {
+          enderecos = [];
+        }
+        if (!Array.isArray(enderecos) || enderecos.length === 0) return;
+
+        const entregas = enderecos
+          .filter(function(end: any, idx: number) {
+            const tipo = String(end.tipo || end.tipo_parada || end.statusPonto || "")
+              .toLowerCase();
+            if (tipo.includes("entrega") || tipo === "destino") return true;
+            if (tipo.includes("coleta") || tipo.includes("retirada") || tipo === "origem") {
+              return false;
+            }
+            if (enderecos.length === 1) return true;
+            return idx > 0; // 1o endereco assume coleta/origem; demais sao entregas
+          })
+          .filter(function(end: any) {
+            return Boolean(end.cidade || end.logradouro || end.endereco);
+          });
+
+        const divisor = Math.max(entregas.length, 1);
+        entregas.forEach(function(end: any, idx: number) {
+          pedidosReais.push({
+            id: `${os.id}-ent-${idx}`,
+            numeroPedido: os.numero || `OS-${os.id?.toString().slice(0, 8)}`,
+            cliente: os.cliente || "N/I",
+            destinatario: end.nome_destinatario || end.nome || os.cliente || "N/I",
+            telefone: end.telefone || end.telefone_contato || "",
+            cep: (end.cep || "").toString().replace(/\D/g, ""),
+            enderecoCompleto: `${end.logradouro || end.endereco || ""}, ${end.numero || ""} - ${end.bairro || ""}`,
+            bairro: end.bairro || "",
+            cidade: end.cidade || "",
+            estado: end.uf || "",
+            latitude: Number(end.latitude) || 0,
+            longitude: Number(end.longitude) || 0,
+            pesoKg: os.peso ? os.peso / divisor : 0,
+            quantidadeVolumes: os.volumes ? Math.ceil(os.volumes / divisor) : 0,
+            comprimentoCm: 0, larguraCm: 0, alturaCm: 0,
+            cubagemM3: os.cubagem ? os.cubagem / divisor : 0,
+            tipoCarga: os.carga_tipo || "seco",
+            secoOuRefrigerado: os.carga_refrigerada ? "refrigerado" : "seco",
+            prioridade: os.prioridade || "media",
+            observacoes: os.instrucoes_operacionais_os || "",
+            status: "pendente" as const,
+          });
+        });
+      });
+
+      setPedidos(pedidosReais);
+      setDistribuicaoGerada([]);
+      setRotasCalculadas(new Map());
+      setComposicaoEscolhida(null);
+      toast.success(
+        `${pedidosReais.length} paradas de entrega carregadas das OS do sistema.`,
+      );
+    } catch (e: any) {
+      toast.error("Erro ao carregar OS: " + (e?.message || "desconhecido"));
+    } finally {
+      setCarregandoOs(false);
+    }
+  };
+
+  const iniciarLoteLimpo = () => {
+    setPedidos([]);
+    setImportedPedidos([]);
+    setDistribuicaoGerada([]);
+    setRotasCalculadas(new Map());
+    setComposicaoEscolhida(null);
+    setFileError("");
+    toast.success("Lote limpo. Importe a planilha ou adicione paradas manualmente.");
+  };
+
+  // Constroi veiculos virtuais a partir de uma composicao escolhida/sugerida.
+  const construirVeiculosDaComposicao = (
+    composicao: ComposicaoItem[],
+  ): VeiculoRoteirizacao[] => {
+    const lista: VeiculoRoteirizacao[] = [];
+    composicao.forEach(function(item) {
+      const cap = getCapacidadePadrao(item.tipo);
+      const qtd = Math.max(1, item.quantidade || 1);
+      for (let i = 0; i < qtd; i++) {
+        lista.push({
+          id: `virtual-${item.tipo}-${item.refrigerado ? "ref" : "seco"}-${i}`,
+          tipoVeiculo: item.tipo,
+          placa: "",
+          motorista: "",
+          capacidadePesoKg: cap?.capacidadePesoKg || 0,
+          capacidadeCubagemM3: cap?.capacidadeCubagemM3 || 0,
+          tipoOperacao: item.refrigerado ? "refrigerado" : "seco",
+          disponivel: true,
+          contratoOuAvulso: "contrato",
+          onlineApp: false,
+        });
+      }
+    });
+    return lista;
+  };
+
+  const aplicarComposicao = (cenario: SugestaoFrotaCenario) => {
+    setComposicaoEscolhida([{
+      tipo: cenario.tipo,
+      quantidade: cenario.quantidade,
+      refrigerado: false,
+    }]);
+    toast.success(
+      `Composição aplicada: ${cenario.quantidade}x ${cenario.tipoNome}. Clique em "Gerar Roteiros Inteligentes".`,
+    );
+  };
+
+  const limparComposicao = () => setComposicaoEscolhida(null);
+
   const handleGerarRoteiros = () => {
+    if (pedidos.length === 0) {
+      toast.error(
+        "Nenhum pedido no lote. Importe uma planilha ou carregue as OS pendentes.",
+      );
+      return;
+    }
     setIsGerando(true);
     setTimeout(() => {
       try {
-        const veiculosSugeridosCalc = pedidos.length > 0 ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado']) : [];
-        const veiculosParaUso = modoRoteirizacao === 'sugestao' ? veiculosSugeridosCalc as any : veiculos;
-        const res = distribuirPedidosEntreVeiculos(pedidos, veiculosParaUso, modoRoteirizacao);
+        const composicaoBase: ComposicaoItem[] = composicaoEscolhida &&
+            composicaoEscolhida.length > 0
+          ? composicaoEscolhida
+          : (modoRoteirizacao === "sugestao"
+            ? sugerirVeiculosNecessarios(pedidos, ["seco", "refrigerado"]).map(
+              function(s) {
+                return {
+                  tipo: s.tipo,
+                  quantidade: s.quantidade,
+                  refrigerado: s.refrigerado,
+                };
+              },
+            )
+            : []);
+        const veiculosParaUso = composicaoBase.length > 0
+          ? construirVeiculosDaComposicao(composicaoBase)
+          : veiculos;
+        const res = distribuirPedidosEntreVeiculos(
+          pedidos,
+          veiculosParaUso,
+          "disponiveis",
+        );
         setDistribuicaoGerada(res);
         setRotasCalculadas(new Map());
         toast.success("Roteiros gerados com sucesso!");
@@ -431,7 +568,7 @@ const RoteirizadorWeb = () => {
       } finally {
         setIsGerando(false);
       }
-    }, 500);
+    }, 400);
   };
 
   const calcularDistanciaTempoUmaRota = async (pedidosRota: PedidoRoteirizacao[], index: number) => {
@@ -527,6 +664,91 @@ const RoteirizadorWeb = () => {
     }
   };
 
+  const renderSugestoesComparativas = () => {
+    if (sugestoesComparativas.length === 0) return null;
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Truck className="w-4 h-4 text-indigo-500" />
+            Sugestões Comparativas de Frota
+          </CardTitle>
+          <CardDescription>
+            Clique em um cenário para aplicá-lo antes de gerar os roteiros
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {composicaoEscolhida && composicaoEscolhida.length > 0 && (
+            <div className="mb-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+              <span>
+                Composição aplicada:{" "}
+                {composicaoEscolhida.map(function(i) {
+                  return `${i.quantidade}x ${getNomeTipoVeiculo(i.tipo)}`;
+                }).join(" + ")}
+              </span>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={limparComposicao}
+              >
+                Limpar
+              </Button>
+            </div>
+          )}
+          <div className="space-y-3">
+            {sugestoesComparativas.map(function(s) {
+              return (
+                <div key={s.regiao} className="rounded-lg border p-3">
+                  <p className="text-sm font-medium">
+                    {s.regiao}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({s.paradas} paradas • {s.pesoKg.toFixed(1)} kg •{" "}
+                      {s.cubagemM3.toFixed(2)} m³)
+                    </span>
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {s.cenarios.map(function(c, ci) {
+                      const isRec = Boolean(
+                        s.recomendado && c.tipo === s.recomendado.tipo &&
+                          c.quantidade === s.recomendado.quantidade,
+                      );
+                      return (
+                        <span key={c.tipo} className="inline-flex items-center gap-2">
+                          {ci > 0 && (
+                            <span className="text-[11px] text-slate-400">OU</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={function() { aplicarComposicao(c); }}
+                            className={
+                              "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors " +
+                              (isRec
+                                ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")
+                            }
+                            title="Aplicar esta composição"
+                          >
+                            {c.resumo}
+                            {isRec && (
+                              <span className="ml-1 text-[10px] font-semibold">
+                                recomendado
+                              </span>
+                            )}
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -586,6 +808,44 @@ const RoteirizadorWeb = () => {
         </TabsList>
 
         <TabsContent value="visao_geral" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Package className="w-4 h-4 text-indigo-500" />
+                Origem dos Pedidos
+              </CardTitle>
+              <CardDescription>
+                Escolha antes de roteirizar — evita poluir o lote com OS antigas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={iniciarLoteLimpo}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Iniciar lote limpo (Planilha/Manual)
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={function() { void carregarPedidosDasOS(); }}
+                  disabled={carregandoOs}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {carregandoOs
+                    ? "Carregando OS..."
+                    : "Carregar OS pendentes do sistema"}
+                </Button>
+                <Badge variant="outline" className="ml-auto">
+                  {pedidos.length} pedidos no lote
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                A tela inicia vazia por padrão. Ao carregar do sistema, apenas os
+                endereços de entrega/destino das OS pendentes/agendadas são
+                considerados (a coleta/origem é ignorada).
+              </p>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -713,6 +973,8 @@ const RoteirizadorWeb = () => {
             </Card>
           )}
 
+          {renderSugestoesComparativas()}
+
           <Card>
             <CardHeader>
               <CardTitle>Modo de Roteirização</CardTitle>
@@ -773,7 +1035,7 @@ const RoteirizadorWeb = () => {
                 </div>
                 <div>
                   <Label>Tipo Carga</Label>
-                  <Select value={novoPedido.tipoCarga} onValueChange={v => setNovoPedido({...novoPedido, tipoCarga: v})}>
+                  <Select value={novoPedido.tipoCarga} onValueChange={v => setNovoPedido({...novoPedido, tipoCarga: v as PedidoRoteirizacao["tipoCarga"]})}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="seco">Seco</SelectItem>
@@ -990,6 +1252,7 @@ const RoteirizadorWeb = () => {
               </div>
             </CardContent>
           </Card>
+          {renderSugestoesComparativas()}
         </TabsContent>
 
         <TabsContent value="veiculos" className="space-y-4">
@@ -1009,6 +1272,7 @@ const RoteirizadorWeb = () => {
                     <TableHead>Peso máx.</TableHead>
                     <TableHead>Cubagem máx.</TableHead>
                     <TableHead>Tipo Operação</TableHead>
+                    <TableHead>Online (App)</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Contrato</TableHead>
                   </TableRow>
@@ -1025,8 +1289,13 @@ const RoteirizadorWeb = () => {
                       <TableCell>{veiculo.capacidadePesoKg} kg</TableCell>
                       <TableCell>{veiculo.capacidadeCubagemM3} m³</TableCell>
                       <TableCell>
-                        <Badge variant={veiculo.tipoOperacao === 'refrigerado' ? 'blue' : 'outline'}>
+                        <Badge variant={veiculo.tipoOperacao === 'refrigerado' ? 'default' : 'outline'}>
                           {veiculo.tipoOperacao}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={veiculo.onlineApp ? 'default' : 'outline'}>
+                          {veiculo.onlineApp ? 'Online' : 'Offline'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -1058,6 +1327,7 @@ const RoteirizadorWeb = () => {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Capacidade Peso</TableHead>
                     <TableHead>Capacidade Cubagem</TableHead>
+                    <TableHead>Máx. paradas</TableHead>
                     <TableHead>Observação</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1069,6 +1339,7 @@ const RoteirizadorWeb = () => {
                       </TableCell>
                       <TableCell>{cap.capacidadePesoKg} kg</TableCell>
                       <TableCell>{cap.capacidadeCubagemM3} m³</TableCell>
+                      <TableCell>{cap.maxParadas ?? '-'}</TableCell>
                       <TableCell className="text-muted-foreground">{cap.observacao || '-'}</TableCell>
                     </TableRow>
                   ))}
@@ -1281,7 +1552,7 @@ const RoteirizadorWeb = () => {
                                     <TableCell className="text-right text-xs">{pedido.pesoKg} kg</TableCell>
                                     <TableCell className="text-right text-xs">{calcularCubagemPedido(pedido).toFixed(3)} m³</TableCell>
                                     <TableCell className="text-center">
-                                      <Badge variant={pedido.secoOuRefrigerado === 'refrigerado' ? 'blue' : 'outline'} className="text-[10px]">
+                                      <Badge variant={pedido.secoOuRefrigerado === 'refrigerado' ? 'default' : 'outline'} className="text-[10px]">
                                         {pedido.secoOuRefrigerado === 'refrigerado' ? 'Refri' : 'Seco'}
                                       </Badge>
                                     </TableCell>
@@ -1327,7 +1598,7 @@ const RoteirizadorWeb = () => {
                           cliente: p.cliente,
                           sequencia: pIdx + 1
                         }))
-                      ).filter(l => l.latitude !== 0 && l.longitude !== 0)}
+                      ).filter(l => l.latitude !== 0 && l.longitude !== 0) as any}
                       routeCoordinates={Array.from(rotasCalculadas.values()).find(r => r.routeCoordinates && r.routeCoordinates.length > 0)?.routeCoordinates}
                     />
                   </div>
@@ -1401,7 +1672,7 @@ const RoteirizadorWeb = () => {
                       <TableCell>{pedido.pesoKg} kg</TableCell>
                       <TableCell>{calcularCubagemPedido(pedido).toFixed(3)} m³</TableCell>
                       <TableCell>
-                        <Badge variant={pedido.secoOuRefrigerado === 'refrigerado' ? 'blue' : 'outline'}>
+                        <Badge variant={pedido.secoOuRefrigerado === 'refrigerado' ? 'default' : 'outline'}>
                           {pedido.secoOuRefrigerado}
                         </Badge>
                       </TableCell>

@@ -12,6 +12,8 @@ import {
   ParadaSequencia,
   OrigemCalculoDistancia,
   ResultadoCalculoDistancia,
+  SugestaoFrotaCenario,
+  SugestaoComparativaRegiao,
 } from '@/types/roteirizacao';
 
 export const calcularCubagemPedido = (pedido: PedidoRoteirizacao): number => {
@@ -206,55 +208,212 @@ export const validarPedido = (pedido: PedidoRoteirizacao): AlertaRoteirizacao[] 
 };
 
 export const validarListaPedidos = (pedidos: PedidoRoteirizacao[]): AlertaRoteirizacao[] => {
-  return pedidos.flatMap(validarPedido);
+  // Dedup por codigo + numero do pedido/OS (evita SEM_PESO/SEM_DIMENSAO repetidos).
+  const vistos = new Set<string>();
+  const out: AlertaRoteirizacao[] = [];
+  for (const pedido of pedidos) {
+    for (const alerta of validarPedido(pedido)) {
+      const chave = `${alerta.codigo}::${pedido.numeroPedido || pedido.id}`;
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      out.push(alerta);
+    }
+  }
+  return out;
+};
+
+/** Normaliza o `tipo_veiculo` do banco para o enum da roteirizacao. */
+export const normalizarTipoVeiculo = (valor: unknown): TipoVeiculo => {
+  const t = String(valor || "").toLowerCase();
+  if (t.includes("moto")) return "Moto";
+  if (t.includes("fiorino")) return "Fiorino";
+  if (t.includes("hr") || t.includes("bongo")) return "HR_Bongo";
+  if (t.includes("van") || t.includes("vuc") || t.includes("kombi")) return "Van_VUC";
+  if (t.includes("3/4") || t.includes("34") || t.includes("tres") || t.includes("três")) return "Caminhao_34";
+  if (t.includes("toco")) return "Caminhao_Toco";
+  if (t.includes("truck") || t.includes("bitruck")) return "Caminhao_Truck";
+  if (t.includes("carreta") || t.includes("bitrem")) return "Carreta";
+  return "Van_VUC";
+};
+
+const TIPOS_POR_CAPACIDADE: TipoVeiculo[] = [
+  'Moto',
+  'Fiorino',
+  'Van_VUC',
+  'HR_Bongo',
+  'Caminhao_34',
+  'Caminhao_Toco',
+  'Caminhao_Truck',
+  'Carreta',
+];
+
+/** Tipos exibidos nas sugestoes comparativas (curto/médio porte). */
+const TIPOS_SUGESTAO: TipoVeiculo[] = [
+  'Moto',
+  'Fiorino',
+  'HR_Bongo',
+  'Van_VUC',
+  'Caminhao_34',
+];
+
+/**
+ * Quantidade REAL de veiculos de um tipo para atender, simultaneamente,
+ * peso (kg), cubagem (m³ quando > 0) e maximo de paradas por turno.
+ */
+export const dimensionarQuantidadeFrota = (
+  pedidos: PedidoRoteirizacao[],
+  tipo: TipoVeiculo,
+): number => {
+  if (pedidos.length === 0) return 0;
+  const cap = getCapacidadePadrao(tipo);
+  if (!cap) return 0;
+
+  const peso = pedidos.reduce((acc, p) => acc + (p.pesoKg || 0), 0);
+  const cubagem = pedidos.reduce((acc, p) => acc + calcularCubagemPedido(p), 0);
+  const paradas = pedidos.length;
+
+  const porPeso = cap.capacidadePesoKg > 0
+    ? Math.ceil(peso / cap.capacidadePesoKg)
+    : 1;
+  const porCubagem = (cubagem > 0 && cap.capacidadeCubagemM3 > 0)
+    ? Math.ceil(cubagem / cap.capacidadeCubagemM3)
+    : 1;
+  const porParadas = (cap.maxParadas && cap.maxParadas > 0)
+    ? Math.ceil(paradas / cap.maxParadas)
+    : 1;
+
+  return Math.max(1, porPeso, porCubagem, porParadas);
+};
+
+const melhorComposicaoPara = (
+  pedidos: PedidoRoteirizacao[],
+): { tipo: TipoVeiculo; quantidade: number } | null => {
+  let melhor: { tipo: TipoVeiculo; quantidade: number } | null = null;
+  for (const tipo of TIPOS_POR_CAPACIDADE) {
+    const quantidade = dimensionarQuantidadeFrota(pedidos, tipo);
+    if (quantidade <= 0) continue;
+    const capAtual = getCapacidadePadrao(tipo)?.capacidadePesoKg || 0;
+    const capMelhor = melhor
+      ? (getCapacidadePadrao(melhor.tipo)?.capacidadePesoKg || 0)
+      : Infinity;
+    if (
+      !melhor || quantidade < melhor.quantidade ||
+      (quantidade === melhor.quantidade && capAtual < capMelhor)
+    ) {
+      melhor = { tipo, quantidade };
+    }
+  }
+  return melhor;
 };
 
 export const sugerirVeiculosNecessarios = (
   pedidos: PedidoRoteirizacao[],
-  modos: ('seco' | 'refrigerado')[]
-): { tipo: TipoVeiculo; quantidade: number; capacidadePesoKg: number; capacidadeCubagemM3: number }[] => {
-  const totais = calcularTotaisPedidos(pedidos);
-  
-  const secoPedidos = pedidos.filter(p => p.secoOuRefrigerado === 'seco').length;
-  const refrigeradoPedidos = pedidos.filter(p => p.secoOuRefrigerado === 'refrigerado').length;
+  modos: ('seco' | 'refrigerado')[],
+): {
+  tipo: TipoVeiculo;
+  quantidade: number;
+  capacidadePesoKg: number;
+  capacidadeCubagemM3: number;
+  maxParadas: number;
+  refrigerado?: boolean;
+}[] => {
+  const resultado: {
+    tipo: TipoVeiculo;
+    quantidade: number;
+    capacidadePesoKg: number;
+    capacidadeCubagemM3: number;
+    maxParadas: number;
+    refrigerado?: boolean;
+  }[] = [];
 
-  const veiculosSugeridos: { tipo: TipoVeiculo; quantidade: number }[] = [];
+  const seco = pedidos.filter(p => p.secoOuRefrigerado === 'seco');
+  const refrigerado = pedidos.filter(p => p.secoOuRefrigerado === 'refrigerado');
 
-  if (modos.includes('seco') && secoPedidos > 0) {
-    const pesoSeco = pedidos.filter(p => p.secoOuRefrigerado === 'seco').reduce((acc, p) => acc + (p.pesoKg || 0), 0);
-    const cubagemSeco = pedidos.filter(p => p.secoOuRefrigerado === 'seco').reduce((acc, p) => acc + calcularCubagemPedido(p), 0);
-
-    if (pesoSeco > 0 || cubagemSeco > 0) {
-      if (pesoSeco <= 20 || cubagemSeco <= 0.09) {
-        veiculosSugeridos.push({ tipo: 'Moto', quantidade: 1 });
-      } else if (pesoSeco <= 500 || cubagemSeco <= 2.5) {
-        veiculosSugeridos.push({ tipo: 'Fiorino', quantidade: 1 });
-      } else if (pesoSeco <= 1200 || cubagemSeco <= 6) {
-        veiculosSugeridos.push({ tipo: 'Van_VUC', quantidade: 1 });
-      } else if (pesoSeco <= 3000 || cubagemSeco <= 15) {
-        veiculosSugeridos.push({ tipo: 'Caminhao_34', quantidade: 1 });
-      } else if (pesoSeco <= 6000 || cubagemSeco <= 30) {
-        veiculosSugeridos.push({ tipo: 'Caminhao_Toco', quantidade: 1 });
-      } else if (pesoSeco <= 12000 || cubagemSeco <= 55) {
-        veiculosSugeridos.push({ tipo: 'Caminhao_Truck', quantidade: 1 });
-      } else {
-        veiculosSugeridos.push({ tipo: 'Carreta', quantidade: 1 });
-      }
+  if (modos.includes('seco') && seco.length > 0) {
+    const comp = melhorComposicaoPara(seco);
+    if (comp) {
+      const cap = getCapacidadePadrao(comp.tipo);
+      resultado.push({
+        tipo: comp.tipo,
+        quantidade: comp.quantidade,
+        capacidadePesoKg: cap?.capacidadePesoKg || 0,
+        capacidadeCubagemM3: cap?.capacidadeCubagemM3 || 0,
+        maxParadas: cap?.maxParadas || 0,
+      });
     }
   }
 
-  if (modos.includes('refrigerado') && refrigeradoPedidos > 0) {
-    veiculosSugeridos.push({ tipo: 'Van_VUC', quantidade: 1 });
+  if (modos.includes('refrigerado') && refrigerado.length > 0) {
+    const cap = getCapacidadePadrao('Van_VUC');
+    resultado.push({
+      tipo: 'Van_VUC',
+      quantidade: dimensionarQuantidadeFrota(refrigerado, 'Van_VUC'),
+      capacidadePesoKg: cap?.capacidadePesoKg || 0,
+      capacidadeCubagemM3: cap?.capacidadeCubagemM3 || 0,
+      maxParadas: cap?.maxParadas || 0,
+      refrigerado: true,
+    });
   }
 
-  return veiculosSugeridos.map(v => {
-    const capacidade = getCapacidadePadrao(v.tipo);
+  return resultado;
+};
+
+/**
+ * Sugestoes comparativas de frota por regiao (bairro/cidade) e no consolidado.
+ * Cada cenario respeita peso + cubagem + maximo de paradas do veiculo.
+ */
+export const gerarSugestoesComparativasPorRegiao = (
+  pedidos: PedidoRoteirizacao[],
+): SugestaoComparativaRegiao[] => {
+  const montarCenario = (
+    lista: PedidoRoteirizacao[],
+    tipo: TipoVeiculo,
+  ): SugestaoFrotaCenario => {
+    const cap = getCapacidadePadrao(tipo);
+    const quantidade = dimensionarQuantidadeFrota(lista, tipo);
+    const nome = getNomeTipoVeiculo(tipo);
     return {
-      ...v,
-      capacidadePesoKg: capacidade?.capacidadePesoKg || 0,
-      capacidadeCubagemM3: capacidade?.capacidadeCubagemM3 || 0,
+      tipo,
+      tipoNome: nome,
+      quantidade,
+      capacidadePesoKg: cap?.capacidadePesoKg || 0,
+      capacidadeCubagemM3: cap?.capacidadeCubagemM3 || 0,
+      maxParadas: cap?.maxParadas || 0,
+      resumo: `${quantidade} ${nome} (${cap?.capacidadePesoKg || 0} kg)`,
     };
+  };
+
+  const criar = (
+    regiao: string,
+    lista: PedidoRoteirizacao[],
+  ): SugestaoComparativaRegiao => {
+    const peso = lista.reduce((acc, p) => acc + (p.pesoKg || 0), 0);
+    const cubagem = lista.reduce((acc, p) => acc + calcularCubagemPedido(p), 0);
+    const cenarios = TIPOS_SUGESTAO
+      .map(tipo => montarCenario(lista, tipo))
+      .filter(c => c.quantidade > 0);
+    const recomendado = [...cenarios].sort((a, b) =>
+      a.quantidade - b.quantidade ||
+      a.capacidadePesoKg - b.capacidadePesoKg
+    )[0] || null;
+    return {
+      regiao,
+      paradas: lista.length,
+      pesoKg: Math.round(peso * 10) / 10,
+      cubagemM3: Math.round(cubagem * 100) / 100,
+      recomendado,
+      cenarios,
+    };
+  };
+
+  const saida: SugestaoComparativaRegiao[] = [];
+  if (pedidos.length === 0) return saida;
+
+  agruparPorRegiao(pedidos).forEach(grupo => {
+    saida.push(criar(grupo.nome, grupo.pedidos));
   });
+  saida.push(criar('Consolidado geral', pedidos));
+  return saida;
 };
 
 
@@ -507,6 +666,7 @@ export const getNomeTipoVeiculo = (tipo: TipoVeiculo): string => {
   const nomes: Record<TipoVeiculo, string> = {
     'Moto': 'Moto',
     'Fiorino': 'Fiorino',
+    'HR_Bongo': 'Hyundai HR / Bongo',
     'Van_VUC': 'Van / VUC',
     'Caminhao_34': 'Caminhão 3/4',
     'Caminhao_Toco': 'Caminhão Toco',
@@ -520,6 +680,7 @@ export const getIconeTipoVeiculo = (tipo: TipoVeiculo): string => {
   const icones: Record<TipoVeiculo, string> = {
     'Moto': '🏍',
     'Fiorino': '🚐',
+    'HR_Bongo': '🚐',
     'Van_VUC': '🚚',
     'Caminhao_34': '🚛',
     'Caminhao_Toco': '🚛',
