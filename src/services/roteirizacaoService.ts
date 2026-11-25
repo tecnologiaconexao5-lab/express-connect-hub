@@ -417,136 +417,327 @@ export const gerarSugestoesComparativasPorRegiao = (
 };
 
 
+const ORDEM_PORTE_VEICULO: TipoVeiculo[] = [
+  'Moto',
+  'Fiorino',
+  'HR_Bongo',
+  'Van_VUC',
+  'Caminhao_34',
+  'Caminhao_Toco',
+  'Caminhao_Truck',
+  'Carreta',
+];
+
+function normalizarTextoRegiao(valor: unknown): string {
+  return String(valor ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+export type MacroRegiao =
+  | 'Centro SP'
+  | 'Zona Norte SP'
+  | 'Zona Sul SP'
+  | 'Zona Leste SP'
+  | 'Zona Oeste SP'
+  | 'ABC Paulista'
+  | 'Guarulhos'
+  | 'Osasco / Barueri / Alphaville'
+  | 'Outras Regiões';
+
+/** Classifica a entrega em uma macro-regiao logistica (SP e Grande SP). */
+export const identificarMacroRegiao = (
+  cep: string,
+  cidade: string,
+  bairro: string,
+): MacroRegiao => {
+  const c = normalizarTextoRegiao(cidade);
+  const b = normalizarTextoRegiao(bairro);
+
+  if (c.includes("guarulhos")) return "Guarulhos";
+  if (
+    c.includes("osasco") || c.includes("barueri") || c.includes("alphaville") ||
+    c.includes("carapicuiba") || c.includes("santana de parnaiba") ||
+    c.includes("jandira")
+  ) {
+    return "Osasco / Barueri / Alphaville";
+  }
+  if (
+    c.includes("santo andre") || c.includes("sao bernardo") ||
+    c.includes("bernardo do campo") || c.includes("sao caetano") ||
+    c.includes("caetano do sul") || c.includes("diadema") || c.includes("maua") ||
+    c.includes("ribeirao pires") || c.includes("rio grande da serra")
+  ) {
+    return "ABC Paulista";
+  }
+
+  const ehSp = c === "" || c === "sp" || c.includes("sao paulo");
+  const pref = Number(String(cep || "").replace(/\D/g, "").slice(0, 3));
+
+  if (ehSp && Number.isFinite(pref)) {
+    if (pref >= 10 && pref <= 15) return "Centro SP";
+    if ((pref >= 20 && pref <= 29) || (pref >= 70 && pref <= 79)) {
+      return "Zona Norte SP";
+    }
+    if ((pref >= 30 && pref <= 39) || (pref >= 80 && pref <= 89)) {
+      return "Zona Leste SP";
+    }
+    if (pref >= 40 && pref <= 49) return "Zona Sul SP";
+    if (pref >= 50 && pref <= 59) return "Zona Oeste SP";
+    if (pref >= 60 && pref <= 69) return "Osasco / Barueri / Alphaville";
+    if (pref >= 90 && pref <= 99) return "ABC Paulista";
+  }
+
+  if (ehSp) {
+    if (/centro|republica|liberdade|bela vista|consolacao|pari|bras/.test(b)) {
+      return "Centro SP";
+    }
+    if (/pinheiros|butanta|lapa|perdizes|leopoldina|jaguare|rio pequeno|barra funda/.test(b)) {
+      return "Zona Oeste SP";
+    }
+    if (/tatuape|mooca|penha|vila prudente|itquera|sapopemba|sao mateus|artur alvim/.test(b)) {
+      return "Zona Leste SP";
+    }
+    if (/santo amaro|jabaquara|campo limpo|interlagos|saude|vila mariana|ipiranga/.test(b)) {
+      return "Zona Sul SP";
+    }
+    if (/santana|tucuruvi|vila maria|jacana|casa verde|mandaqui|freguesia/.test(b)) {
+      return "Zona Norte SP";
+    }
+    return "Outras Regiões";
+  }
+  return "Outras Regiões";
+};
+
+export const agruparPorMacroRegiao = (
+  pedidos: PedidoRoteirizacao[],
+): GrupoPedidos[] => {
+  const grupos = new Map<string, PedidoRoteirizacao[]>();
+  pedidos.forEach(p => {
+    const macro = identificarMacroRegiao(p.cep, p.cidade, p.bairro);
+    if (!grupos.has(macro)) grupos.set(macro, []);
+    grupos.get(macro)!.push(p);
+  });
+  return Array.from(grupos.entries()).map(([nome, lista], index) => ({
+    id: `macro_${index}`,
+    nome,
+    tipo: 'regiao',
+    pedidos: lista,
+    pesoTotalKg: lista.reduce((a, p) => a + (p.pesoKg || 0), 0),
+    cubagemTotalM3: lista.reduce((a, p) => a + calcularCubagemPedido(p), 0),
+  }));
+};
+
+export interface ResultadoRodizioSP {
+  rodizioHoje: boolean;
+  diaRodizio: string;
+  finalPlaca: number | null;
+  centroExpandido: boolean;
+  horarioRestrito: boolean;
+}
+
+const DIAS_RODIZIO = [
+  'Domingo',
+  'Segunda',
+  'Terça',
+  'Quarta',
+  'Quinta',
+  'Sexta',
+  'Sábado',
+];
+
+/**
+ * Rodizio municipal de SP: 1-2 Seg, 3-4 Ter, 5-6 Qua, 7-8 Qui, 9-0 Sex.
+ * Sem `cep` (ex.: aba Veiculos) informa se a placa esta no rodizio hoje.
+ * Com `cep` (rota) exige Centro Expandido + janela em horario restrito.
+ */
+export const verificarRodizioMunicipalSP = (
+  placa: string,
+  cep?: string,
+  dataRota?: Date,
+  janelaInicio?: string,
+  janelaFim?: string,
+): ResultadoRodizioSP => {
+  const digitos = String(placa || "").replace(/\D/g, "");
+  const finalPlaca = digitos ? Number(digitos[digitos.length - 1]) : null;
+  if (finalPlaca === null) {
+    return {
+      rodizioHoje: false,
+      diaRodizio: '—',
+      finalPlaca: null,
+      centroExpandido: false,
+      horarioRestrito: false,
+    };
+  }
+
+  let diaIdx: number;
+  if (finalPlaca === 1 || finalPlaca === 2) diaIdx = 1;
+  else if (finalPlaca === 3 || finalPlaca === 4) diaIdx = 2;
+  else if (finalPlaca === 5 || finalPlaca === 6) diaIdx = 3;
+  else if (finalPlaca === 7 || finalPlaca === 8) diaIdx = 4;
+  else diaIdx = 5;
+  const diaRodizio = DIAS_RODIZIO[diaIdx];
+
+  const data = dataRota || new Date();
+  const shortMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  const short = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "short",
+  }).format(data);
+  const diaHoje = shortMap[short] ?? 0;
+  const bateDia = diaHoje === diaIdx;
+
+  const pref = Number(String(cep || "").replace(/\D/g, "").slice(0, 3));
+  const centroExpandido = Number.isFinite(pref) &&
+    ((pref >= 10 && pref <= 15) || (pref >= 30 && pref <= 31) ||
+      (pref >= 40 && pref <= 45) || (pref >= 50 && pref <= 54));
+
+  const paraMin = (v?: string): number | null => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(v || "").trim());
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  let horarioRestrito = true;
+  if (janelaInicio || janelaFim) {
+    const ini = paraMin(janelaInicio);
+    const fim = paraMin(janelaFim);
+    const i = ini ?? 0;
+    const f = fim ?? (23 * 60 + 59);
+    horarioRestrito = (i < 10 * 60 && f > 7 * 60) || (i < 20 * 60 && f > 17 * 60);
+  }
+
+  const temContextoRota = cep !== undefined;
+  const rodizioHoje = temContextoRota
+    ? (bateDia && centroExpandido && horarioRestrito)
+    : bateDia;
+
+  return { rodizioHoje, diaRodizio, finalPlaca, centroExpandido, horarioRestrito };
+};
+
+/**
+ * Distribuicao com consolidacao logistica:
+ *  A) agrupa por Macro-Regiao + refrigeracao;
+ *  B) ordena veiculos do MENOR para o MAIOR porte;
+ *  C) usa 1 veiculo (o menor que comporte a regiao) ou abre veiculos
+ *     preenchendo cada um ate peso/cubagem/maxParadas;
+ *  D) ordena as paradas por urgencia/janela/maior proximidade.
+ */
 export const distribuirPedidosEntreVeiculos = (
   pedidos: PedidoRoteirizacao[],
   veiculosDisponiveis: VeiculoRoteirizacao[],
-  modoRoteirizacao: ModoRoteirizacao = 'disponiveis'
+  modoRoteirizacao: ModoRoteirizacao = 'disponiveis',
 ): { veiculo: VeiculoRoteirizacao; pedidos: PedidoRoteirizacao[]; alertas: AlertaRoteirizacao[] }[] => {
-  const resultado: { veiculo: VeiculoRoteirizacao; pedidos: PedidoRoteirizacao[]; alertas: AlertaRoteirizacao[] }[] = [];
-  const pedidosNaoAlocados: PedidoRoteirizacao[] = [];
-  const alertasGlobais: AlertaRoteirizacao[] = [];
+  const rankPorte = (v: VeiculoRoteirizacao): number => {
+    const i = ORDEM_PORTE_VEICULO.indexOf(v.tipoVeiculo);
+    return i < 0 ? 99 : i;
+  };
+  const capDe = (v: VeiculoRoteirizacao) => ({
+    peso: v.capacidadePesoKg || 0,
+    cub: v.capacidadeCubagemM3 || 0,
+    maxParadas: getCapacidadePadrao(v.tipoVeiculo)?.maxParadas || 999,
+  });
+  const somar = (lista: PedidoRoteirizacao[]) => ({
+    peso: lista.reduce((a, p) => a + (p.pesoKg || 0), 0),
+    cub: lista.reduce((a, p) => a + calcularCubagemPedido(p), 0),
+    paradas: lista.length,
+  });
+  const cabeTodo = (v: VeiculoRoteirizacao, lista: PedidoRoteirizacao[]): boolean => {
+    const c = capDe(v);
+    const s = somar(lista);
+    if (s.peso > c.peso) return false;
+    if (s.cub > 0 && c.cub > 0 && s.cub > c.cub) return false;
+    if (s.paradas > c.maxParadas) return false;
+    return true;
+  };
+  const refrigCompat = (v: VeiculoRoteirizacao, lista: PedidoRoteirizacao[]): boolean =>
+    !(lista.some(p => p.secoOuRefrigerado === 'refrigerado') &&
+      v.tipoOperacao !== 'refrigerado');
 
-  // 1. Filtrar veículos (no modo sugestão nós usamos os veículos virtuais gerados por sugerirVeiculosNecessarios)
-  let veiculosBase = [...veiculosDisponiveis];
-  if (modoRoteirizacao === 'disponiveis') {
-    veiculosBase = veiculosBase.filter(v => v.disponivel);
-  }
+  const veiculosBase = veiculosDisponiveis.filter(v =>
+    modoRoteirizacao === 'disponiveis' ? v.disponivel : true
+  );
+  const pool = veiculosBase.map(v => ({ veiculo: v, usada: false }));
+  const usadas: { veiculo: VeiculoRoteirizacao; pedidos: PedidoRoteirizacao[] }[] = [];
+  const naoAlocados: PedidoRoteirizacao[] = [];
 
-  // Ordena os veículos: Refrigerados primeiro, depois por capacidade (maior primeiro)
-  const veiculosOrdenados = veiculosBase.sort((a, b) => {
-    if (a.tipoOperacao === 'refrigerado' && b.tipoOperacao !== 'refrigerado') return -1;
-    if (a.tipoOperacao !== 'refrigerado' && b.tipoOperacao === 'refrigerado') return 1;
-    return (b.capacidadePesoKg || 0) - (a.capacidadePesoKg || 0);
+  const validos: PedidoRoteirizacao[] = [];
+  pedidos.forEach(p => {
+    if (validarPedido(p).some(a => a.tipo === 'erro')) naoAlocados.push(p);
+    else validos.push(p);
   });
 
-  // Ordena os pedidos (urgentes/refrigerados primeiro)
-  const pedidosOrdenados = [...pedidos].sort((a, b) => {
-    if (a.prioridade === 'urgente' && b.prioridade !== 'urgente') return -1;
-    if (a.prioridade !== 'urgente' && b.prioridade === 'urgente') return 1;
-    if (a.secoOuRefrigerado === 'refrigerado' && b.secoOuRefrigerado !== 'refrigerado') return -1;
-    return 0;
+  const grupos = new Map<string, PedidoRoteirizacao[]>();
+  validos.forEach(p => {
+    const macro = identificarMacroRegiao(p.cep, p.cidade, p.bairro);
+    const chave = `${macro}||${p.secoOuRefrigerado}`;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave)!.push(p);
   });
 
-  // Estado de alocação de veículos
-  const alocacoesVeiculos = veiculosOrdenados.map(v => ({
-    veiculo: v,
-    pesoAtual: 0,
-    cubagemAtual: 0,
-    pedidosAlocados: [] as PedidoRoteirizacao[]
-  }));
+  const filtrarCandidatos = (refrigerado: boolean, macro: string) =>
+    pool.filter(c => {
+      if (c.usada) return false;
+      if (refrigerado && c.veiculo.tipoOperacao !== 'refrigerado') return false;
+      if (macro === 'Centro SP' && c.veiculo.rodizioHoje === true) return false;
+      return true;
+    }).sort((a, b) => {
+      const prefA = (!refrigerado && a.veiculo.tipoOperacao === 'refrigerado') ? 1 : 0;
+      const prefB = (!refrigerado && b.veiculo.tipoOperacao === 'refrigerado') ? 1 : 0;
+      return prefA - prefB || rankPorte(a.veiculo) - rankPorte(b.veiculo) ||
+        (a.veiculo.capacidadePesoKg || 0) - (b.veiculo.capacidadePesoKg || 0);
+    });
 
-  // Distribuição principal
-  pedidosOrdenados.forEach(pedido => {
-    // Apenas tenta alocar pedidos válidos
-    const errosPedido = validarPedido(pedido).filter(a => a.tipo === 'erro');
-    if (errosPedido.length > 0) {
-      pedidosNaoAlocados.push(pedido);
+  Array.from(grupos.entries()).forEach(([chave, listaGrupo]) => {
+    const macro = chave.split('||')[0];
+    const refrigerado = chave.split('||')[1] === 'refrigerado';
+
+    let restantes = optimizarSequenciaParadas(listaGrupo);
+
+    // C-1) menor veiculo que comporte a regiao inteira (consolida 1 veiculo).
+    const unico = filtrarCandidatos(refrigerado, macro).find(c =>
+      cabeTodo(c.veiculo, restantes) && refrigCompat(c.veiculo, restantes)
+    );
+    if (unico) {
+      unico.usada = true;
+      usadas.push({ veiculo: unico.veiculo, pedidos: restantes });
       return;
     }
 
-    let alocado = false;
+    // C-2) sem veiculo unico: abre do menor para o maior, enchendo ate o limite.
+    while (restantes.length > 0) {
+      const cand = filtrarCandidatos(refrigerado, macro)[0];
+      if (!cand) break;
 
-    // Tentar encontrar o melhor veículo
-    for (const aloc of alocacoesVeiculos) {
-      const veiculo = aloc.veiculo;
-      
-      // Validação de compatibilidade
-      const compatibilidade = validarCompatibilidadeCargaVeiculo(pedido, veiculo, aloc.pesoAtual, aloc.cubagemAtual);
-      
-      if (compatibilidade.valido) {
-        // Validação heurística de CEP (se o veículo tiver base, prioriza a mesma região de CEP, mas não obriga)
-        // Se o veículo estiver vazio, ele aceita a primeira carga que define sua "região"
-        const cepPrefixo = grupoPorPrefixoCep(pedido.cep);
-        const cepBasePrefixo = grupoPorPrefixoCep(veiculo.cepBasePrestador || '');
-        
-        let pontuacaoAfinidade = 0;
-        
-        // Afinidade por CEP base do prestador
-        if (veiculo.cepBasePrestador && cepBasePrefixo === cepPrefixo) {
-            pontuacaoAfinidade += 10;
-        }
-
-        // Afinidade com a carga atual do veículo
-        if (aloc.pedidosAlocados.length > 0) {
-           const cepMaioria = grupoPorPrefixoCep(aloc.pedidosAlocados[0].cep);
-           if (cepMaioria === cepPrefixo) pontuacaoAfinidade += 5;
-        } else {
-           pontuacaoAfinidade += 5; // veículo vazio aceita bem
-        }
-
-        if (pontuacaoAfinidade >= 5) {
-          aloc.pedidosAlocados.push(pedido);
-          aloc.pesoAtual += pedido.pesoKg || 0;
-          aloc.cubagemAtual += calcularCubagemPedido(pedido);
-          alocado = true;
-          break; // vai para o próximo pedido
+      cand.usada = true;
+      const carga: PedidoRoteirizacao[] = [];
+      for (const pedido of restantes) {
+        if (
+          refrigCompat(cand.veiculo, [...carga, pedido]) &&
+          cabeTodo(cand.veiculo, [...carga, pedido])
+        ) {
+          carga.push(pedido);
         }
       }
+      if (carga.length === 0) continue;
+
+      const ids = new Set(carga.map(p => p.id));
+      restantes = restantes.filter(p => !ids.has(p.id));
+      usadas.push({ veiculo: cand.veiculo, pedidos: optimizarSequenciaParadas(carga) });
     }
 
-    // Se a primeira passada restrita não alocou, tenta sem restrição heurística de afinidade de CEP
-    if (!alocado) {
-       for (const aloc of alocacoesVeiculos) {
-          const compatibilidade = validarCompatibilidadeCargaVeiculo(pedido, aloc.veiculo, aloc.pesoAtual, aloc.cubagemAtual);
-          if (compatibilidade.valido) {
-            aloc.pedidosAlocados.push(pedido);
-            aloc.pesoAtual += pedido.pesoKg || 0;
-            aloc.cubagemAtual += calcularCubagemPedido(pedido);
-            alocado = true;
-            break;
-          }
-       }
-    }
-
-    if (!alocado) {
-      pedidosNaoAlocados.push(pedido);
-    }
+    if (restantes.length > 0) naoAlocados.push(...restantes);
   });
 
-  alocacoesVeiculos.forEach(aloc => {
-    if (aloc.pedidosAlocados.length > 0) {
-      resultado.push({
-        veiculo: aloc.veiculo,
-        pedidos: aloc.pedidosAlocados,
-        alertas: [],
-      });
-    }
-  });
-
-  // Geração de Sugestão de Veículos Extras (Tarefas 4)
-  if (pedidosNaoAlocados.length > 0) {
-     const sugestoesExtras = sugerirVeiculosNecessarios(pedidosNaoAlocados, ['seco', 'refrigerado']);
-     const sugestoesFormatadas = sugestoesExtras.map(s => `${s.quantidade}x ${getNomeTipoVeiculo(s.tipo)}`);
-     
-     alertasGlobais.push({
-      tipo: 'aviso',
-      codigo: 'PEDIDOS_NAO_ALOCADOS_FROTA',
-      mensagem: `${pedidosNaoAlocados.length} pedidos sobraram. Sugestão extra: ${sugestoesFormatadas.join(', ') || 'Nenhuma'}`,
-      pedidoIds: pedidosNaoAlocados.map(p => p.id),
-     });
-  }
-
-  return resultado;
+  return usadas.map(u => ({ veiculo: u.veiculo, pedidos: u.pedidos, alertas: [] }));
 };
 export const gerarResumoRoteirizacao = (
   resultado: ReturnType<typeof distribuirPedidosEntreVeiculos>,

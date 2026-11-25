@@ -51,6 +51,10 @@ export interface VeiculoRoteirizacao {
   contratoOuAvulso: 'contrato' | 'avulso';
   /** Online no App do motorista (prestadores.metadata.disponivel_app). */
   onlineApp?: boolean;
+  /** Placa em rodizio municipal de SP hoje (seg-sex). */
+  rodizioHoje?: boolean;
+  /** Dia da semana em que a placa esta no rodizio (ex.: "Segunda"). */
+  diaRodizio?: string;
 }
 
 export type TipoVeiculo = 

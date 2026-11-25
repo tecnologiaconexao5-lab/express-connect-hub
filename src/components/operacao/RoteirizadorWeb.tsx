@@ -66,6 +66,9 @@ import {
   getIconeTipoVeiculo,
   normalizarTipoVeiculo,
   avaliarJanelasHorario,
+  identificarMacroRegiao,
+  agruparPorMacroRegiao,
+  verificarRodizioMunicipalSP,
   optimizarSequenciaParadas,
   estimarDistanciaTempoLocal
 } from "@/services/roteirizacaoService";
@@ -96,9 +99,71 @@ const RoteirizadorWeb = () => {
   const [despachos, setDespachos] = useState<Record<number, DespachoRotaResultado | undefined>>({});
   const [copiadoIdx, setCopiadoIdx] = useState<number | null>(null);
 
+  // Filtros da aba Veiculos.
+  const [filtroVeiculoBusca, setFiltroVeiculoBusca] = useState("");
+  const [filtroVeiculoTipo, setFiltroVeiculoTipo] = useState("todos");
+  const [filtroVeiculoStatus, setFiltroVeiculoStatus] = useState("todos");
+  const [filtroVeiculoVinculo, setFiltroVeiculoVinculo] = useState("todos");
+  const [filtroVeiculoRodizio, setFiltroVeiculoRodizio] = useState("todos");
+  // Visao da aba Agrupamento.
+  const [vistaAgrupamento, setVistaAgrupamento] = useState("macro");
+
   const sugestoesComparativas = useMemo(function() {
     if (pedidos.length === 0) return [];
     return gerarSugestoesComparativasPorRegiao(pedidos);
+  }, [pedidos]);
+
+  const veiculosFiltrados = useMemo(function() {
+    const termo = filtroVeiculoBusca.trim().toLowerCase();
+    return veiculos.filter(function(v) {
+      if (termo) {
+        const alvo = `${v.placa} ${v.motorista} ${v.regiaoBase}`.toLowerCase();
+        if (!alvo.includes(termo)) return false;
+      }
+      if (filtroVeiculoTipo !== "todos" && v.tipoVeiculo !== filtroVeiculoTipo) {
+        return false;
+      }
+      if (filtroVeiculoStatus === "online" && !v.onlineApp) return false;
+      if (filtroVeiculoStatus === "offline" && v.onlineApp) return false;
+      if (filtroVeiculoVinculo === "contrato" && v.contratoOuAvulso !== "contrato") {
+        return false;
+      }
+      if (filtroVeiculoVinculo === "avulso" && v.contratoOuAvulso !== "avulso") {
+        return false;
+      }
+      if (filtroVeiculoVinculo === "agregado" && v.contratoOuAvulso !== "avulso") {
+        return false;
+      }
+      if (filtroVeiculoRodizio === "liberados" && v.rodizioHoje) return false;
+      if (filtroVeiculoRodizio === "rodizio" && !v.rodizioHoje) return false;
+      return true;
+    });
+  }, [
+    veiculos,
+    filtroVeiculoBusca,
+    filtroVeiculoTipo,
+    filtroVeiculoStatus,
+    filtroVeiculoVinculo,
+    filtroVeiculoRodizio,
+  ]);
+
+  const gruposMacroRegiao = useMemo(function() {
+    return agruparPorMacroRegiao(pedidos);
+  }, [pedidos]);
+
+  const gruposUrgencia = useMemo(function() {
+    const urgentes = pedidos.filter(p => p.prioridade === "urgente");
+    const comJanela = pedidos.filter(p =>
+      p.prioridade !== "urgente" && Boolean(p.janelaInicio || p.janelaFim)
+    );
+    const semJanela = pedidos.filter(p =>
+      p.prioridade !== "urgente" && !p.janelaInicio && !p.janelaFim
+    );
+    return [
+      { nome: `Urgentes (${urgentes.length})`, pedidos: urgentes },
+      { nome: `Com janela (${comJanela.length})`, pedidos: comJanela },
+      { nome: `Sem janela (${semJanela.length})`, pedidos: semJanela },
+    ].filter(g => g.pedidos.length > 0);
   }, [pedidos]);
 
   const montarConsultaGeocode = (p: PedidoRoteirizacao): string =>
@@ -204,6 +269,7 @@ const RoteirizadorWeb = () => {
         const onlineApp = disponivelApp === true || disponivelApp === "true" ||
           disponivelApp === 1;
 
+        const rodizio = verificarRodizioMunicipalSP(v.placa || "");
         veiculosReais.push({
           id: v.id,
           tipoVeiculo: tipo,
@@ -221,9 +287,21 @@ const RoteirizadorWeb = () => {
           disponivel: true,
           contratoOuAvulso: prest ? "contrato" : "avulso",
           onlineApp,
+          rodizioHoje: rodizio.rodizioHoje,
+          diaRodizio: rodizio.diaRodizio,
         });
       });
-      setVeiculos(veiculosReais);
+
+      // Dedup pela placa normalizada (ex.: TST1A23 repetida).
+      const placasVistas = new Set<string>();
+      const veiculosUnicos = veiculosReais.filter(function(v) {
+        const chave = String(v.placa || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        if (!chave || chave === "SEMPLACA") return true;
+        if (placasVistas.has(chave)) return false;
+        placasVistas.add(chave);
+        return true;
+      });
+      setVeiculos(veiculosUnicos);
     } catch (e: any) {
       console.warn("[Roteirizador] Erro ao carregar frota:", e.message);
     } finally {
@@ -662,6 +740,13 @@ const RoteirizadorWeb = () => {
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
 
+  const UUID_TEXTO_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const nomeSeguro = (valor: unknown): string => {
+    const texto = String(valor ?? "").trim();
+    if (!texto || UUID_TEXTO_RE.test(texto)) return "Destinatário não informado";
+    return texto;
+  };
+
   const regiaoDaRota = (resultado: { pedidos: PedidoRoteirizacao[] }): string =>
     Array.from(
       new Set(resultado.pedidos.map((p) => p.bairro || p.cidade).filter(Boolean)),
@@ -944,6 +1029,27 @@ const RoteirizadorWeb = () => {
       case 'aviso': return <AlertTriangle className="w-4 h-4 text-amber-500" />;
       case 'sugestao': return <AlertTriangle className="w-4 h-4 text-blue-500" />;
     }
+  };
+
+  const moverParada = (origemIdx: number, pedidoId: string, destinoIdx: number) => {
+    if (origemIdx === destinoIdx) return;
+    setDistribuicaoGerada(function(prev) {
+      const base = prev.length > 0 ? prev : distribuicao;
+      const clone = base.map(function(r) {
+        return { ...r, pedidos: [...r.pedidos] };
+      });
+      const origem = clone[origemIdx];
+      const destino = clone[destinoIdx];
+      if (!origem || !destino) return prev;
+      const pos = origem.pedidos.findIndex(function(p) { return p.id === pedidoId; });
+      if (pos < 0) return prev;
+      const movido = origem.pedidos.splice(pos, 1)[0];
+      destino.pedidos.push(movido);
+      destino.pedidos = optimizarSequenciaParadas(destino.pedidos);
+      return clone;
+    });
+    setRotasCalculadas(new Map());
+    toast.success("Parada movida entre roteiros.");
   };
 
   const renderSugestoesComparativas = () => {
@@ -1504,19 +1610,70 @@ const RoteirizadorWeb = () => {
 
         <TabsContent value="agrupamento" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Agrupamento por Região/CEP</CardTitle>
-              <CardDescription>Visualize como os pedidos foram agrupados</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Agrupamento</CardTitle>
+                <CardDescription>
+                  Visualize os pedidos por macro-região, CEP, urgência/janelas ou rodízio
+                </CardDescription>
+              </div>
+              <Select value={vistaAgrupamento} onValueChange={setVistaAgrupamento}>
+                <SelectTrigger className="h-9 w-[190px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="macro">Macro-Região</SelectItem>
+                  <SelectItem value="cep">Faixa de CEP</SelectItem>
+                  <SelectItem value="urgencia">Urgência & Janelas</SelectItem>
+                  <SelectItem value="rodizio">Rodízio SP</SelectItem>
+                </SelectContent>
+              </Select>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium mb-2 flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Por Faixa de CEP
-                  </h4>
-                  <div className="grid gap-2">
-                    {gruposFaixaCep.map(grupo => (
+              {vistaAgrupamento === "rodizio" ? (
+                <div className="grid gap-2">
+                  {veiculos.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Nenhum veículo carregado.</p>
+                  )}
+                  {veiculos.map(function(v) {
+                    return (
+                      <div key={v.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium">{v.placa} — {v.motorista}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {getNomeTipoVeiculo(v.tipoVeiculo)} · {v.regiaoBase || "—"}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={v.rodizioHoje
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"}
+                        >
+                          {v.rodizioHoje
+                            ? `Rodízio Hoje (${v.diaRodizio || "—"})`
+                            : `Liberado (${v.diaRodizio || "—"})`}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {(() => {
+                    if (vistaAgrupamento === "macro") return gruposMacroRegiao;
+                    if (vistaAgrupamento === "cep") return gruposFaixaCep;
+                    return gruposUrgencia.map(function(g, i) {
+                      return {
+                        id: `urg_${i}`,
+                        nome: g.nome,
+                        pedidos: g.pedidos,
+                        pesoTotalKg: g.pedidos.reduce((a, p) => a + (p.pesoKg || 0), 0),
+                        cubagemTotalM3: g.pedidos.reduce((a, p) => a + calcularCubagemPedido(p), 0),
+                      };
+                    });
+                  })().map(function(grupo) {
+                    return (
                       <div key={grupo.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <p className="font-medium">{grupo.nome}</p>
@@ -1527,31 +1684,13 @@ const RoteirizadorWeb = () => {
                           <p className="text-muted-foreground">{grupo.cubagemTotalM3.toFixed(2)} m³</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
+                  {pedidos.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Nenhum pedido no lote.</p>
+                  )}
                 </div>
-
-                <div>
-                  <h4 className="font-medium mb-2 flex items-center gap-2">
-                    <MapPinned className="w-4 h-4" />
-                    Por Região/Bairro
-                  </h4>
-                  <div className="grid gap-2">
-                    {gruposRegiao.map(grupo => (
-                      <div key={grupo.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <p className="font-medium">{grupo.nome}</p>
-                          <p className="text-sm text-muted-foreground">{grupo.pedidos.length} pedidos</p>
-                        </div>
-                        <div className="text-right text-sm">
-                          <p>{grupo.pesoTotalKg.toFixed(1)} kg</p>
-                          <p className="text-muted-foreground">{grupo.cubagemTotalM3.toFixed(2)} m³</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
           {renderSugestoesComparativas()}
@@ -1564,6 +1703,53 @@ const RoteirizadorWeb = () => {
               <CardDescription>Frota disponível para roteirização</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                <Input
+                  value={filtroVeiculoBusca}
+                  onChange={function(e) { setFiltroVeiculoBusca(e.target.value); }}
+                  placeholder="Buscar placa, motorista ou região..."
+                  className="h-9"
+                />
+                <Select value={filtroVeiculoTipo} onValueChange={setFiltroVeiculoTipo}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Tipo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os tipos</SelectItem>
+                    <SelectItem value="Moto">Moto</SelectItem>
+                    <SelectItem value="Fiorino">Fiorino</SelectItem>
+                    <SelectItem value="HR_Bongo">HR/Bongo</SelectItem>
+                    <SelectItem value="Van_VUC">Van/VUC</SelectItem>
+                    <SelectItem value="Caminhao_34">3/4</SelectItem>
+                    <SelectItem value="Caminhao_Toco">Toco</SelectItem>
+                    <SelectItem value="Caminhao_Truck">Truck</SelectItem>
+                    <SelectItem value="Carreta">Carreta</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filtroVeiculoStatus} onValueChange={setFiltroVeiculoStatus}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Status App" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos (App)</SelectItem>
+                    <SelectItem value="online">Online no App</SelectItem>
+                    <SelectItem value="offline">Offline</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filtroVeiculoVinculo} onValueChange={setFiltroVeiculoVinculo}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Vínculo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos (vínculo)</SelectItem>
+                    <SelectItem value="contrato">Contrato</SelectItem>
+                    <SelectItem value="agregado">Agregado</SelectItem>
+                    <SelectItem value="avulso">Avulso</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filtroVeiculoRodizio} onValueChange={setFiltroVeiculoRodizio}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Rodízio SP" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos (rodízio)</SelectItem>
+                    <SelectItem value="liberados">Liberados hoje</SelectItem>
+                    <SelectItem value="rodizio">Em rodízio SP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1577,10 +1763,18 @@ const RoteirizadorWeb = () => {
                     <TableHead>Online (App)</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Contrato</TableHead>
+                    <TableHead>Rodízio SP</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {veiculos.map(veiculo => (
+                  {veiculosFiltrados.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={11} className="py-6 text-center text-muted-foreground">
+                        Nenhum veículo para os filtros selecionados.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {veiculosFiltrados.map(veiculo => (
                     <TableRow key={veiculo.id}>
                       <TableCell className="font-medium">
                         {getIconeTipoVeiculo(veiculo.tipoVeiculo)} {getNomeTipoVeiculo(veiculo.tipoVeiculo)}
@@ -1608,6 +1802,18 @@ const RoteirizadorWeb = () => {
                       <TableCell>
                         <Badge variant={veiculo.contratoOuAvulso === 'contrato' ? 'default' : 'outline'}>
                           {veiculo.contratoOuAvulso}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={veiculo.rodizioHoje
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"}
+                        >
+                          {veiculo.rodizioHoje
+                            ? `Rodízio Hoje (${veiculo.diaRodizio || "—"})`
+                            : "Liberado"}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -1666,7 +1872,7 @@ const RoteirizadorWeb = () => {
                   disabled={isCalculandoRotas || distribuicao.length === 0}
                 >
                   <MapIcon className="w-4 h-4 mr-2"/>
-                  {isCalculandoRotas ? "Calculando..." : "Calcular Todas as Rotas"}
+                  {isCalculandoRotas ? "Calculando..." : "Calcular Todas as Distâncias"}
                 </Button>
                 <Button onClick={handleGerarRoteiros} disabled={isGerando}>
                    <Route className="w-4 h-4 mr-2"/>
@@ -1917,6 +2123,7 @@ const RoteirizadorWeb = () => {
                                   <TableHead className="text-right">Peso</TableHead>
                                   <TableHead className="text-right">Cubagem</TableHead>
                                   <TableHead className="text-center">Tipo</TableHead>
+                                  <TableHead className="text-center">Mover</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1929,8 +2136,8 @@ const RoteirizadorWeb = () => {
                                     </TableCell>
                                     <TableCell className="text-xs font-mono">{pedido.cep}</TableCell>
                                     <TableCell className="text-xs">
-                                      <p className="font-medium truncate max-w-[150px]" title={pedido.destinatario}>{pedido.destinatario}</p>
-                                      <p className="text-slate-500 truncate max-w-[150px]">{pedido.cidade}/{pedido.estado}</p>
+                                      <p className="font-medium truncate max-w-[150px]" title={nomeSeguro(pedido.destinatario)}>{nomeSeguro(pedido.destinatario)}</p>
+                                      <p className="text-slate-500 truncate max-w-[150px]">{[pedido.cidade, pedido.estado].filter(Boolean).join("/") || "—"}</p>
                                     </TableCell>
                                     <TableCell className="text-right text-xs">{pedido.pesoKg} kg</TableCell>
                                     <TableCell className="text-right text-xs">{calcularCubagemPedido(pedido).toFixed(3)} m³</TableCell>
@@ -1938,6 +2145,28 @@ const RoteirizadorWeb = () => {
                                       <Badge variant={pedido.secoOuRefrigerado === 'refrigerado' ? 'default' : 'outline'} className="text-[10px]">
                                         {pedido.secoOuRefrigerado === 'refrigerado' ? 'Refri' : 'Seco'}
                                       </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Select
+                                        value=""
+                                        onValueChange={function(v) {
+                                          moverParada(idx, pedido.id, Number(v));
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-8 w-[120px]">
+                                          <SelectValue placeholder="Mover" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {distribuicao.map(function(_, di) {
+                                            if (di === idx) return null;
+                                            return (
+                                              <SelectItem key={di} value={String(di)}>
+                                                Rota {di + 1}
+                                              </SelectItem>
+                                            );
+                                          })}
+                                        </SelectContent>
+                                      </Select>
                                     </TableCell>
                                   </TableRow>
                                 ))}
