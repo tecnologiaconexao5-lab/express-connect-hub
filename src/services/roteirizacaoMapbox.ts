@@ -108,7 +108,12 @@ export const calcularDistanciaTempoRota = async (
     p => temCoordenadaValida(p.latitude, p.longitude)
   );
 
-  if (!token || paradasComCoords.length < 2) {
+  const temOrigem = Boolean(
+    origemCoords && temCoordenadaValida(origemCoords.lat, origemCoords.lng),
+  );
+  const minimoPontos = temOrigem ? 1 : 2;
+
+  if (!token || paradasComCoords.length < minimoPontos) {
     alertas.push("Mapbox não disponível ou coordenadas insuficientes");
     alertas.push("Usando estimativa local por falta de coordenadas");
 

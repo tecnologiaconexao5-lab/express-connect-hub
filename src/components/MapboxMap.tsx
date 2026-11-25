@@ -29,6 +29,26 @@ export interface MapLocation {
   currentStage?: string;
   origin?: string;
   destination?: string;
+  /** Roteirizador: cor/id da rota + dados completos da parada. */
+  routeColor?: string;
+  routeId?: string;
+  destinatario?: string;
+  endereco?: string;
+  peso?: number;
+  janela?: string;
+  motorista?: string;
+}
+
+interface RouteLine {
+  id: string;
+  color: string;
+  coordinates: [number, number][];
+}
+
+interface RegionPolygon {
+  id: string;
+  color: string;
+  coordinates: [number, number][];
 }
 
 interface MapboxMapProps {
@@ -42,6 +62,12 @@ interface MapboxMapProps {
   title?: string;
   routeCoordinates?: [number, number][];
   selectedLocationId?: string;
+  /** Roteirizador: várias rotas (cada uma com cor) e polígonos por região. */
+  routeLines?: RouteLine[];
+  regionPolygons?: RegionPolygon[];
+  origin?: { latitude: number; longitude: number; label?: string };
+  legend?: { color: string; label: string }[];
+  focusRouteId?: string | null;
 }
 
 
@@ -104,6 +130,11 @@ export default function MapboxMap({
   title,
   routeCoordinates,
   selectedLocationId,
+  routeLines,
+  regionPolygons,
+  origin,
+  legend,
+  focusRouteId,
 }: MapboxMapProps) {
   const [viewState, setViewState] = useState({
     longitude: locations.length > 0 ? locations[0].longitude : -46.6333,
@@ -127,6 +158,38 @@ export default function MapboxMap({
       setSelectedLocation(loc);
     }
   }, [selectedLocationId, locations]);
+
+  // Foco em uma rota/regiao (fitBounds) ou em todas as rotas.
+  useEffect(() => {
+    const mapInstance = mapRef.current?.getMap();
+    if (!mapInstance) return;
+    let coords: [number, number][] = [];
+    if (focusRouteId) {
+      const line = routeLines?.find(l => l.id === focusRouteId);
+      const poly = regionPolygons?.find(p => p.id === focusRouteId);
+      coords = line?.coordinates || poly?.coordinates || [];
+    } else if (routeLines && routeLines.length > 0) {
+      routeLines.forEach(l => { coords = coords.concat(l.coordinates); });
+    }
+    if (coords.length === 0) return;
+    let minLng = coords[0][0], maxLng = coords[0][0];
+    let minLat = coords[0][1], maxLat = coords[0][1];
+    coords.forEach(([lng, lat]) => {
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+    });
+    try {
+      mapInstance.fitBounds(
+        [[minLng, minLat], [maxLng, maxLat]],
+        { padding: 60, duration: 800, maxZoom: 14 },
+      );
+    } catch {
+      // ignora fitBounds invalido
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRouteId]);
 
   useEffect(() => {
     setMapToken(MAPBOX_ACCESS_TOKEN);
@@ -283,6 +346,67 @@ export default function MapboxMap({
           </Source>
         )}
 
+        {regionPolygons?.map((poly) => (
+          <Source
+            key={`poly-${poly.id}`}
+            id={`poly-${poly.id}`}
+            type="geojson"
+            data={{
+              type: "Feature",
+              properties: {},
+              geometry: { type: "Polygon", coordinates: [poly.coordinates] },
+            } as any}
+          >
+            <Layer
+              id={`poly-fill-${poly.id}`}
+              type="fill"
+              paint={{ "fill-color": poly.color, "fill-opacity": 0.16 }}
+            />
+            <Layer
+              id={`poly-line-${poly.id}`}
+              type="line"
+              paint={{ "line-color": poly.color, "line-width": 2.5, "line-opacity": 0.9 }}
+            />
+          </Source>
+        ))}
+
+        {routeLines?.map((line) => (
+          <Source
+            key={`line-${line.id}`}
+            id={`line-${line.id}`}
+            type="geojson"
+            data={{
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: line.coordinates },
+            } as any}
+          >
+            <Layer
+              id={`line-${line.id}`}
+              type="line"
+              layout={{ "line-join": "round", "line-cap": "round" }}
+              paint={{ "line-color": line.color, "line-width": 4, "line-opacity": 0.85 }}
+            />
+          </Source>
+        ))}
+
+        {origin && (
+          <Marker longitude={origin.longitude} latitude={origin.latitude} anchor="bottom">
+            <div className="flex flex-col items-center">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center border-2 border-white shadow-lg"
+                style={{ backgroundColor: "#111827" }}
+                title={origin.label || "Local de carregamento"}
+              >
+                <Package className="w-4 h-4 text-white" />
+              </div>
+              <span className="mt-0.5 text-[10px] font-semibold text-white bg-slate-900/80 px-1.5 py-0.5 rounded whitespace-nowrap">
+                {origin.label || "CD/Base"}
+              </span>
+            </div>
+          </Marker>
+        )}
+
         {clusteringEnabled ? (
           <Source id="clusters" type="geojson" data={geojsonData} cluster={true} clusterMaxZoom={14} clusterRadius={50}>
             <Layer
@@ -354,7 +478,7 @@ export default function MapboxMap({
                   )}
                   <div 
                     className="w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"
-                    style={{ backgroundColor: getStatusColor(location.status) }}
+                    style={{ backgroundColor: location.routeColor || getStatusColor(location.status) }}
                   >
                     <IconMarker className="w-4 h-4 text-white" />
                   </div>
@@ -420,6 +544,23 @@ export default function MapboxMap({
               {selectedLocation.cliente && (
                 <p className="text-xs text-gray-600 mb-0.5">Cliente: {selectedLocation.cliente}</p>
               )}
+              {selectedLocation.destinatario && (
+                <p className="text-xs text-gray-700 mb-0.5 font-medium">
+                  Destinatário: {selectedLocation.destinatario}
+                </p>
+              )}
+              {selectedLocation.endereco && (
+                <p className="text-[10px] text-gray-500 mb-0.5">{selectedLocation.endereco}</p>
+              )}
+              {selectedLocation.peso != null && (
+                <p className="text-[10px] text-gray-500 mb-0.5">Peso: {selectedLocation.peso} kg</p>
+              )}
+              {selectedLocation.janela && (
+                <p className="text-[10px] text-gray-500 mb-0.5">Janela: {selectedLocation.janela}</p>
+              )}
+              {selectedLocation.motorista && (
+                <p className="text-[10px] text-gray-500 mb-0.5">Motorista: {selectedLocation.motorista}</p>
+              )}
               {selectedLocation.currentStage && (
                 <p className="text-[11px] text-indigo-600 font-medium mb-0.5">Etapa: {selectedLocation.currentStage}</p>
               )}
@@ -483,6 +624,20 @@ export default function MapboxMap({
           </Popup>
         )}
       </Map>
+
+      {legend && legend.length > 0 && (
+        <div className="absolute bottom-4 right-4 bg-slate-900/90 backdrop-blur rounded-lg p-3 z-10 border border-slate-700 max-h-[50%] overflow-y-auto">
+          <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">Rotas / Regiões</p>
+          <div className="space-y-1">
+            {legend.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: item.color }} />
+                <span className="text-xs text-slate-300 truncate max-w-[180px]">{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Legend */}
       <div className="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur rounded-lg p-3 z-10 border border-slate-700">

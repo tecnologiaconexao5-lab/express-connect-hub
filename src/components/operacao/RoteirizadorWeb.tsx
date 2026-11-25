@@ -82,6 +82,62 @@ type ComposicaoItem = {
   refrigerado?: boolean;
 };
 
+interface OrigemRoteirizador {
+  rotulo: string;
+  cep: string;
+  endereco: string;
+  cidade: string;
+  uf: string;
+  latitude: number;
+  longitude: number;
+}
+
+const PRESETS_ORIGEM: OrigemRoteirizador[] = [
+  { rotulo: "Base Diadema (ABC)", cep: "09900-000", endereco: "Base Diadema", cidade: "Diadema", uf: "SP", latitude: -23.686, longitude: -46.622 },
+  { rotulo: "CD Guarulhos", cep: "07000-000", endereco: "CD Guarulhos", cidade: "Guarulhos", uf: "SP", latitude: -23.454, longitude: -46.533 },
+  { rotulo: "Base Centro SP", cep: "01000-000", endereco: "Base Centro SP", cidade: "São Paulo", uf: "SP", latitude: -23.5505, longitude: -46.6333 },
+];
+
+const CORES_ROTAS = [
+  "#6366f1", "#10b981", "#f97316", "#ec4899", "#06b6d4", "#eab308",
+  "#8b5cf6", "#ef4444", "#14b8a6", "#f43f5e", "#3b82f6", "#a855f7",
+];
+
+function convexHull(pontos: [number, number][]): [number, number][] {
+  if (pontos.length < 3) return pontos.slice();
+  const pts = pontos.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+function bufferHull(hull: [number, number][], fator = 0.18, pad = 0.004): [number, number][] {
+  if (hull.length < 3) return hull;
+  const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length;
+  const cy = hull.reduce((a, p) => a + p[1], 0) / hull.length;
+  return hull.map(([x, y]) => [
+    cx + (x - cx) * (1 + fator) + (x >= cx ? pad : -pad),
+    cy + (y - cy) * (1 + fator) + (y >= cy ? pad : -pad),
+  ] as [number, number]);
+}
+
 const RoteirizadorWeb = () => {
   const [activeTab, setActiveTab] = useState("visao_geral");
   const [pedidos, setPedidos] = useState<PedidoRoteirizacao[]>([]);
@@ -107,6 +163,10 @@ const RoteirizadorWeb = () => {
   const [filtroVeiculoRodizio, setFiltroVeiculoRodizio] = useState("todos");
   // Visao da aba Agrupamento.
   const [vistaAgrupamento, setVistaAgrupamento] = useState("macro");
+  // Local de carregamento (origem/base) + foco do mapa.
+  const [origem, setOrigem] = useState<OrigemRoteirizador>(() => ({ ...PRESETS_ORIGEM[0] }));
+  const [geocodificandoOrigem, setGeocodificandoOrigem] = useState(false);
+  const [mapaFocoId, setMapaFocoId] = useState<string | null>(null);
 
   const sugestoesComparativas = useMemo(function() {
     if (pedidos.length === 0) return [];
@@ -210,6 +270,41 @@ const RoteirizadorWeb = () => {
     }
     return saida;
   };
+
+  const aplicarPresetOrigem = (preset: OrigemRoteirizador) => {
+    setOrigem({ ...preset });
+    toast.success(`Ponto de partida: ${preset.rotulo}`);
+  };
+
+  const geocodificarOrigem = async () => {
+    const consulta = [origem.endereco, origem.cidade, origem.uf, origem.cep, "Brasil"]
+      .filter(Boolean)
+      .join(", ");
+    if (!consulta.trim()) {
+      toast.error("Informe o endereço/CEP da origem.");
+      return;
+    }
+    setGeocodificandoOrigem(true);
+    try {
+      const coord = await geocodificarEndereco(consulta);
+      if (coord) {
+        setOrigem((prev) => ({
+          ...prev,
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+        }));
+        toast.success("Coordenadas da origem obtidas.");
+      } else {
+        toast.error("Não foi possível geocodificar a origem.");
+      }
+    } finally {
+      setGeocodificandoOrigem(false);
+    }
+  };
+
+  const origemCoords = temCoordenadaValida(origem.latitude, origem.longitude)
+    ? { lat: origem.latitude, lng: origem.longitude }
+    : undefined;
   
   // Inferir termico/refrigerado a partir de colunas REAIS do veiculo.
   const inferirVeiculoRefrigerado = (v: Record<string, any>): boolean => {
@@ -689,7 +784,7 @@ const RoteirizadorWeb = () => {
 
   const limparComposicao = () => setComposicaoEscolhida(null);
 
-  const handleGerarRoteiros = () => {
+  const handleGerarRoteiros = async () => {
     if (pedidos.length === 0) {
       toast.error(
         "Nenhum pedido no lote. Importe uma planilha ou carregue as OS pendentes.",
@@ -697,40 +792,97 @@ const RoteirizadorWeb = () => {
       return;
     }
     setIsGerando(true);
-    setTimeout(() => {
-      try {
-        const composicaoBase: ComposicaoItem[] = composicaoEscolhida &&
-            composicaoEscolhida.length > 0
-          ? composicaoEscolhida
-          : (modoRoteirizacao === "sugestao"
-            ? sugerirVeiculosNecessarios(pedidos, ["seco", "refrigerado"]).map(
-              function(s) {
-                return {
-                  tipo: s.tipo,
-                  quantidade: s.quantidade,
-                  refrigerado: s.refrigerado,
-                };
-              },
-            )
-            : []);
-        const veiculosParaUso = composicaoBase.length > 0
-          ? construirVeiculosDaComposicao(composicaoBase)
-          : veiculos;
-        const res = distribuirPedidosEntreVeiculos(
-          pedidos,
-          veiculosParaUso,
-          "disponiveis",
-        );
-        setDistribuicaoGerada(res);
-        setRotasCalculadas(new Map());
-        toast.success("Roteiros gerados com sucesso!");
-        setActiveTab("roteiros");
-      } catch (err: any) {
-        toast.error("Erro ao gerar roteiros: " + err.message);
-      } finally {
-        setIsGerando(false);
+    try {
+      // Geocoding automatico dos pedidos pendentes.
+      const pedidosGeocodificados = await geocodificarPedidosSemCoordenadas(pedidos);
+
+      // Geocoding da origem, se necessario.
+      let origemAtual = origem;
+      if (!temCoordenadaValida(origemAtual.latitude, origemAtual.longitude)) {
+        const consulta = [origemAtual.endereco, origemAtual.cidade, origemAtual.uf, origemAtual.cep, "Brasil"]
+          .filter(Boolean)
+          .join(", ");
+        if (consulta.trim()) {
+          const coord = await geocodificarEndereco(consulta);
+          if (coord) {
+            origemAtual = {
+              ...origemAtual,
+              latitude: coord.latitude,
+              longitude: coord.longitude,
+            };
+            setOrigem(origemAtual);
+          }
+        }
       }
-    }, 400);
+      const origemCalc = temCoordenadaValida(origemAtual.latitude, origemAtual.longitude)
+        ? { lat: origemAtual.latitude, lng: origemAtual.longitude }
+        : undefined;
+
+      const composicaoBase: ComposicaoItem[] = composicaoEscolhida &&
+          composicaoEscolhida.length > 0
+        ? composicaoEscolhida
+        : (modoRoteirizacao === "sugestao"
+          ? sugerirVeiculosNecessarios(pedidosGeocodificados, ["seco", "refrigerado"]).map(
+            function(s) {
+              return {
+                tipo: s.tipo,
+                quantidade: s.quantidade,
+                refrigerado: s.refrigerado,
+              };
+            },
+          )
+          : []);
+      const veiculosParaUso = composicaoBase.length > 0
+        ? construirVeiculosDaComposicao(composicaoBase)
+        : veiculos;
+      const res = distribuirPedidosEntreVeiculos(
+        pedidosGeocodificados,
+        veiculosParaUso,
+        "disponiveis",
+      );
+      setDistribuicaoGerada(res);
+
+      // Calculo automatico de distancia/tempo de TODAS as rotas (com origem).
+      const novoMapa = new Map<number, {
+        distanciaKm: number;
+        tempoMin: number;
+        origem: string;
+        alertas: string[];
+        routeCoordinates?: [number, number][];
+      }>();
+      for (let i = 0; i < res.length; i++) {
+        const pedidosOrdenados = optimizarSequenciaParadas(res[i].pedidos);
+        try {
+          const calc = await calcularDistanciaTempoRota(
+            pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude })),
+            origemCalc,
+          );
+          novoMapa.set(i, {
+            distanciaKm: calc.distanciaTotalKm,
+            tempoMin: calc.tempoTotalMinutos,
+            origem: calc.origemCalculo,
+            alertas: calc.alertas,
+            routeCoordinates: calc.routeCoordinates,
+          });
+        } catch {
+          const est = estimarDistanciaTempoLocal(pedidosOrdenados);
+          novoMapa.set(i, {
+            distanciaKm: est.distanciaTotalKm,
+            tempoMin: est.tempoTotalMinutos,
+            origem: "estimativa_local",
+            alertas: est.alertas,
+          });
+        }
+        await new Promise(r => setTimeout(r, 120));
+      }
+      setRotasCalculadas(novoMapa);
+      toast.success(`Roteiros gerados (${res.length}) e distâncias calculadas!`);
+      setActiveTab("roteiros");
+    } catch (err: any) {
+      toast.error("Erro ao gerar roteiros: " + err.message);
+    } finally {
+      setIsGerando(false);
+    }
   };
 
   const escaparHtml = (valor: unknown): string =>
@@ -939,7 +1091,8 @@ const RoteirizadorWeb = () => {
       const pedidosOrdenados = optimizarSequenciaParadas(pedidosRota);
       
       const resultado = await calcularDistanciaTempoRota(
-        pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude }))
+        pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude })),
+        origemCoords,
       );
 
       const novoMapa = new Map(rotasCalculadas);
@@ -978,7 +1131,8 @@ const RoteirizadorWeb = () => {
         const pedidosOrdenados = optimizarSequenciaParadas(pedidosRota);
         
         const calcResultado = await calcularDistanciaTempoRota(
-          pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude }))
+          pedidosOrdenados.map(p => ({ latitude: p.latitude, longitude: p.longitude })),
+          origemCoords,
         );
 
         const novoMapa = new Map(rotasCalculadas);
@@ -1162,6 +1316,76 @@ const RoteirizadorWeb = () => {
           </Button>
         </div>
       </div>
+
+      <Card className="border-indigo-200 bg-indigo-50/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <MapPinned className="w-4 h-4 text-indigo-600" />
+            Local de Carregamento (Ponto de Partida)
+          </CardTitle>
+          <CardDescription>
+            Ponto zero de todos os roteiros — usado no cálculo de km e tempo
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {PRESETS_ORIGEM.map(function(p) {
+              return (
+                <Button
+                  key={p.rotulo}
+                  size="sm"
+                  variant={origem.rotulo === p.rotulo ? "default" : "outline"}
+                  onClick={function() { aplicarPresetOrigem(p); }}
+                >
+                  {p.rotulo}
+                </Button>
+              );
+            })}
+            <Badge variant="outline" className="ml-auto bg-white">
+              {temCoordenadaValida(origem.latitude, origem.longitude)
+                ? `${origem.latitude.toFixed(4)}, ${origem.longitude.toFixed(4)}`
+                : "Origem sem coordenadas"}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+            <Input
+              value={origem.cep}
+              onChange={function(e) { setOrigem({ ...origem, cep: e.target.value }); }}
+              placeholder="CEP"
+              className="h-9"
+            />
+            <Input
+              value={origem.endereco}
+              onChange={function(e) { setOrigem({ ...origem, endereco: e.target.value, rotulo: "Personalizado" }); }}
+              placeholder="Endereço completo"
+              className="h-9 md:col-span-2"
+            />
+            <Input
+              value={origem.cidade}
+              onChange={function(e) { setOrigem({ ...origem, cidade: e.target.value }); }}
+              placeholder="Cidade"
+              className="h-9"
+            />
+            <Input
+              value={origem.uf}
+              onChange={function(e) { setOrigem({ ...origem, uf: e.target.value }); }}
+              placeholder="UF"
+              className="h-9"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={function() { void geocodificarOrigem(); }}
+              disabled={geocodificandoOrigem}
+            >
+              {geocodificandoOrigem ? "Buscando..." : "Buscar coordenadas"}
+            </Button>
+            <span className="text-xs text-muted-foreground">Mapbox / Nominatim</span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-card border w-full justify-start overflow-x-auto flex-wrap">
@@ -2183,48 +2407,174 @@ const RoteirizadorWeb = () => {
           </Card>
         </TabsContent>
 <TabsContent value="mapa" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Mapa de Visualização</CardTitle>
-              <CardDescription>Visualização geográfica das rotas geradas (resumo)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {distribuicao.length === 0 ? (
-                <div className="h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
-                  <p className="text-muted-foreground">
-                    Gere os roteiros e calcule as distâncias primeiro para visualizar no mapa
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="h-[600px] w-full rounded-lg overflow-hidden border">
-                    <MapboxMap 
-                      title="Rotas e Paradas"
-                      locations={distribuicao.flatMap((res, rIdx) => 
-                        res.pedidos.map((p, pIdx) => ({
-                          id: p.id,
-                          numero: p.numeroPedido,
-                          latitude: p.latitude || 0,
-                          longitude: p.longitude || 0,
-                          status: "aguardando",
-                          cliente: p.cliente,
-                          sequencia: pIdx + 1
-                        }))
-                      ).filter(l => l.latitude !== 0 && l.longitude !== 0) as any}
-                      routeCoordinates={Array.from(rotasCalculadas.values()).find(r => r.routeCoordinates && r.routeCoordinates.length > 0)?.routeCoordinates}
-                    />
-                  </div>
-                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg">
-                    <p className="text-sm text-amber-700">
-                      <AlertTriangle className="w-4 h-4 inline mr-2" />
-                      Visualizando o traçado da primeira rota calculada e as paradas de todas as rotas. 
-                      Calcule a distância de cada rota na aba Roteiros para ver a linha da rota no mapa.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {(() => {
+            if (distribuicao.length === 0) {
+              return (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Mapa das Rotas por Região</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
+                      <p className="text-muted-foreground">
+                        Gere os roteiros para visualizar o mapa por região.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }
+
+            const mapaLocations = distribuicao.flatMap((res, rIdx) => {
+              const cor = CORES_ROTAS[rIdx % CORES_ROTAS.length];
+              return optimizarSequenciaParadas(res.pedidos).map((p, pIdx) => ({
+                id: `r${rIdx}-${p.id}`,
+                numero: p.numeroPedido,
+                latitude: p.latitude || 0,
+                longitude: p.longitude || 0,
+                status: "aguardando" as const,
+                cliente: p.cliente,
+                sequencia: pIdx + 1,
+                routeColor: cor,
+                routeId: `rota-${rIdx}`,
+                destinatario: nomeSeguro(p.destinatario),
+                endereco: [
+                  p.endereco || p.enderecoCompleto,
+                  p.numero,
+                  p.complemento,
+                  p.bairro,
+                  [p.cidade, p.estado].filter(Boolean).join("/"),
+                  p.cep,
+                ].filter(Boolean).join(", "),
+                peso: p.pesoKg,
+                janela: (p.janelaInicio || p.janelaFim)
+                  ? `${p.janelaInicio || "--:--"}-${p.janelaFim || "--:--"}`
+                  : "—",
+                motorista: res.veiculo.motorista || "",
+              })).filter(l => temCoordenadaValida(l.latitude, l.longitude));
+            });
+
+            const mapaRouteLines = distribuicao.map((res, rIdx) => {
+              const cor = CORES_ROTAS[rIdx % CORES_ROTAS.length];
+              const calc = rotasCalculadas.get(rIdx);
+              let coords: [number, number][] = calc?.routeCoordinates
+                ? [...calc.routeCoordinates]
+                : [];
+              if (coords.length < 2) {
+                const pts: [number, number][] = [];
+                if (temCoordenadaValida(origem.latitude, origem.longitude)) {
+                  pts.push([origem.longitude, origem.latitude]);
+                }
+                optimizarSequenciaParadas(res.pedidos).forEach(p => {
+                  if (temCoordenadaValida(p.latitude, p.longitude)) {
+                    pts.push([p.longitude!, p.latitude!]);
+                  }
+                });
+                coords = pts;
+              }
+              return { id: `rota-${rIdx}`, color: cor, coordinates: coords };
+            }).filter(l => l.coordinates.length >= 2);
+
+            const mapaPolygons = distribuicao.map((res, rIdx) => {
+              const cor = CORES_ROTAS[rIdx % CORES_ROTAS.length];
+              const pts: [number, number][] = res.pedidos
+                .filter(p => temCoordenadaValida(p.latitude, p.longitude))
+                .map(p => [p.longitude!, p.latitude!] as [number, number]);
+              const hull = convexHull(pts);
+              if (hull.length < 3) return null;
+              const buf = bufferHull(hull);
+              return { id: `rota-${rIdx}`, color: cor, coordinates: [...buf, buf[0]] };
+            }).filter(Boolean) as { id: string; color: string; coordinates: [number, number][] }[];
+
+            const mapaLegend = distribuicao.map((res, rIdx) => ({
+              color: CORES_ROTAS[rIdx % CORES_ROTAS.length],
+              label: `${rIdx + 1}. ${getNomeTipoVeiculo(res.veiculo.tipoVeiculo)} ${res.veiculo.placa || ""}`,
+            }));
+
+            const origemValida = temCoordenadaValida(origem.latitude, origem.longitude);
+
+            return (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                <Card className="lg:col-span-3">
+                  <CardHeader className="pb-2">
+                    <CardTitle>Mapa das Rotas por Região</CardTitle>
+                    <CardDescription>
+                      Polígonos por região, traçado de todas as rotas e origem (CD/Base)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {mapaLocations.length === 0 ? (
+                      <div className="h-[640px] bg-gray-100 flex items-center justify-center">
+                        <p className="text-muted-foreground text-sm px-6 text-center">
+                          Geocodifique os pedidos (a geração já faz automaticamente) para ver o mapa.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="h-[640px] w-full overflow-hidden">
+                        <MapboxMap
+                          title="Rotas e Regiões"
+                          locations={mapaLocations}
+                          origin={origemValida
+                            ? { latitude: origem.latitude, longitude: origem.longitude, label: origem.rotulo }
+                            : undefined}
+                          routeLines={mapaRouteLines}
+                          regionPolygons={mapaPolygons}
+                          legend={mapaLegend}
+                          focusRouteId={mapaFocoId}
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Rotas / Regiões</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <Button
+                      size="sm"
+                      variant={mapaFocoId === null ? "default" : "outline"}
+                      className="w-full"
+                      onClick={() => setMapaFocoId(null)}
+                    >
+                      Ver todas
+                    </Button>
+                    {distribuicao.map((res, rIdx) => {
+                      const cor = CORES_ROTAS[rIdx % CORES_ROTAS.length];
+                      const peso = res.pedidos.reduce((a, p) => a + (p.pesoKg || 0), 0);
+                      const calc = rotasCalculadas.get(rIdx);
+                      return (
+                        <div key={rIdx} className="rounded-lg border p-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: cor }} />
+                            <p className="text-xs font-medium truncate">
+                              {rIdx + 1}. {getNomeTipoVeiculo(res.veiculo.tipoVeiculo)} {res.veiculo.placa || ""}
+                            </p>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            {res.pedidos.length} paradas · {peso.toFixed(1)} kg · {calc?.distanciaKm ?? 0} km
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-1 h-7 w-full text-xs"
+                            onClick={() => setMapaFocoId(`rota-${rIdx}`)}
+                          >
+                            Focar região
+                          </Button>
+                        </div>
+                      );
+                    })}
+                    {!origemValida && (
+                      <p className="text-[11px] text-amber-700">
+                        Defina o Local de Carregamento para traçados completos.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
         </TabsContent>
 
         <TabsContent value="auditoria" className="space-y-4">

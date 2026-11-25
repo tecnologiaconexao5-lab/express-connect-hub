@@ -409,7 +409,7 @@ export const gerarSugestoesComparativasPorRegiao = (
   const saida: SugestaoComparativaRegiao[] = [];
   if (pedidos.length === 0) return saida;
 
-  agruparPorRegiao(pedidos).forEach(grupo => {
+  agruparPorMacroRegiao(pedidos).forEach(grupo => {
     saida.push(criar(grupo.nome, grupo.pedidos));
   });
   saida.push(criar('Consolidado geral', pedidos));
@@ -665,7 +665,8 @@ export const distribuirPedidosEntreVeiculos = (
   const veiculosBase = veiculosDisponiveis.filter(v =>
     modoRoteirizacao === 'disponiveis' ? v.disponivel : true
   );
-  const pool = veiculosBase.map(v => ({ veiculo: v, usada: false }));
+  const pool: { veiculo: VeiculoRoteirizacao; usada: boolean; sugerida?: boolean }[] =
+    veiculosBase.map(v => ({ veiculo: v, usada: false }));
   const usadas: { veiculo: VeiculoRoteirizacao; pedidos: PedidoRoteirizacao[] }[] = [];
   const naoAlocados: PedidoRoteirizacao[] = [];
 
@@ -683,11 +684,47 @@ export const distribuirPedidosEntreVeiculos = (
     grupos.get(chave)!.push(p);
   });
 
-  const filtrarCandidatos = (refrigerado: boolean, macro: string) =>
-    pool.filter(c => {
+  const PESADOS = new Set<TipoVeiculo>([
+    'Caminhao_34',
+    'Caminhao_Toco',
+    'Caminhao_Truck',
+    'Carreta',
+  ]);
+
+  // Trava de porte: caminhoes pesados so com carga >= 250 kg; Van nao serve
+  // para < 80 kg quando ha Moto/Fiorino (ou no modo sugestao).
+  const tipoPermitidoPorCarga = (
+    tipo: TipoVeiculo,
+    cargaKg: number,
+    temPequeno: boolean,
+  ): boolean => {
+    if (PESADOS.has(tipo)) return cargaKg >= 250;
+    if (tipo === 'Van_VUC' && cargaKg < 80 && temPequeno) return false;
+    return true;
+  };
+
+  const somaKg = (lista: PedidoRoteirizacao[]) =>
+    lista.reduce((a, p) => a + (p.pesoKg || 0), 0);
+
+  const filtrarCandidatos = (
+    refrigerado: boolean,
+    macro: string,
+    cargaKg: number,
+  ) => {
+    const temPequeno = !refrigerado && (
+      modoRoteirizacao === 'sugestao' ||
+      pool.some(c =>
+        !c.usada &&
+        (c.veiculo.tipoVeiculo === 'Moto' || c.veiculo.tipoVeiculo === 'Fiorino')
+      )
+    );
+    return pool.filter(c => {
       if (c.usada) return false;
       if (refrigerado && c.veiculo.tipoOperacao !== 'refrigerado') return false;
       if (macro === 'Centro SP' && c.veiculo.rodizioHoje === true) return false;
+      if (!tipoPermitidoPorCarga(c.veiculo.tipoVeiculo, cargaKg, temPequeno)) {
+        return false;
+      }
       return true;
     }).sort((a, b) => {
       const prefA = (!refrigerado && a.veiculo.tipoOperacao === 'refrigerado') ? 1 : 0;
@@ -695,15 +732,77 @@ export const distribuirPedidosEntreVeiculos = (
       return prefA - prefB || rankPorte(a.veiculo) - rankPorte(b.veiculo) ||
         (a.veiculo.capacidadePesoKg || 0) - (b.veiculo.capacidadePesoKg || 0);
     });
+  };
+
+  // Cria veiculo "sugerido" (sem placa/motorista) quando nao ha frota pequena
+  // cadastrada e a carga e leve — evita Truck ocioso para 18 kg.
+  let seqSugerida = 0;
+  const sintetizarVeiculo = (
+    cargaKg: number,
+    refrigerado: boolean,
+    restantes: PedidoRoteirizacao[],
+  ): VeiculoRoteirizacao | null => {
+    const ordem: TipoVeiculo[] = refrigerado
+      ? ['Van_VUC']
+      : ['Moto', 'Fiorino', 'HR_Bongo', 'Van_VUC', 'Caminhao_34', 'Caminhao_Toco', 'Caminhao_Truck', 'Carreta'];
+    const permitidos = ordem.filter(t => {
+      if (!refrigerado && t === 'Van_VUC' && cargaKg < 80) return false;
+      return tipoPermitidoPorCarga(t, cargaKg, false);
+    });
+    if (permitidos.length === 0) return null;
+
+    let escolhido: TipoVeiculo | null = null;
+    for (const t of permitidos) {
+      const cap = getCapacidadePadrao(t);
+      if (!cap) continue;
+      const temp: VeiculoRoteirizacao = {
+        id: `__tmp__${t}`,
+        tipoVeiculo: t,
+        placa: '',
+        motorista: '',
+        capacidadePesoKg: cap.capacidadePesoKg,
+        capacidadeCubagemM3: cap.capacidadeCubagemM3,
+        tipoOperacao: refrigerado ? 'refrigerado' : 'seco',
+        disponivel: true,
+        contratoOuAvulso: 'avulso',
+      };
+      if (cabeTodo(temp, restantes)) { escolhido = t; break; }
+    }
+    if (!escolhido) escolhido = permitidos[Math.min(permitidos.length - 1, 3)];
+    const cap = getCapacidadePadrao(escolhido);
+    if (!cap) return null;
+
+    seqSugerida++;
+    const veiculo: VeiculoRoteirizacao = {
+      id: `sugerida-${escolhido}-${seqSugerida}`,
+      tipoVeiculo: escolhido,
+      placa: '',
+      motorista: 'Frota sugerida (vincular motorista no despacho)',
+      prestadorId: '',
+      cepBasePrestador: '',
+      regiaoBase: '',
+      capacidadePesoKg: cap.capacidadePesoKg,
+      capacidadeCubagemM3: cap.capacidadeCubagemM3,
+      tipoOperacao: refrigerado ? 'refrigerado' : 'seco',
+      disponivel: true,
+      contratoOuAvulso: 'avulso',
+      onlineApp: false,
+      rodizioHoje: false,
+      diaRodizio: '—',
+    };
+    pool.push({ veiculo, usada: false, sugerida: true });
+    return veiculo;
+  };
 
   Array.from(grupos.entries()).forEach(([chave, listaGrupo]) => {
     const macro = chave.split('||')[0];
     const refrigerado = chave.split('||')[1] === 'refrigerado';
+    const cargaGrupoKg = somaKg(listaGrupo);
 
     let restantes = optimizarSequenciaParadas(listaGrupo);
 
     // C-1) menor veiculo que comporte a regiao inteira (consolida 1 veiculo).
-    const unico = filtrarCandidatos(refrigerado, macro).find(c =>
+    const unico = filtrarCandidatos(refrigerado, macro, cargaGrupoKg).find(c =>
       cabeTodo(c.veiculo, restantes) && refrigCompat(c.veiculo, restantes)
     );
     if (unico) {
@@ -714,8 +813,12 @@ export const distribuirPedidosEntreVeiculos = (
 
     // C-2) sem veiculo unico: abre do menor para o maior, enchendo ate o limite.
     while (restantes.length > 0) {
-      const cand = filtrarCandidatos(refrigerado, macro)[0];
-      if (!cand) break;
+      let cand = filtrarCandidatos(refrigerado, macro, somaKg(restantes))[0];
+      if (!cand) {
+        sintetizarVeiculo(somaKg(restantes), refrigerado, restantes);
+        cand = filtrarCandidatos(refrigerado, macro, somaKg(restantes))[0];
+        if (!cand) break;
+      }
 
       cand.usada = true;
       const carga: PedidoRoteirizacao[] = [];
@@ -727,7 +830,13 @@ export const distribuirPedidosEntreVeiculos = (
           carga.push(pedido);
         }
       }
-      if (carga.length === 0) continue;
+      if (carga.length === 0) {
+        if (cand.sugerida) {
+          naoAlocados.push(...restantes);
+          break;
+        }
+        continue;
+      }
 
       const ids = new Set(carga.map(p => p.id));
       restantes = restantes.filter(p => !ids.has(p.id));
