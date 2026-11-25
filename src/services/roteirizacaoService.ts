@@ -634,14 +634,26 @@ export const converterPedidoPlanilha = (dados: Record<string, string>): PedidoRo
   const quantidade = parseInt(dados.quantidade_volumes) || 1;
   const cubagem = (comprimento * largura * altura * quantidade) / 1000000;
 
+  const endereco = dados.endereco || '';
+  const numero = dados.numero || '';
+  const complemento = dados.complemento || '';
+  const enderecoCompleto = [endereco, numero, complemento, dados.bairro]
+    .filter(Boolean)
+    .join(', ');
+
   return {
     id: `pedido_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     numeroPedido: dados.numero_pedido || '',
     cliente: dados.cliente || '',
     destinatario: dados.destinatario || '',
     telefone: dados.telefone || '',
+    documento: dados.documento || undefined,
+    email: dados.email || undefined,
     cep: dados.cep || '',
-    enderecoCompleto: dados.endereco || '',
+    enderecoCompleto,
+    endereco,
+    numero,
+    complemento,
     bairro: dados.bairro || '',
     cidade: dados.cidade || '',
     estado: dados.estado || '',
@@ -651,8 +663,8 @@ export const converterPedidoPlanilha = (dados: Record<string, string>): PedidoRo
     larguraCm: largura,
     alturaCm: altura,
     cubagemM3: cubagem,
-    tipoCarga: dados.tipo_carga as 'seco' | 'refrigerado' || 'seco',
-    secoOuRefrigerado: dados.seco_ou_refrigerado as 'seco' | 'refrigerado' || 'seco',
+    tipoCarga: (dados.tipo_carga as 'seco' | 'refrigerado') || 'seco',
+    secoOuRefrigerado: (dados.seco_ou_refrigerado as 'seco' | 'refrigerado') || 'seco',
     temperaturaMinima: dados.temperatura_minima ? parseFloat(dados.temperatura_minima) : undefined,
     janelaInicio: dados.janela_inicio || undefined,
     janelaFim: dados.janela_fim || undefined,
@@ -719,9 +731,41 @@ const mesmaCidade = (p1: PedidoRoteirizacao, p2: PedidoRoteirizacao): boolean =>
   return p1.cidade.toLowerCase() === p2.cidade.toLowerCase();
 };
 
+function temCoordenadaValida(lat?: number, lng?: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    Number(lat) !== 0 && Number(lng) !== 0 &&
+    Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180;
+}
+
+function distanciaKmEntre(a: ParadaSequencia, b: ParadaSequencia): number {
+  if (
+    temCoordenadaValida(a.latitude, a.longitude) &&
+    temCoordenadaValida(b.latitude, b.longitude)
+  ) {
+    return calcularDistanciaHaversine(
+      a.latitude!,
+      a.longitude!,
+      b.latitude!,
+      b.longitude!,
+    );
+  }
+  if (a.cidade && b.cidade && a.cidade.toLowerCase() === b.cidade.toLowerCase()) {
+    return 2;
+  }
+  if (mesmaFaixaCep(a.cep, b.cep)) return 3;
+  return 10;
+}
+
+/**
+ * Ordena as paradas por:
+ *  1) regiao (bairro/cidade) para nao "ziguezaguear" na cidade;
+ *  2) janela de horario (mais cedo primeiro) dentro da regiao;
+ *  3) vizinho mais proximo dentro da regiao.
+ * Urgentes/refrigerados continuam na frente.
+ */
 export const optimizarSequenciaParadas = (
   pedidos: PedidoRoteirizacao[],
-  cepBase?: string
+  cepBase?: string,
 ): PedidoRoteirizacao[] => {
   if (pedidos.length <= 1) return pedidos;
 
@@ -740,58 +784,64 @@ export const optimizarSequenciaParadas = (
     janelaFim: p.janelaFim,
   }));
 
-  const prioritarios = pedidosConvertidos.filter(p => 
+  const prioritarios = pedidosConvertidos.filter(p =>
     p.prioridade === 'urgente' || p.secoOuRefrigerado === 'refrigerado'
   );
-  const normais = pedidosConvertidos.filter(p => 
+  const normais = pedidosConvertidos.filter(p =>
     p.prioridade !== 'urgente' && p.secoOuRefrigerado !== 'refrigerado'
   );
 
-  const ordenarProximos = (paradas: ParadaSequencia[]): ParadaSequencia[] => {
+  const janelaChave = (p: ParadaSequencia) => p.janelaInicio || '99:99';
+
+  const ordenarPorRegiaoEJanela = (
+    paradas: ParadaSequencia[],
+  ): ParadaSequencia[] => {
     if (paradas.length <= 1) return paradas;
 
-    const resultado: ParadaSequencia[] = [];
-    const restantes = [...paradas];
+    const grupos = new Map<string, ParadaSequencia[]>();
+    paradas.forEach(function(p) {
+      const chave = (p.bairro || p.cidade || 'sem_regiao').toLowerCase();
+      if (!grupos.has(chave)) grupos.set(chave, []);
+      grupos.get(chave)!.push(p);
+    });
 
-    let atual = restantes.shift()!;
-    resultado.push(atual);
+    const janelaMinima = (lista: ParadaSequencia[]) =>
+      lista.reduce(
+        (min, p) => (janelaChave(p) < min ? janelaChave(p) : min),
+        '99:99',
+      );
 
-    while (restantes.length > 0) {
-      let menorDistancia = Infinity;
-      let indiceMaisProximo = 0;
+    const gruposOrdenados = Array.from(grupos.entries()).sort(([, a], [, b]) =>
+      janelaMinima(a).localeCompare(janelaMinima(b))
+    );
 
-      for (let i = 0; i < restantes.length; i++) {
-        let distancia = Infinity;
-
-        if (atual.latitude && atual.longitude && 
-            restantes[i].latitude && restantes[i].longitude) {
-          distancia = calcularDistanciaHaversine(
-            atual.latitude, atual.longitude,
-            restantes[i].latitude!, restantes[i].longitude!
-          );
-        } else if (mesmaCidade(atual as any, restantes[i] as any)) {
-          distancia = 2;
-        } else if (mesmaFaixaCep(atual.cep, restantes[i].cep)) {
-          distancia = 3;
-        } else {
-          distancia = 10;
+    const resultadoGrupos: ParadaSequencia[] = [];
+    gruposOrdenados.forEach(function([, lista]) {
+      const restantes = [...lista].sort((a, b) =>
+        janelaChave(a).localeCompare(janelaChave(b))
+      );
+      let atual = restantes.shift()!;
+      resultadoGrupos.push(atual);
+      while (restantes.length > 0) {
+        let menor = Infinity;
+        let indice = 0;
+        for (let i = 0; i < restantes.length; i++) {
+          const distancia = distanciaKmEntre(atual, restantes[i]);
+          if (distancia < menor) {
+            menor = distancia;
+            indice = i;
+          }
         }
-
-        if (distancia < menorDistancia) {
-          menorDistancia = distancia;
-          indiceMaisProximo = i;
-        }
+        atual = restantes.splice(indice, 1)[0];
+        resultadoGrupos.push(atual);
       }
+    });
 
-      atual = restantes.splice(indiceMaisProximo, 1)[0];
-      resultado.push(atual);
-    }
-
-    return resultado;
+    return resultadoGrupos;
   };
 
-  const ordensPrioritarios = ordenarProximos(prioritarios);
-  const ordensNormais = ordenarProximos(normais);
+  const ordensPrioritarios = ordenarPorRegiaoEJanela(prioritarios);
+  const ordensNormais = ordenarPorRegiaoEJanela(normais);
 
   const resultado: PedidoRoteirizacao[] = [];
   ordensPrioritarios.forEach(p => {
@@ -806,9 +856,30 @@ export const optimizarSequenciaParadas = (
   return resultado;
 };
 
+const TORTUOSIDADE_URBANA = 1.35;
+const VELOCIDADE_MEDIA_URBANA_KMH = 28;
+export const TEMPO_MEDIO_PARADA_MIN = 10;
+
+function hhmmParaMin(valor: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(valor || "").trim());
+  if (!m) return Number.NaN;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function minParaHHMM(minutos: number): string {
+  const total = ((Math.round(minutos) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${
+    String(total % 60).padStart(2, "0")
+  }`;
+}
+
+/**
+ * Estimativa DETERMINISTICA (sem Math.random): Haversine entre paradas com
+ * fator de tortuosidade urbana 1.35x e velocidade media 28 km/h + 10 min/parada.
+ */
 export const estimarDistanciaTempoLocal = (
   pedidos: PedidoRoteirizacao[],
-  origemCepBase?: string
+  origemCepBase?: string,
 ): ResultadoCalculoDistancia => {
   if (pedidos.length === 0) {
     return {
@@ -820,59 +891,137 @@ export const estimarDistanciaTempoLocal = (
   }
 
   const alertas: string[] = [];
-  let temCoordenadas = 0;
-  let mesmaCidadeCount = 0;
-  let regiaoMetropolitanCount = 0;
-  let cidadesDiferentesCount = 0;
-
-  const primeiraCidade = pedidos[0]?.cidade?.toLowerCase() || '';
+  let distancia = 0;
+  let semCoordenadas = 0;
 
   for (let i = 0; i < pedidos.length; i++) {
-    if (pedidos[i].latitude && pedidos[i].longitude) {
-      temCoordenadas++;
-    }
+    const atual = pedidos[i];
+    if (!temCoordenadaValida(atual.latitude, atual.longitude)) semCoordenadas++;
+    if (i === 0) continue;
 
-    if (i > 0) {
-      const cidadeAtual = pedidos[i].cidade?.toLowerCase() || '';
-      if (cidadeAtual === primeiraCidade && primeiraCidade !== '') {
-        mesmaCidadeCount++;
-      } else if (cidadeAtual !== '') {
-        cidadesDiferentesCount++;
-      }
-    }
-  }
-
-  let kmPorParada: number;
-  let minPorParada: number;
-
-  if (mesmaCidadeCount > cidadesDiferentesCount) {
-    kmPorParada = 4 + Math.random() * 4;
-    minPorParada = 8 + Math.random() * 5;
-    alertas.push('Estimativa baseada em mesma cidade');
-  } else if (cidadesDiferentesCount > 0) {
-    kmPorParada = 8 + Math.random() * 7;
-    minPorParada = 15 + Math.random() * 10;
-    alertas.push('Estimativa baseada em múltiplas cidades');
-  } else {
-    kmPorParada = 6 + Math.random() * 6;
-    minPorParada = 10 + Math.random() * 8;
-    alertas.push('Estimativa baseada em região');
-  }
-
-  if (temCoordenadas > 0) {
-    const percentualComCoords = (temCoordenadas / pedidos.length) * 100;
-    if (percentualComCoords < 50) {
-      alertas.push(`Apenas ${temCoordenadas} de ${pedidos.length} pedidos têm coordenadas (${percentualComCoords.toFixed(0)}%)`);
+    const anterior = pedidos[i - 1];
+    if (
+      temCoordenadaValida(anterior.latitude, anterior.longitude) &&
+      temCoordenadaValida(atual.latitude, atual.longitude)
+    ) {
+      distancia += calcularDistanciaHaversine(
+        anterior.latitude!,
+        anterior.longitude!,
+        atual.latitude!,
+        atual.longitude!,
+      );
+    } else if (
+      anterior.cidade && atual.cidade &&
+      anterior.cidade.toLowerCase() === atual.cidade.toLowerCase()
+    ) {
+      distancia += 4;
+    } else if (mesmaFaixaCep(anterior.cep, atual.cep)) {
+      distancia += 6;
+    } else {
+      distancia += 10;
     }
   }
 
-  const distanciaTotal = kmPorParada * pedidos.length;
-  const tempoTotal = minPorParada * pedidos.length;
+  const distanciaRealKm = distancia * TORTUOSIDADE_URBANA;
+  const tempoDeslocamento = (distanciaRealKm / VELOCIDADE_MEDIA_URBANA_KMH) * 60;
+  const tempoServico = pedidos.length * TEMPO_MEDIO_PARADA_MIN;
+
+  if (semCoordenadas > 0) {
+    alertas.push(
+      `${semCoordenadas} de ${pedidos.length} paradas sem coordenadas — trechos estimados por cidade/CEP.`,
+    );
+  }
+  alertas.push(
+    'Estimativa determinística (Haversine 1.35x · 28 km/h · 10 min/parada).',
+  );
 
   return {
-    distanciaTotalKm: Math.round(distanciaTotal * 10) / 10,
-    tempoTotalMinutos: Math.round(tempoTotal),
+    distanciaTotalKm: Math.round(distanciaRealKm * 10) / 10,
+    tempoTotalMinutos: Math.round(tempoDeslocamento + tempoServico),
     origemCalculo: 'estimativa_local',
     alertas,
+  };
+};
+
+export interface AvaliacaoJanelasHorario {
+  alertas: string[];
+  tempoTotalMin: number;
+  janelaAtendida: string;
+  violacoes: number;
+}
+
+/**
+ * Avalia janelas de horario considerando deslocamento (Haversine 1.35x/28 km/h)
+ * + tempo medio por parada. Sinaliza paradas que ultrapassam o horario limite.
+ */
+export const avaliarJanelasHorario = (
+  pedidos: PedidoRoteirizacao[],
+  opcoes?: { inicio?: string; servicoMin?: number },
+): AvaliacaoJanelasHorario => {
+  const inicioMin = hhmmParaMin(opcoes?.inicio || "08:00");
+  const inicio = Number.isFinite(inicioMin) ? inicioMin : 8 * 60;
+  const servico = opcoes?.servicoMin ?? TEMPO_MEDIO_PARADA_MIN;
+
+  const alertas: string[] = [];
+  let tempo = 0;
+  let violacoes = 0;
+  let menorInicio = '99:99';
+  let maiorFim = '00:00';
+  let anterior: PedidoRoteirizacao | null = null;
+
+  for (const pedido of pedidos) {
+    let kmTrecho = 0;
+    if (anterior) {
+      if (
+        temCoordenadaValida(anterior.latitude, anterior.longitude) &&
+        temCoordenadaValida(pedido.latitude, pedido.longitude)
+      ) {
+        kmTrecho = calcularDistanciaHaversine(
+          anterior.latitude!,
+          anterior.longitude!,
+          pedido.latitude!,
+          pedido.longitude!,
+        ) * TORTUOSIDADE_URBANA;
+      } else if (
+        anterior.cidade && pedido.cidade &&
+        anterior.cidade.toLowerCase() === pedido.cidade.toLowerCase()
+      ) {
+        kmTrecho = 4 * TORTUOSIDADE_URBANA;
+      } else {
+        kmTrecho = 10 * TORTUOSIDADE_URBANA;
+      }
+    }
+
+    tempo += (kmTrecho / VELOCIDADE_MEDIA_URBANA_KMH) * 60;
+    const chegada = inicio + tempo;
+
+    if (pedido.janelaInicio && pedido.janelaInicio < menorInicio) {
+      menorInicio = pedido.janelaInicio;
+    }
+    if (pedido.janelaFim) {
+      if (pedido.janelaFim > maiorFim) maiorFim = pedido.janelaFim;
+      const fim = hhmmParaMin(pedido.janelaFim);
+      if (Number.isFinite(fim) && chegada > fim) {
+        violacoes++;
+        alertas.push(
+          `${pedido.numeroPedido}: chegada prevista ${minParaHHMM(chegada)} após a janela fim ${pedido.janelaFim}.`,
+        );
+      }
+    }
+
+    tempo += servico;
+    anterior = pedido;
+  }
+
+  const temJanela = menorInicio !== '99:99' || maiorFim !== '00:00';
+  return {
+    alertas,
+    tempoTotalMin: Math.round(tempo),
+    janelaAtendida: temJanela
+      ? `${menorInicio === '99:99' ? '—' : menorInicio}–${
+        maiorFim === '00:00' ? '—' : maiorFim
+      }`
+      : 'Livre',
+    violacoes,
   };
 };

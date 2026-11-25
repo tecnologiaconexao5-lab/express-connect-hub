@@ -4,8 +4,14 @@ export interface PedidoRoteirizacao {
   cliente: string;
   destinatario: string;
   telefone: string;
+  documento?: string;
+  email?: string;
   cep: string;
   enderecoCompleto: string;
+  /** Logradouro/rua (campo estruturado; separado de numero/complemento). */
+  endereco?: string;
+  numero?: string;
+  complemento?: string;
   bairro: string;
   cidade: string;
   estado: string;
@@ -25,6 +31,8 @@ export interface PedidoRoteirizacao {
   prioridade: 'baixa' | 'media' | 'alta' | 'urgente';
   observacoes?: string;
   status: 'pendente' | 'alocado' | 'em_rota' | 'entregue' | 'falha';
+  /** Cliente (uuid) quando o pedido veio de uma OS — usado no despacho. */
+  clienteId?: string | null;
 }
 
 export interface VeiculoRoteirizacao {
@@ -158,8 +166,12 @@ export interface DadosImportacaoPlanilha {
   cliente: string;
   destinatario: string;
   telefone: string;
+  documento?: string;
+  email?: string;
   cep: string;
   endereco: string;
+  numero: string;
+  complemento: string;
   bairro: string;
   cidade: string;
   estado: string;
@@ -170,7 +182,7 @@ export interface DadosImportacaoPlanilha {
   altura_cm: string;
   tipo_carga: string;
   seco_ou_refrigerado: string;
-  temperatura_minima: string;
+  temperatura_minima?: string;
   janela_inicio: string;
   janela_fim: string;
   prioridade: string;
@@ -182,8 +194,12 @@ export const CABECALHO_PLANILHA = [
   'cliente',
   'destinatario',
   'telefone',
+  'documento',
+  'email',
   'cep',
   'endereco',
+  'numero',
+  'complemento',
   'bairro',
   'cidade',
   'estado',
@@ -194,7 +210,6 @@ export const CABECALHO_PLANILHA = [
   'altura_cm',
   'tipo_carga',
   'seco_ou_refrigerado',
-  'temperatura_minima',
   'janela_inicio',
   'janela_fim',
   'prioridade',

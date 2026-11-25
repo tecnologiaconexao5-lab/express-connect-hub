@@ -1,4 +1,16 @@
-import { Coordinates, DistanceResult } from "./types";
+interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
+interface DistanceResult {
+  distanciaKm: number;
+  duracaoMin: number;
+  distanciaTexto: string;
+  duracaoTexto: string;
+  provider: string;
+  coordinates?: [number, number][];
+}
 import { getMapboxToken } from "@/lib/mapboxToken";
 
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
@@ -72,6 +84,13 @@ export interface CalculoRotaInput {
 
 const MAX_PONTOS_POR_BLOCO = 10;
 
+/** (0,0) e coordenadas fora de faixa NAO sao coordenadas validas. */
+export function temCoordenadaValida(lat?: number, lng?: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    Number(lat) !== 0 && Number(lng) !== 0 &&
+    Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180;
+}
+
 export const calcularDistanciaTempoRota = async (
   paradas: CalculoRotaInput[],
   origemCoords?: Coordinates
@@ -86,7 +105,7 @@ export const calcularDistanciaTempoRota = async (
   const alertas: string[] = [];
 
   const paradasComCoords = paradas.filter(
-    p => p.latitude !== undefined && p.longitude !== undefined
+    p => temCoordenadaValida(p.latitude, p.longitude)
   );
 
   if (!token || paradasComCoords.length < 2) {
@@ -219,7 +238,79 @@ export const calcularDistanciaHaversine = (
   return R * c;
 };
 
+export interface CoordenadaGeocodificada {
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Geocoding real: Mapbox Geocoding API (se token) e fallback Nominatim (OSM).
+ * Retorna null quando nao encontrar — nunca inventa coordenadas.
+ */
+export async function geocodificarEndereco(
+  endereco: string,
+): Promise<CoordenadaGeocodificada | null> {
+  const query = String(endereco || "").trim();
+  if (!query) return null;
+
+  const token = getMapboxToken();
+  if (token) {
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${
+        encodeURIComponent(query)
+      }.json?access_token=${token}&country=br&limit=1&language=pt&proximity=-46.6333,-23.5505`;
+      const resposta = await fetch(url);
+      if (resposta.ok) {
+        const dados = await resposta.json();
+        const centro = dados?.features?.[0]?.center;
+        if (Array.isArray(centro) && centro.length === 2) {
+          const latitude = Number(centro[1]);
+          const longitude = Number(centro[0]);
+          if (temCoordenadaValida(latitude, longitude)) {
+            return { latitude, longitude };
+          }
+        }
+      }
+    } catch (erro) {
+      console.warn(
+        "[Roteirizacao Mapbox] Falha no geocoding:",
+        erro instanceof Error ? erro.message : erro,
+      );
+    }
+  }
+
+  try {
+    const url =
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${
+        encodeURIComponent(query)
+      }`;
+    const resposta = await fetch(url, {
+      headers: { "Accept": "application/json" },
+    });
+    if (resposta.ok) {
+      const dados = await resposta.json();
+      const item = Array.isArray(dados) ? dados[0] : null;
+      if (item?.lat && item?.lon) {
+        const latitude = Number(item.lat);
+        const longitude = Number(item.lon);
+        if (temCoordenadaValida(latitude, longitude)) {
+          return { latitude, longitude };
+        }
+      }
+    }
+  } catch (erro) {
+    console.warn(
+      "[Roteirizacao] Falha no Nominatim:",
+      erro instanceof Error ? erro.message : erro,
+    );
+  }
+
+  return null;
+}
+
 export default {
   calcularDistanciaTempoRota,
   calcularDistanciaHaversine,
+  geocodificarEndereco,
+  temCoordenadaValida,
 };
