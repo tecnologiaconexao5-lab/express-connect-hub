@@ -192,7 +192,7 @@ export function PortalIAOperacional({ clienteId, onAction }: PortalIAOperacional
                   </p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg text-center">
-                  <p className="text-xs text-slate-500">Devoluções</p>
+                  <p className="text-xs text-slate-500">Fora do Prazo</p>
                   <p className={`text-lg font-bold ${saude.devolucoes <= 5 ? "text-emerald-600" : "text-red-600"}`}>
                     {saude.devolucoes}%
                   </p>

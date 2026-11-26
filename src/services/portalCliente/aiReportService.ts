@@ -113,7 +113,7 @@ export async function gerarRelatorioIA(
     const { inicio, fim } = getPeriodoFiltro(periodo);
     const periodoLabel = formatPeriodoBR(periodo);
 
-    const [osResponse, finResponse, ocorrResponse, contratoResponse, alocResponse, insightsResponse] = await Promise.all([
+    const [osResponse, finResponse, ocorrResponse, contratoResponse] = await Promise.all([
       supabase
         .from("ordens_servico")
         .select("id, status, valor_cliente, created_at, origem, destino, cidade_destino, cliente_id")
@@ -141,20 +141,12 @@ export async function gerarRelatorioIA(
         .eq("cliente_id", clienteId)
         .eq("ativo", true)
         .limit(50),
-      supabase
-        .from("alocacoes_escala")
-        .select("id, km_realizados, valor_repasse, origem, destino, status, created_at")
-        .eq("cliente_id", clienteId)
-        .gte("created_at", inicio)
-        .lte("created_at", fim)
-        .limit(500),
     ]);
 
     const ordens = osResponse.data || [];
     const financeiro = finResponse.data || [];
     const ocorrencias = ocorrResponse.data || [];
     const contratos = contratoResponse.data || [];
-    const alocacoes = alocResponse.data || [];
 
     if (ordens.length === 0 && financeiro.length === 0 && ocorrencias.length === 0) {
       return {

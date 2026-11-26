@@ -146,6 +146,7 @@ export interface ConfirmacaoPedidoResultado {
   os_id?: string;
   os_numero?: string;
   tracking_link?: string;
+  tracking_token?: string;
   preco_final?: number;
   previsao_entrega?: string;
   veiculo_sugerido?: string;

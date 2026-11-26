@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { marcarNotificacaoLida } from "@/services/portalCliente/portalClienteService";
 
 interface Notificacao {
   id: string;
@@ -22,6 +23,10 @@ interface PortalNotificacoesProps {
   onAction?: (notificacaoId: string, acao: string) => void;
   notificacoes?: Notificacao[];
   loading?: boolean;
+  /** Cliente logado — obrigatório para leitura isolada por RLS. */
+  clienteId?: string;
+  /** Callback para o header recarregar o contador após marcar como lida. */
+  onRead?: () => void;
 }
 
 const tipoConfig = {
@@ -90,17 +95,22 @@ const canalConfig = {
 
 const defaultNotificacoes: Notificacao[] = [];
 
-export function PortalNotificacoes({ onAction }: PortalNotificacoesProps) {
+export function PortalNotificacoes({ onAction, clienteId, onRead }: PortalNotificacoesProps) {
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>(defaultNotificacoes);
   const [filtro, setFiltro] = useState<"todas" | "nao_lidas">("todas");
   const [busca, setBusca] = useState("");
 
   useEffect(() => {
     const carregar = async () => {
+      if (!clienteId) {
+        setNotificacoes([]);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from("portal_notificacoes")
           .select("*")
+          .eq("cliente_id", clienteId)
           .order("created_at", { ascending: false })
           .limit(50);
         if (!error && data && data.length > 0) {
@@ -108,13 +118,17 @@ export function PortalNotificacoes({ onAction }: PortalNotificacoesProps) {
             id: n.id, titulo: n.titulo || '', mensagem: n.mensagem || '',
             tipo: n.tipo || 'mensagem', canal: n.canal || 'portal',
             prioridade: n.prioridade || 'media', lida: n.lida || false,
-            created_at: n.created_at,
+            created_at: n.created_at, acao: n.acao || undefined,
           })));
+        } else {
+          setNotificacoes([]);
         }
-      } catch { /* fallback */ }
+      } catch {
+        setNotificacoes([]);
+      }
     };
     carregar();
-  }, []);
+  }, [clienteId]);
 
   const filtradas = notificacoes.filter(n => {
     if (filtro === "nao_lidas" && n.lida) return false;
@@ -126,10 +140,15 @@ export function PortalNotificacoes({ onAction }: PortalNotificacoesProps) {
 
   const marcarLida = (id: string) => {
     setNotificacoes(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n));
+    void marcarNotificacaoLida(id);
+    onRead?.();
   };
 
   const marcarTodasLida = () => {
+    const pendentes = notificacoes.filter(n => !n.lida);
     setNotificacoes(prev => prev.map(n => ({ ...n, lida: true })));
+    pendentes.forEach(n => { void marcarNotificacaoLida(n.id); });
+    onRead?.();
   };
 
   const deletar = (id: string) => {

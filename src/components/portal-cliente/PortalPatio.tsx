@@ -69,7 +69,7 @@ export default function PortalPatio({ clienteId, clienteNome }: PortalPatioProps
       setErro(null);
       const [checkinsData, metricsData] = await Promise.all([
         buscarStatusPatioCliente(clienteId),
-        obterMetricasPatio(),
+        obterMetricasPatio(undefined, clienteId),
       ]);
       setCheckins(checkinsData);
       setMetrics(metricsData);
@@ -211,29 +211,26 @@ export default function PortalPatio({ clienteId, clienteNome }: PortalPatioProps
             title="Veículos Hoje"
             value={metrics.totalHoje.toString()}
             icon={Truck}
-            description="Total de check-ins hoje"
-            trend="neutral"
+            subtitle="Total de check-ins hoje"
           />
           <PortalKpiCard
             title="Aguardando"
             value={metrics.aguardando.toString()}
             icon={Clock}
-            description="Na fila ou aguardando"
-            trend={metrics.aguardando > 5 ? "negative" : "neutral"}
+            subtitle="Na fila ou aguardando"
+            trend={metrics.aguardando > 5 ? -1 : 0}
           />
           <PortalKpiCard
             title="Em Carregamento"
             value={metrics.emCarregamento.toString()}
             icon={Package}
-            description="Veículos carregando"
-            trend="positive"
+            subtitle="Veículos carregando"
           />
           <PortalKpiCard
             title="Concluídos Hoje"
             value={metrics.concluidosHoje.toString()}
             icon={CheckCircle}
-            description="Operações finalizadas"
-            trend="positive"
+            subtitle="Operações finalizadas"
           />
         </div>
       )}

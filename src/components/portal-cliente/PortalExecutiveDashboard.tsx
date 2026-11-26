@@ -81,9 +81,9 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
       `Em Andamento: ${data.emAndamento}`,
       `Produtividade: ${data.produtividade}%`,
       `Volume Transportado: ${data.volumeTransportado} kg`,
-      `Valor Médio por Entrega: R$ ${data.valorMedioEntrega.toLocaleString("pt-BR")}`,
-      `Economia Operacional: R$ ${data.economiaOperacional.toLocaleString("pt-BR")}`,
-      `Devoluções: ${data.devolucoes}%`,
+      `Investimento Logístico Total: R$ ${data.investimentoLogistico.toLocaleString("pt-BR")}`,
+      `Ticket Médio por Entrega: R$ ${data.valorMedioEntrega.toLocaleString("pt-BR")}`,
+      `Entregas Fora do Prazo: ${data.entregasForaPrazo}%`,
       `Urgências: ${data.urgencias}`,
       "",
       `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
@@ -176,20 +176,17 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
           loading={loading}
         />
         <PortalKpiCard
-          title="Produtividade"
-          value={loading ? "..." : `${data?.produtividade ?? 0}%`}
-          subtitle={`${data?.entregasConcluidas ?? 0} de ${data?.totalEntregas ?? 0} concluídas`}
-          icon={Activity}
-          trend={data?.tendencia7dias}
-          status={!data ? undefined : data.produtividade >= 80 ? "saudavel" : data.produtividade >= 50 ? "atencao" : "critico"}
+          title="Investimento Logístico"
+          value={loading ? "..." : `R$ ${((data?.investimentoLogistico ?? 0) / 1000).toFixed(1)}k`}
+          subtitle="investimento total no período"
+          icon={DollarSign}
           loading={loading}
         />
         <PortalKpiCard
-          title="Economia Operacional"
-          value={loading ? "..." : `R$ ${((data?.economiaOperacional ?? 0) / 1000).toFixed(1)}k`}
-          subtitle="vs. custo de mercado"
-          icon={DollarSign}
-          trend={data && data.economiaOperacional > 0 ? 5 : -5}
+          title="Ticket Médio por Entrega"
+          value={loading ? "..." : `R$ ${(data?.valorMedioEntrega ?? 0).toLocaleString("pt-BR")}`}
+          subtitle="por entrega no período"
+          icon={Target}
           loading={loading}
         />
       </div>
@@ -317,10 +314,10 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
               <MapPin className="w-5 h-5 text-orange-500" />
-              Custo por Região
+              Volume por Região
             </h3>
             <Badge className="bg-slate-100 text-slate-600 border-none font-bold">
-              Total: R$ {((data?.custoPorRegiao ?? []).reduce((a, r) => a + r.custo, 0) / 1000).toFixed(1)}k
+              Total: {((data?.volumePorRegiao ?? []).reduce((a, r) => a + r.entregas, 0))} entregas
             </Badge>
           </div>
           {loading ? (
@@ -329,23 +326,23 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
                 <div key={i} className="h-16 bg-slate-50 rounded-xl animate-pulse" />
               ))}
             </div>
-          ) : data && data.custoPorRegiao.length > 0 ? (
+          ) : data && data.volumePorRegiao.length > 0 ? (
             <div className="space-y-6">
-              {data.custoPorRegiao.slice(0, 6).map((r, idx) => {
-                const maxCusto = Math.max(...data.custoPorRegiao.map((x) => x.custo), 1);
+              {data.volumePorRegiao.slice(0, 6).map((r, idx) => {
+                const maxEntregas = Math.max(...data.volumePorRegiao.map((x) => x.entregas), 1);
                 return (
                   <div key={idx} className="space-y-3 group">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-600 font-black uppercase tracking-widest">{r.regiao}</span>
                       <div className="flex items-center gap-4">
                         <span className="text-slate-400 font-bold">{r.entregas} entregas</span>
-                        <span className="text-slate-900 font-black">R$ {(r.custo / 1000).toFixed(1)}k</span>
+                        <span className="text-slate-900 font-black">{(r.pesoKg / 1000).toFixed(1)}t</span>
                       </div>
                     </div>
                     <div className="h-3 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
                       <div
                         className="h-full bg-gradient-to-r from-orange-500 to-orange-400 rounded-full shadow-inner transition-all duration-1000"
-                        style={{ width: `${(r.custo / maxCusto) * 100}%` }}
+                        style={{ width: `${(r.entregas / maxEntregas) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -361,10 +358,10 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-rose-500" />
-              Incidências e Devoluções
+              Entregas Fora do Prazo
             </h3>
-            <Badge className={data && data.devolucoes <= data.devolucoesMeta ? "bg-emerald-100 text-emerald-600 border-none font-bold" : "bg-rose-100 text-rose-600 border-none font-bold"}>
-              {data && data.devolucoes <= data.devolucoesMeta ? "Dentro da Meta" : "Acima da Meta"}
+            <Badge className={data && ((data.totalEntregas > 0 ? (data.entregasForaPrazo / data.totalEntregas) * 100 : 0) <= data.metaForaPrazo) ? "bg-emerald-100 text-emerald-600 border-none font-bold" : "bg-rose-100 text-rose-600 border-none font-bold"}>
+              {data && ((data.totalEntregas > 0 ? (data.entregasForaPrazo / data.totalEntregas) * 100 : 0) <= data.metaForaPrazo) ? "Dentro da Meta" : "Acima da Meta"}
             </Badge>
           </div>
 
@@ -381,25 +378,25 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
                     <circle
                       cx="80" cy="80" r="70" stroke="currentColor" strokeWidth="12" fill="transparent"
                       strokeDasharray={440}
-                      strokeDashoffset={440 - (440 * Math.min((data?.devolucoes ?? 0) / (data?.devolucoesMeta ?? 5), 1))}
-                      className={`transition-all duration-1000 ${data && data.devolucoes <= data.devolucoesMeta ? "text-emerald-500" : "text-rose-500"}`}
+                      strokeDashoffset={440 - (440 * Math.min(((data?.totalEntregas ?? 0) > 0 ? ((data?.entregasForaPrazo ?? 0) / (data?.totalEntregas ?? 1)) * 100 : 0) / (data?.metaForaPrazo ?? 5), 1))}
+                      className={`transition-all duration-1000 ${data && ((data.totalEntregas > 0 ? (data.entregasForaPrazo / data.totalEntregas) * 100 : 0) <= data.metaForaPrazo) ? "text-emerald-500" : "text-rose-500"}`}
                       strokeLinecap="round"
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl font-black text-slate-900">{data?.devolucoes ?? 0}%</span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Atrasos</span>
+                    <span className="text-3xl font-black text-slate-900">{data && data.totalEntregas > 0 ? ((data.entregasForaPrazo / data.totalEntregas) * 100).toFixed(1) : "0"}%</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fora do Prazo</span>
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 mt-4">
                 <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Atrasos</p>
-                  <p className="text-lg font-black text-slate-900">{data?.devolucoes ?? 0}%</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Fora do Prazo</p>
+                  <p className="text-lg font-black text-slate-900">{data && data.totalEntregas > 0 ? ((data.entregasForaPrazo / data.totalEntregas) * 100).toFixed(1) : "0"}%</p>
                 </div>
                 <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta Máx.</p>
-                  <p className="text-lg font-black text-slate-900">{data?.devolucoesMeta ?? 5}%</p>
+                  <p className="text-lg font-black text-slate-900">{data?.metaForaPrazo ?? 5}%</p>
                 </div>
                 <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Urgências</p>
@@ -463,10 +460,11 @@ export function PortalExecutiveDashboard({ clienteId }: PortalExecutiveDashboard
             <div className="grid grid-cols-2 gap-4">
               <SummaryItem label="Total Entregas" value={String(data?.totalEntregas ?? 0)} />
               <SummaryItem label="Concluídas" value={String(data?.entregasConcluidas ?? 0)} />
-              <SummaryItem label="Atrasadas" value={String(data?.entregasAtrasadas ?? 0)} />
+              <SummaryItem label="Fora do Prazo" value={String(data?.entregasForaPrazo ?? 0)} />
               <SummaryItem label="Em Andamento" value={String(data?.emAndamento ?? 0)} />
               <SummaryItem label="Entregas Hoje" value={String(data?.entregasHoje ?? 0)} />
-              <SummaryItem label="Valor Médio" value={`R$ ${(data?.valorMedioEntrega ?? 0).toLocaleString("pt-BR")}`} />
+              <SummaryItem label="Produtividade" value={`${data?.produtividade ?? 0}%`} />
+              <SummaryItem label="Ticket Médio" value={`R$ ${(data?.valorMedioEntrega ?? 0).toLocaleString("pt-BR")}`} />
             </div>
           )}
         </Card>

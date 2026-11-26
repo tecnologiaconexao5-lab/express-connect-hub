@@ -23,16 +23,34 @@ interface OcorrenciaUpdate {
   created_at: string;
 }
 
-interface UsePortalRealtimeOptions {
+export interface ComprovanteUpdate {
+  id?: string;
+  ordem_servico_id?: string | null;
+  alocacao_id?: string | null;
+  nome_recebedor?: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+export interface UsePortalRealtimeOptions {
   onEntregaUpdate?: (entrega: EntregaUpdate) => void;
   onNotificacao?: (notificacao: NotificacaoUpdate) => void;
   onOcorrencia?: (ocorrencia: OcorrenciaUpdate) => void;
+  /** Disparado quando o App Flutter envia/atualiza um comprovante (POD). */
+  onComprovanteUpdate?: (comprovante: ComprovanteUpdate) => void;
   enabled?: boolean;
   clienteId?: string;
 }
 
 export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
-  const { onEntregaUpdate, onNotificacao, onOcorrencia, enabled = true, clienteId } = options;
+  const {
+    onEntregaUpdate,
+    onNotificacao,
+    onOcorrencia,
+    onComprovanteUpdate,
+    enabled = true,
+    clienteId,
+  } = options;
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
@@ -40,11 +58,13 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
     if (!enabled || !clienteId) return;
 
     const subscriptions: any[] = [];
+    const topic = `portal-realtime-${clienteId}`;
 
     const setupSubscriptions = async () => {
       try {
-        const ordensChannel = supabase
-          .channel("portal-ordens-realtime")
+        const channel = supabase
+          .channel(topic)
+          // 1) Status das OS
           .on(
             "postgres_changes",
             {
@@ -54,19 +74,56 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
               filter: `cliente_id=eq.${clienteId}`,
             },
             (payload) => {
-              const entrega = payload.new as EntregaUpdate;
-              onEntregaUpdate?.(entrega);
+              onEntregaUpdate?.(payload.new as EntregaUpdate);
               setLastUpdate(new Date());
-            }
+            },
+          )
+          // 2) Comprovantes (POD) enviados pelo App Flutter
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "entregas_protocolo",
+            },
+            (payload) => {
+              onComprovanteUpdate?.(payload.new as ComprovanteUpdate);
+              setLastUpdate(new Date());
+            },
+          )
+          // 3) Ocorrências do portal
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "portal_ocorrencias",
+              filter: `cliente_id=eq.${clienteId}`,
+            },
+            (payload) => {
+              onOcorrencia?.(payload.new as OcorrenciaUpdate);
+              setLastUpdate(new Date());
+            },
+          )
+          // 4) Notificações do portal
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "portal_notificacoes",
+              filter: `cliente_id=eq.${clienteId}`,
+            },
+            (payload) => {
+              onNotificacao?.(payload.new as NotificacaoUpdate);
+              setLastUpdate(new Date());
+            },
           )
           .subscribe((status) => {
-            if (status === "subscribed") setIsConnected(true);
+            if (status === "SUBSCRIBED") setIsConnected(true);
           });
 
-        subscriptions.push(ordensChannel);
-
-        // Notificações e ocorrências via realtime serão implementadas
-        // quando as tabelas forem criadas (portal_notificacoes, portal_ocorrencias)
+        subscriptions.push(channel);
       } catch {
         setIsConnected(false);
       }
@@ -79,7 +136,7 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
         if (sub) supabase.removeChannel(sub);
       });
     };
-  }, [enabled, clienteId, onEntregaUpdate, onNotificacao, onOcorrencia]);
+  }, [enabled, clienteId, onEntregaUpdate, onNotificacao, onOcorrencia, onComprovanteUpdate]);
 
   return {
     isConnected,

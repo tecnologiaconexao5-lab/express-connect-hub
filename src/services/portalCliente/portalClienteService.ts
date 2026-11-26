@@ -24,6 +24,71 @@ export interface EntregaResumo {
   mercadoria: string;
   cliente: string;
   sla?: number;
+  prestador?: { nome: string; telefone?: string; veiculo?: string; placa?: string };
+  alocacao_id?: string | null;
+  latitude?: number;
+  longitude?: number;
+  pod?: {
+    foto_url?: string | null;
+    canhoto_url?: string | null;
+    assinatura_url?: string | null;
+    recebedor_nome?: string | null;
+  };
+}
+
+/** Status normalizado usado em TODOS os filtros/KPIs do Portal Cliente. */
+export type PortalStatusEntrega =
+  | "programacao"
+  | "coleta"
+  | "em_rota"
+  | "entregue"
+  | "atrasada"
+  | "cancelada";
+
+/**
+ * Converte o status real do TMS (OS + alocação) para o vocabulário do Portal.
+ * Centralizado para que Pedidos, Agenda, Rastreamento e KPIs usem a mesma regra.
+ */
+export function mapStatusCliente(
+  statusOS?: string | null,
+  statusAlocacao?: string | null,
+): PortalStatusEntrega {
+  const os = String(statusOS || "").toLowerCase().trim();
+  const aloc = String(statusAlocacao || "").toLowerCase().trim();
+
+  if (["cancelada", "cancelado", "recusada", "recusado"].includes(os)) return "cancelada";
+  if (["finalizada", "finalizado", "entregue", "concluida", "concluído", "concluido"].includes(os)) {
+    return "entregue";
+  }
+  if (["atrasada", "atrasado", "em_atraso"].includes(os)) return "atrasada";
+  if (["entregue_ressalva", "nao_entregue", "nao_entregue"].includes(os)) return "atrasada";
+
+  if (["coletando", "coleta", "em_coleta", "coletado"].includes(os)) return "coleta";
+  if (
+    ["em_rota", "em_transito", "em_trânsito", "saiu_para_rota", "em_andamento", "em_entrega", "em_distribuicao"]
+      .includes(os)
+  ) {
+    return "em_rota";
+  }
+
+  // OS ainda não concluída/cancelada: a alocação pode indicar progresso real.
+  if (["em_rota", "em_transito", "em_trânsito"].includes(aloc)) return "em_rota";
+  if (["concluida", "concluída", "concluido"].includes(aloc)) return "entregue";
+  if (["cancelada", "recusada"].includes(aloc)) return "cancelada";
+
+  return "programacao";
+}
+
+export function labelStatusPortal(status?: string | null): string {
+  const map: Record<string, string> = {
+    programacao: "Programado",
+    coleta: "Em Coleta",
+    em_rota: "Em Rota",
+    entregue: "Entregue",
+    atrasada: "Fora do Prazo",
+    cancelada: "Cancelada",
+  };
+  return map[String(status || "")] || "Programado";
 }
 
 export interface FinanceiroResumo {
@@ -159,20 +224,23 @@ export interface RotaResumo {
   created_at: string;
 }
 
+export interface VolumeRegiaoCliente {
+  regiao: string;
+  entregas: number;
+  pesoKg: number;
+}
+
+/** Indicadores SEGUROS do ponto de vista do cliente (sem custo/repasse/margem). */
 export interface EconomiaMetrics {
-  totalFaturado: number;
-  totalCustos: number;
-  economiaLiquida: number;
-  economiaVsFrotaPropria: number;
-  produtividade: number;
-  reducaoCusto: number;
-  kmOtimizados: number;
-  ocupacaoMedia: number;
-  economiaCombustivel: number;
-  entregasConsolidadas: number;
+  investimentoTotal: number;
+  ticketMedio: number;
+  slaPct: number;
+  entregasConcluidas: number;
   totalEntregas: number;
-  metaEconomia: number;
-  detalhamento: { label: string; valor: number; descricao?: string }[];
+  ocupacaoMedia: number;
+  totalFaturado: number;
+  totalAVencer: number;
+  volumePorRegiao: VolumeRegiaoCliente[];
 }
 
 export interface DashboardMetrics {
@@ -187,19 +255,6 @@ export interface DashboardMetrics {
   totalAVencer: number;
   valorMedioEntrega: number;
 }
-
-const formatStatus = (s: string | undefined): string => {
-  const map: Record<string, string> = {
-    programacao: "Programado",
-    coleta: "Em Coleta",
-    saiu_para_rota: "Saiu para Rota",
-    em_rota: "Em Rota",
-    entregue: "Entregue",
-    atrasada: "Atrasado",
-    problema: "Com Problema",
-  };
-  return map[s || ""] || s || "Pendente";
-};
 
 export async function buscarResumoCliente(clienteId?: string, clienteNome?: string): Promise<ClienteInfo | null> {
   try {
@@ -249,7 +304,7 @@ export async function buscarEntregasCliente(
   try {
     const { data, error } = await supabase
       .from("ordens_servico")
-      .select("*")
+      .select("id, numero, status, cliente, cliente_id, data, data_programada, created_at, valor_cliente, peso, volumes, carga_descricao")
       .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -263,22 +318,31 @@ export async function buscarEntregasCliente(
       return [];
     }
 
-    return data.map((os) => ({
-      id: os.id,
-      numero: os.numero || `OS-${os.id.slice(0, 8)}`,
-      status: os.status || "programacao",
-      status_label: formatStatus(os.status),
-      origem_cidade: os.filial_origem || "N/A",
-      destino_cidade: os.cidade_destino || os.cliente || "N/A",
-      previsao: os.data_previsao || new Date().toISOString(),
-      created_at: os.created_at,
-      valor_frete: os.valor_cliente || os.valor_frete || 0,
-      peso: os.peso || 0,
-      volumes: os.volumes || 1,
-      mercadoria: os.carga_descricao || os.mercadoria || "Mercadoria",
-      cliente: os.cliente || "Cliente",
-      sla: 100,
-    }));
+    return data.map((row) => {
+      const os = row as any;
+      const status = mapStatusCliente(os.status);
+      const dataProgramada = (os as any).data_programada || (os as any).data;
+      const foraPrazo =
+        status !== "entregue" && status !== "cancelada" &&
+        Boolean(dataProgramada) &&
+        new Date(dataProgramada) < new Date(new Date().toDateString());
+      return {
+        id: os.id,
+        numero: os.numero || `OS-${os.id.slice(0, 8)}`,
+        status: foraPrazo ? "atrasada" : status,
+        status_label: labelStatusPortal(foraPrazo ? "atrasada" : status),
+        origem_cidade: os.filial_origem || "N/A",
+        destino_cidade: os.cidade_destino || os.cliente || "N/A",
+        previsao: os.data_previsao || new Date().toISOString(),
+        created_at: os.created_at,
+        valor_frete: os.valor_cliente || os.valor_frete || 0,
+        peso: os.peso || 0,
+        volumes: os.volumes || 1,
+        mercadoria: os.carga_descricao || os.mercadoria || "Mercadoria",
+        cliente: os.cliente || "Cliente",
+        sla: foraPrazo ? 0 : 100,
+      };
+    });
   } catch (error) {
     console.warn("[PortalClienteService] Exceção ao buscar entregas:", error);
     return [];
@@ -392,7 +456,7 @@ export async function buscarDashboardMetrics(
     ).length;
 
     const emAndamento = entregas.filter(
-      (e) => e.status !== "entregue"
+      (e) => e.status !== "entregue" && e.status !== "cancelada"
     ).length;
 
     const concluidasMes = entregas.filter(
@@ -408,7 +472,7 @@ export async function buscarDashboardMetrics(
     const slaMedio =
       entregas.length > 0
         ? Math.round(
-            entregas.reduce((acc, e) => acc + (e.sla || 0), 0) / entregas.length
+            entregas.reduce((acc, e) => acc + (e.sla ?? 100), 0) / entregas.length
           )
         : 100;
 
@@ -586,37 +650,25 @@ export async function buscarComprovantesPortal(clienteId?: string, limit: number
 
 export async function buscarPODsPorCliente(clienteId?: string, limit: number = 20): Promise<ComprovanteResumo[]> {
   try {
-    let alocacaoIds: string[] = [];
+    // SEGURANÇA: sem cliente_id não há consulta (evita leitura cruzada).
+    if (!clienteId) return [];
 
-    if (clienteId) {
-      const { data: osData } = await supabase
-        .from("ordens_servico")
-        .select("id")
-        .eq("cliente_id", clienteId)
-        .limit(200);
+    const { data: osData } = await supabase
+      .from("ordens_servico")
+      .select("id")
+      .eq("cliente_id", clienteId)
+      .limit(200);
 
-      const osIds = (osData || []).map((o: any) => o.id).filter(Boolean);
-      if (osIds.length > 0) {
-        const { data: alocData } = await supabase
-          .from("alocacoes_escala")
-          .select("id")
-          .in("ordem_servico_id", osIds);
+    const osIds = (osData || []).map((o: any) => o.id).filter(Boolean);
+    // Sem OS do cliente → não há POD legítimo para retornar.
+    if (osIds.length === 0) return [];
 
-        alocacaoIds = (alocData || []).map((a: any) => a.id).filter(Boolean);
-      }
-    }
-
-    let query = supabase
+    const { data, error } = await supabase
       .from("entregas_protocolo")
       .select("*")
+      .in("ordem_servico_id", osIds)
       .order("data_hora_entrega", { ascending: false })
       .limit(limit);
-
-    if (alocacaoIds.length > 0) {
-      query = query.in("alocacao_id", alocacaoIds);
-    }
-
-    const { data, error } = await query;
 
     if (error) {
       console.warn("[PortalClienteService] Erro ao buscar entregas_protocolo:", error.message);
@@ -676,7 +728,7 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
     if (pod.alocacao_id) {
       const { data: aloc } = await supabase
         .from("alocacoes_escala")
-        .select("*")
+        .select("id, status, aceite_prestador, data_aceite, finalizada, data_finalizacao, horario_inicio_real, horario_fim_real, comprovante_url, assinatura_url, fotos_entrega, observacoes, km_realizados, origem, destino, metadata, ordem_servico_id, cliente_id, prestador_id")
         .eq("id", pod.alocacao_id)
         .maybeSingle();
       if (aloc) {
@@ -695,7 +747,7 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
           horario_fim_real: aloc.horario_fim_real,
           comprovante_url: aloc.comprovante_url, assinatura_url: aloc.assinatura_url,
           fotos_entrega: aloc.fotos_entrega, observacoes: aloc.observacoes,
-          km_realizados: aloc.km_realizados, prestador_nome: aloc.prestador_nome,
+          km_realizados: aloc.km_realizados, prestador_nome: (aloc as any).prestador_nome,
           origem: aloc.origem, destino: aloc.destino,
           foto_chegada_url: fotoChegadaRaw,
           foto_coleta_url: fotoColetaRaw,
@@ -704,7 +756,7 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
         if (aloc.ordem_servico_id) {
           const { data: os } = await supabase
             .from("ordens_servico")
-            .select("*")
+            .select("id, numero, status, cliente, cliente_id, carga_descricao, valor_cliente, peso, volumes, created_at, veiculo_alocado, prestador")
             .eq("id", aloc.ordem_servico_id)
             .maybeSingle();
           if (os) {
@@ -713,8 +765,10 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
               cliente: os.cliente, cliente_id: os.cliente_id,
               carga_descricao: os.carga_descricao, valor_cliente: os.valor_cliente,
               peso: os.peso, volumes: os.volumes, created_at: os.created_at,
-              ref_cliente: os.ref_cliente, veiculo_alocado: os.veiculo_alocado,
-              veiculo_placa: os.veiculo_placa, prestador: os.prestador,
+              ref_cliente: "",
+              veiculo_alocado: os.veiculo_alocado ?? "",
+              veiculo_placa: "",
+              prestador: os.prestador,
             };
           }
         }
@@ -730,13 +784,13 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
             let veiculo_placa: string | null = null;
             const { data: veic } = await supabase
               .from("veiculos")
-              .select("placa, tipo")
-              .eq("prestadorVinculado", prov.id)
+              .select("placa, tipo, tipo_veiculo")
+              .eq("prestador_vinculado", prov.id)
               .limit(1)
               .maybeSingle();
             if (veic) {
-              veiculo_tipo = veic.tipo;
-              veiculo_placa = veic.placa;
+              veiculo_tipo = (veic as any).tipo_veiculo || (veic as any).tipo || null;
+              veiculo_placa = (veic as any).placa || null;
             }
             prestador = {
               id: prov.id, nome_completo: prov.nome_completo,
@@ -936,6 +990,7 @@ function getPeriodoFilter(periodo: string): { inicio: string; fim: string } {
   return { inicio, fim };
 }
 
+/** Indicadores SEGUROS do cliente: sem custo do prestador, repasse ou margem. */
 export async function buscarEconomiaCliente(
   clienteId?: string,
   periodo: string = "30dias"
@@ -944,118 +999,76 @@ export async function buscarEconomiaCliente(
   try {
     const { inicio, fim } = getPeriodoFilter(periodo);
 
-    const [financeiroData, custosData, osData, alocacoesData] = await Promise.all([
+    const [financeiroData, osData] = await Promise.all([
       supabase
         .from("financeiro_receber")
-        .select("*")
+        .select("valor, status, data_vencimento, cliente_id")
         .eq("cliente_id", clienteId)
-        .order("data_vencimento", { ascending: false })
-        .limit(200),
-      supabase
-        .from("pagamentos_prestadores")
-        .select("id, valor_servicos, valor_liquido, valor, valor_adicionais, valor_combustivel, os_id, created_at, cliente_id")
-        .eq("cliente_id", clienteId)
-        .gte("created_at", inicio)
-        .lte("created_at", fim)
-        .limit(200),
+        .limit(300),
       supabase
         .from("ordens_servico")
-        .select("id, status, valor_cliente, peso, volumes, created_at, cliente_id")
+        .select("id, status, valor_cliente, peso, volumes, created_at, cliente_id, cidade_destino, destino")
         .eq("cliente_id", clienteId)
         .gte("created_at", inicio)
         .lte("created_at", fim)
-        .limit(200),
-      supabase
-        .from("alocacoes_escala")
-        .select("id, ordem_servico_id, km_realizados, valor_frete, valor_repasse, status, created_at")
-        .eq("cliente_id", clienteId)
-        .gte("created_at", inicio)
-        .lte("created_at", fim)
-        .limit(200),
+        .limit(500),
     ]);
 
     const faturas = financeiroData.data || [];
-    const custos = custosData.data || [];
     const ordens = osData.data || [];
-    const alocacoes = alocacoesData.data || [];
 
     const totalFaturado = faturas
-      .filter((f: any) => f.status === "pago" || f.status === "recebido")
-      .reduce((acc: number, f: any) => acc + (f.valor || 0), 0);
+      .filter((f: any) => ["pago", "recebido"].includes(String(f.status)))
+      .reduce((acc: number, f: any) => acc + Number(f.valor || 0), 0);
+    const totalAVencer = faturas
+      .filter((f: any) => ["a_vencer", "aberto", "pendente"].includes(String(f.status)))
+      .reduce((acc: number, f: any) => acc + Number(f.valor || 0), 0);
 
-    const totalFaturarPendente = faturas
-      .filter((f: any) => f.status === "a_vencer" || f.status === "aberto" || f.status === "pendente")
-      .reduce((acc: number, f: any) => acc + (f.valor || 0), 0);
-
-    const totalCustos = custos.reduce((acc: number, c: any) => {
-      return acc + (c.valor_servicos || c.valor_liquido || c.valor || 0);
-    }, 0);
-
-    const custosExtras = custos.reduce((acc: number, c: any) => {
-      return acc + (c.valor_adicionais || 0) + (c.valor_combustivel || 0);
-    }, 0);
-
+    const investimentoTotal = ordens.reduce(
+      (acc: number, o: any) => acc + Number(o.valor_cliente || 0),
+      0,
+    );
     const totalEntregas = ordens.length;
-    const entregasConsolidadas = ordens.filter(
-      (o: any) => o.status === "entregue" || o.status === "finalizada" || o.status === "concluida"
+    const entregasConcluidas = ordens.filter((o: any) =>
+      ["finalizada", "finalizado", "entregue", "concluida", "concluído", "concluido"].includes(String(o.status)),
     ).length;
+    const ticketMedio = totalEntregas > 0 ? Math.round(investimentoTotal / totalEntregas) : 0;
+    const slaPct = totalEntregas > 0 ? Math.round((entregasConcluidas / totalEntregas) * 100) : 0;
 
-    const kmOtimizados = alocacoes.reduce((acc: number, a: any) => acc + (a.km_realizados || 0), 0);
-
-    const totalPeso = ordens.reduce((acc: number, o: any) => acc + (o.peso || 0), 0);
-    const totalVolumes = ordens.reduce((acc: number, o: any) => acc + (o.volumes || 0), 0);
+    const totalPeso = ordens.reduce((acc: number, o: any) => acc + Number(o.peso || 0), 0);
+    const totalVolumes = ordens.reduce((acc: number, o: any) => acc + Number(o.volumes || 0), 0);
     const ocupacaoMedia = totalEntregas > 0 && totalVolumes > 0
       ? Math.min(Math.round((totalPeso / (totalVolumes * 500)) * 100), 100)
       : 0;
 
-    const produtividade = totalEntregas > 0
-      ? Math.round((entregasConsolidadas / totalEntregas) * 100)
-      : 0;
-
-    const frotaPropriaEstimativa = totalFaturado > 0
-      ? totalFaturado * 1.30
-      : totalCustos * 1.30;
-
-    const economiaVsFrotaPropria = frotaPropriaEstimativa - (totalFaturado > 0 ? totalFaturado : totalCustos);
-
-    const reducaoCusto = frotaPropriaEstimativa > 0
-      ? Math.round((economiaVsFrotaPropria / frotaPropriaEstimativa) * 100 * 10) / 10
-      : 0;
-
-    const economiaCombustivel = Math.round(kmOtimizados * 0.45);
-
-    const economiaLiquida = (totalFaturado > 0 ? totalFaturado : totalFaturarPendente) - (totalCustos > 0 ? totalCustos : 0);
-
-    const metaEconomia = totalFaturado > 0
-      ? Math.round(totalFaturado * 0.25)
-      : totalFaturarPendente > 0
-        ? Math.round(totalFaturarPendente * 0.25)
-        : 15000;
-
-    const detalhamento = [
-      { label: "Custos operacionais (frete)", valor: Math.round(totalCustos), descricao: "Valor pago aos transportadores" },
-      { label: "Economia vs frota própria", valor: Math.round(economiaVsFrotaPropria), descricao: "Comparativo com operação própria" },
-      { label: "Otimização de rotas", valor: Math.round(kmOtimizados * 1.5), descricao: `${kmOtimizados} km otimizados` },
-      { label: "Economia combustível", valor: Math.round(economiaCombustivel), descricao: "Redução no consumo de diesel" },
-    ];
+    const regiaoMap: Record<string, { entregas: number; pesoKg: number }> = {};
+    for (const o of ordens as any[]) {
+      const regiao = o.cidade_destino || o.destino || "Sem região";
+      if (!regiaoMap[regiao]) regiaoMap[regiao] = { entregas: 0, pesoKg: 0 };
+      regiaoMap[regiao].entregas += 1;
+      regiaoMap[regiao].pesoKg += Number(o.peso || 0);
+    }
+    const volumePorRegiao: VolumeRegiaoCliente[] = Object.entries(regiaoMap)
+      .map(([regiao, dados]) => ({
+        regiao,
+        entregas: dados.entregas,
+        pesoKg: Math.round(dados.pesoKg),
+      }))
+      .sort((a, b) => b.entregas - a.entregas);
 
     return {
-      totalFaturado,
-      totalCustos: Math.round(totalCustos),
-      economiaLiquida: Math.round(economiaLiquida),
-      economiaVsFrotaPropria: Math.round(economiaVsFrotaPropria),
-      produtividade,
-      reducaoCusto,
-      kmOtimizados: Math.round(kmOtimizados),
-      ocupacaoMedia,
-      economiaCombustivel,
-      entregasConsolidadas,
+      investimentoTotal: Math.round(investimentoTotal),
+      ticketMedio,
+      slaPct,
+      entregasConcluidas,
       totalEntregas,
-      metaEconomia,
-      detalhamento,
+      ocupacaoMedia,
+      totalFaturado: Math.round(totalFaturado),
+      totalAVencer: Math.round(totalAVencer),
+      volumePorRegiao,
     };
   } catch (error) {
-    console.warn("[PortalClienteService] Exceção ao buscar economia:", error);
+    console.warn("[PortalClienteService] Exceção ao buscar indicadores:", error);
     return null;
   }
 }
@@ -1064,15 +1077,15 @@ export interface ExecutiveDashboardData {
   slaGeral: number;
   slaMeta: number;
   produtividade: number;
-  economiaOperacional: number;
+  investimentoLogistico: number;
   volumeTransportado: number;
   totalEntregas: number;
   entregasConcluidas: number;
   entregasAtrasadas: number;
   entregasHoje: number;
   emAndamento: number;
-  devolucoes: number;
-  devolucoesMeta: number;
+  entregasForaPrazo: number;
+  metaForaPrazo: number;
   urgencias: number;
   valorMedioEntrega: number;
   tendencia7dias: number;
@@ -1080,7 +1093,7 @@ export interface ExecutiveDashboardData {
   previsaoProxSemana: number;
   comparativoMensal: { mes: string; atual: number; anterior: number }[];
   performanceFiliais: { filial: string; entregas: number; concluidas: number; sla: number }[];
-  custoPorRegiao: { regiao: string; custo: number; entregas: number }[];
+  volumePorRegiao: VolumeRegiaoCliente[];
   distribuicaoStatus: { status: string; quantidade: number }[];
   tendenciaOperacional: "crescendo" | "estavel" | "declinando";
 }
@@ -1089,31 +1102,25 @@ export async function buscarExecutiveDashboard(clienteId?: string): Promise<Exec
   if (!clienteId) return null;
   try {
     const agora = new Date();
-    const fim = agora.toISOString();
     const inicio60dias = new Date(agora.getTime() - 60 * 86400000).toISOString();
     const inicio30dias = new Date(agora.getTime() - 30 * 86400000).toISOString();
     const inicio7dias = new Date(agora.getTime() - 7 * 86400000).toISOString();
 
-    const [osData, alocData, finData, ocorrData] = await Promise.all([
+    const [osData, alocData, ocorrData] = await Promise.all([
       supabase
         .from("ordens_servico")
-        .select("id, status, valor_cliente, peso, volumes, created_at, cliente_id, origem, cliente")
+        .select("id, status, valor_cliente, peso, volumes, created_at, data, data_programada, cliente_id, origem, cidade_destino, destino, cliente")
         .eq("cliente_id", clienteId)
         .gte("data", inicio60dias)
         .order("created_at", { ascending: false })
         .limit(500),
       supabase
         .from("alocacoes_escala")
-        .select("id, ordem_servico_id, km_realizados, valor_repasse, status, origem, destino, created_at")
+        .select("id, ordem_servico_id, km_realizados, status, origem, destino, created_at")
         .eq("cliente_id", clienteId)
         .gte("created_at", inicio60dias)
         .limit(500),
-      supabase
-        .from("financeiro_receber")
-        .select("valor, status, data_vencimento")
-        .eq("cliente_id", clienteId)
-        .gte("data_vencimento", inicio60dias)
-        .limit(200),
+
       supabase
         .from("portal_ocorrencias")
         .select("id, tipo, status")
@@ -1122,58 +1129,58 @@ export async function buscarExecutiveDashboard(clienteId?: string): Promise<Exec
         .limit(100),
     ]);
 
-    const ordens = osData.data || [];
-    const alocacoes = alocData.data || [];
-    const financeiro = finData.data || [];
-    const ocorrencias = ocorrData.data || [];
+    const ordens = (osData.data || []) as any[];
+    const alocacoes = (alocData.data || []) as any[];
+    const ocorrencias = (ocorrData.data || []) as any[];
+
+    const alocStatusPorOS = new Map<string, string>();
+    for (const a of alocacoes) {
+      if (a.ordem_servico_id) alocStatusPorOS.set(String(a.ordem_servico_id), String(a.status || ""));
+    }
+
+    const hoje = agora.toDateString();
+    const hojeZerado = new Date(agora.toDateString());
+
+    const statusNormalizado = (os: any) => mapStatusCliente(os.status, alocStatusPorOS.get(String(os.id)));
+    const estaForaPrazo = (os: any) => {
+      const st = statusNormalizado(os);
+      if (st === "entregue" || st === "cancelada") return false;
+      if (st === "atrasada") return true;
+      const referencia = os.data_programada || os.data;
+      if (!referencia) return false;
+      return new Date(referencia) < hojeZerado;
+    };
 
     const totalEntregas = ordens.length;
-    const entregasConcluidas = ordens.filter(
-      (o: any) => o.status === "entregue" || o.status === "finalizada" || o.status === "concluida"
-    ).length;
-    const entregasAtrasadas = ordens.filter((o: any) => o.status === "atrasada").length;
-    const emAndamento = ordens.filter(
-      (o: any) => o.status !== "entregue" && o.status !== "finalizada" && o.status !== "concluida" && o.status !== "cancelada"
-    ).length;
-
-    const entregasHoje = ordens.filter(
-      (o: any) => new Date(o.created_at).toDateString() === agora.toDateString()
-    ).length;
+    const entregasConcluidas = ordens.filter((o) => statusNormalizado(o) === "entregue").length;
+    const entregasForaPrazo = ordens.filter(estaForaPrazo).length;
+    const entregasAtrasadas = entregasForaPrazo;
+    const emAndamento = ordens.filter((o) => {
+      const st = statusNormalizado(o);
+      return st !== "entregue" && st !== "cancelada" && st !== "atrasada";
+    }).length;
+    const entregasHoje = ordens.filter((o) => new Date(o.created_at).toDateString() === hoje).length;
 
     const slaGeral = totalEntregas > 0
-      ? Math.round(((totalEntregas - entregasAtrasadas) / totalEntregas) * 100 * 10) / 10
+      ? Math.round(((totalEntregas - entregasForaPrazo) / totalEntregas) * 100 * 10) / 10
       : 0;
     const slaMeta = 95;
     const produtividade = totalEntregas > 0
       ? Math.round((entregasConcluidas / totalEntregas) * 100 * 10) / 10
       : 0;
+    const metaForaPrazo = 5;
 
-    const totalFaturado = financeiro
-      .filter((f: any) => f.status === "pago" || f.status === "recebido")
-      .reduce((acc: number, f: any) => acc + (f.valor || 0), 0);
-    const totalAVencer = financeiro
-      .filter((f: any) => f.status === "a_vencer" || f.status === "aberto")
-      .reduce((acc: number, f: any) => acc + (f.valor || 0), 0);
 
-    const custoTotal = alocacoes.reduce((acc: number, a: any) => acc + (a.valor_repasse || 0), 0);
-    const economiaOperacional = totalFaturado > 0 ? totalFaturado - custoTotal : totalAVencer;
+    const investimentoLogistico = ordens.reduce((acc: number, o: any) => acc + Number(o.valor_cliente || 0), 0);
+    const volumeTransportado = ordens.reduce((acc: number, o: any) => acc + Number(o.peso || 0), 0);
+    const valorMedioEntrega = totalEntregas > 0 ? Math.round(investimentoLogistico / totalEntregas) : 0;
 
-    const volumeTransportado = ordens.reduce((acc: number, o: any) => acc + (o.peso || 0), 0);
-    const valorMedioEntrega = totalEntregas > 0
-      ? Math.round((totalFaturado > 0 ? totalFaturado : totalAVencer) / totalEntregas)
-      : 0;
-
-    const devolucoes = totalEntregas > 0
-      ? Math.round((entregasAtrasadas / totalEntregas) * 100 * 10) / 10
-      : 0;
-    const devolucoesMeta = 5;
     const urgencias = ocorrencias.length;
 
-    // Monthly comparison
+    // Comparativo mensal
     const mesAtual = agora.getMonth();
     const anoAtual = agora.getFullYear();
     const ordensPorMes: Record<string, { atual: number; anterior: number }> = {};
-
     for (const os of ordens) {
       const d = new Date(os.created_at);
       const chave = d.toLocaleString("pt-BR", { month: "short" }).replace(".", "").toLowerCase();
@@ -1184,7 +1191,6 @@ export async function buscarExecutiveDashboard(clienteId?: string): Promise<Exec
         ordensPorMes[chave].anterior++;
       }
     }
-
     const meses = Object.keys(ordensPorMes).slice(-6);
     const comparativoMensal = meses.map((mes) => ({
       mes: mes.charAt(0).toUpperCase() + mes.slice(1),
@@ -1192,15 +1198,13 @@ export async function buscarExecutiveDashboard(clienteId?: string): Promise<Exec
       anterior: ordensPorMes[mes].anterior,
     }));
 
-    // Filial performance (group by origem)
+    // Performance por filial (origem da OS)
     const filialMap: Record<string, { entregas: number; concluidas: number }> = {};
     for (const os of ordens) {
-      const filial = (os as any).origem || "Sem origem";
+      const filial = os.origem || "Sem origem";
       if (!filialMap[filial]) filialMap[filial] = { entregas: 0, concluidas: 0 };
       filialMap[filial].entregas++;
-      if (os.status === "entregue" || os.status === "finalizada" || os.status === "concluida") {
-        filialMap[filial].concluidas++;
-      }
+      if (statusNormalizado(os) === "entregue") filialMap[filial].concluidas++;
     }
     const performanceFiliais = Object.entries(filialMap).map(([filial, dados]) => ({
       filial,
@@ -1209,60 +1213,55 @@ export async function buscarExecutiveDashboard(clienteId?: string): Promise<Exec
       sla: dados.entregas > 0 ? Math.round((dados.concluidas / dados.entregas) * 100) : 0,
     }));
 
-    // Cost by region
-    const regiaoMap: Record<string, { custo: number; entregas: number }> = {};
-    for (const a of alocacoes) {
-      const regiao = (a as any).destino || "Sem região";
-      if (!regiaoMap[regiao]) regiaoMap[regiao] = { custo: 0, entregas: 0 };
-      regiaoMap[regiao].custo += (a as any).valor_repasse || 0;
+    // Volume por região (cliente: peso e entregas)
+    const regiaoMap: Record<string, { entregas: number; pesoKg: number }> = {};
+    for (const os of ordens) {
+      const regiao = os.cidade_destino || os.destino || "Sem região";
+      if (!regiaoMap[regiao]) regiaoMap[regiao] = { entregas: 0, pesoKg: 0 };
       regiaoMap[regiao].entregas++;
+      regiaoMap[regiao].pesoKg += Number(os.peso || 0);
     }
-    const custoPorRegiao = Object.entries(regiaoMap).map(([regiao, dados]) => ({
-      regiao,
-      custo: Math.round(dados.custo),
-      entregas: dados.entregas,
-    }));
+    const volumePorRegiao: VolumeRegiaoCliente[] = Object.entries(regiaoMap)
+      .map(([regiao, dados]) => ({ regiao, entregas: dados.entregas, pesoKg: Math.round(dados.pesoKg) }))
+      .sort((a, b) => b.entregas - a.entregas);
 
-    // Status distribution
+    // Distribuição por status normalizado
     const statusMap: Record<string, number> = {};
     for (const os of ordens) {
-      const st = os.status || "indefinido";
+      const st = statusNormalizado(os);
       statusMap[st] = (statusMap[st] || 0) + 1;
     }
-    const distribuicaoStatus = Object.entries(statusMap).map(([status, quantidade]) => ({
-      status,
-      quantidade,
-    }));
+    const distribuicaoStatus = Object.entries(statusMap).map(([status, quantidade]) => ({ status, quantidade }));
 
-    const ordens30dias = ordens.filter((o: any) => new Date(o.created_at) >= new Date(inicio30dias)).length;
-    const ordens7dias = ordens.filter((o: any) => new Date(o.created_at) >= new Date(inicio7dias)).length;
+    const ordens30dias = ordens.filter((o) => new Date(o.created_at) >= new Date(inicio30dias)).length;
+    const ordens7dias = ordens.filter((o) => new Date(o.created_at) >= new Date(inicio7dias)).length;
     const ordens30diasAnterior = ordens.filter(
-      (o: any) => new Date(o.created_at) >= new Date(agora.getTime() - 60 * 86400000)
+      (o) => new Date(o.created_at) >= new Date(agora.getTime() - 60 * 86400000)
         && new Date(o.created_at) < new Date(inicio30dias)
     ).length;
 
     const tendencia30dias = ordens30diasAnterior > 0
       ? Math.round(((ordens30dias - ordens30diasAnterior) / ordens30diasAnterior) * 100 * 10) / 10
       : 0;
-
     const mediaDiaria7dias = ordens7dias / 7;
     const previsaoProxSemana = Math.round(mediaDiaria7dias * 7);
-
     const tendenciaOperacional = tendencia30dias > 5 ? "crescendo" : tendencia30dias < -5 ? "declinando" : "estavel";
+
+
 
     return {
       slaGeral,
       slaMeta,
       produtividade,
-      economiaOperacional: Math.round(economiaOperacional),
+      investimentoLogistico: Math.round(investimentoLogistico),
       volumeTransportado: Math.round(volumeTransportado),
       totalEntregas,
       entregasConcluidas,
       entregasAtrasadas,
       entregasHoje,
       emAndamento,
-      devolucoes,
-      devolucoesMeta,
+      entregasForaPrazo,
+      metaForaPrazo,
       urgencias,
       valorMedioEntrega,
       tendencia7dias: Math.round(((ordens7dias - ordens30diasAnterior / 4.28) / (ordens30diasAnterior / 4.28)) * 100) / 100 || 0,
@@ -1270,7 +1269,7 @@ export async function buscarExecutiveDashboard(clienteId?: string): Promise<Exec
       previsaoProxSemana,
       comparativoMensal,
       performanceFiliais,
-      custoPorRegiao,
+      volumePorRegiao,
       distribuicaoStatus,
       tendenciaOperacional,
     };
@@ -1438,7 +1437,12 @@ export async function gerarInsightsOperacionais(
   // ============================================================
   // INSIGHT 1 — Operações Atrasadas (CRÍTICA)
   // ============================================================
-  const atrasadas = (filteredOrdens as any[]).filter((o: any) => o.status === "atrasada");
+  const atrasadas = (filteredOrdens as any[]).filter((o: any) => {
+    const st = mapStatusCliente(o.status);
+    if (st === "atrasada") return true;
+    if (st === "entregue" || st === "cancelada") return false;
+    return Boolean(o.data) && new Date(o.data) < new Date(new Date().toDateString());
+  });
   if (atrasadas.length > 0) {
     const ids = atrasadas.slice(0, 5).map((o: any) => o.id);
     insights.push({
@@ -2151,7 +2155,7 @@ export async function buscarFiliaisCliente(
     const [finResponse, alocResponse, portalOcorrResponse, contratosResponse] = await Promise.all([
       supabase
         .from("financeiro_receber")
-        .select("id, os_id, valor, valor_pago, data_vencimento, status")
+        .select("id, os_id, valor, data_vencimento, status")
         .in("os_id", osIds)
         .limit(osIds.length),
       supabase
@@ -2301,7 +2305,7 @@ export async function buscarDetalheFilial(
     const [finResponse, ocorrResponse] = await Promise.all([
       supabase
         .from("financeiro_receber")
-        .select("id, os_id, valor, valor_pago, data_vencimento, status")
+        .select("id, os_id, valor, data_vencimento, status")
         .in("os_id", osIds)
         .limit(osIds.length),
       supabase
@@ -2313,7 +2317,9 @@ export async function buscarDetalheFilial(
     ]);
 
     const totalFaturado = (finResponse.data || []).reduce((acc: number, f: any) => acc + (Number(f.valor) || 0), 0);
-    const recebido = (finResponse.data || []).reduce((acc: number, f: any) => acc + (Number(f.valor_pago) || 0), 0);
+    const recebido = (finResponse.data || [])
+      .filter((f: any) => ["pago", "recebido"].includes(String(f.status)))
+      .reduce((acc: number, f: any) => acc + (Number(f.valor) || 0), 0);
     const pendente = (finResponse.data || []).filter((f: any) => f.status !== "pago" && f.status !== "recebido").length;
     const vencido = (finResponse.data || []).filter((f: any) =>
       (f.status !== "pago" && f.status !== "recebido") &&

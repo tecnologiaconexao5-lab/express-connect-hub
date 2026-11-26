@@ -246,9 +246,11 @@ export async function resolverAlerta(id: string) {
 // ============================================================
 // METRICAS / RELATORIOS
 // ============================================================
-export async function obterMetricasPatio(unidadeId?: string) {
+export async function obterMetricasPatio(unidadeId?: string, clienteId?: string) {
   let q = supabase.from("patio_checkins").select("*");
   if (unidadeId) q = q.eq("unidade_id", unidadeId);
+  // Portal do Cliente: KPIs restritos ao cliente logado (nunca globais).
+  if (clienteId) q = q.eq("cliente_id", clienteId);
   const { data } = await q;
 
   const checkins = (data || []) as PatioCheckin[];
@@ -337,5 +339,5 @@ export async function buscarStatusPatioCliente(clienteId: string): Promise<Patio
     .eq("cliente_id", clienteId)
     .order("created_at", { ascending: false })
     .limit(10);
-  return (data || []) as PatioCheckin[];
+  return (data || []) as unknown as PatioCheckin[];
 }

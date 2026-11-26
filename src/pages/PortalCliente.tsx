@@ -7,7 +7,7 @@ import {
   Clock3, Package2, Navigation, CheckCheck, MoreHorizontal, Eye, PhoneCall, MessageSquare, Play, Pause,
   Grid3X3, List, Calculator, Map as MapIcon, Navigation2, Star, ThumbsUp, ThumbsDown, Minus, Plus, Filter,
   QrCode, ExternalLink, RefreshCw, Moon, Sun, Building2, Home, Briefcase, Ruler, Scale, ArrowRight,
-  FilePlus, FileCheck, History, Award, TrendingDown, TrendingEqual, Zap, Copy, Trash2, Brain, Sparkles
+  FilePlus, FileCheck, History, Award, TrendingDown, Zap, Copy, Trash2, Brain, Sparkles
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,12 @@ import {
   criarOcorrenciaPortal,
   buscarOcorrenciasCliente,
   criarAvaliacaoPortal,
+  buscarNotificacoesPortal,
+  mapStatusCliente as normalizarStatusCliente,
+  labelStatusPortal,
+  type DashboardMetrics,
+  type ComprovanteResumo,
+  type ProtocoloResumo,
 } from "@/services/portalCliente/portalClienteService";
 import { buscarStatusPatioCliente } from "@/services/patioService";
 import { resolverMidiaPod } from "@/services/comprovantes/podMediaService";
@@ -86,12 +92,12 @@ import type { PatioCheckin } from "@/types/patio";
 
 import {
   criarPedidoPortal,
-  buscarPedidosPortal,
   validarPedido,
   confirmarPedidoPortal,
   gerarResumoInteligente,
   gerarSugestaoInteligente,
   type PedidoPortal,
+  type PedidoFormData,
   type ResumoInteligente,
   type ConfirmacaoPedidoResultado,
 
@@ -135,9 +141,15 @@ const mapStatusCliente = (statusOS?: string, alocacao?: any): { label: string; d
   const map: Record<string, { label: string; descricao: string }> = {
     pendente: { label: "Pedido recebido", descricao: "Seu pedido foi registrado e está aguardando análise." },
     rascunho: { label: "Pedido recebido", descricao: "Seu pedido foi registrado e está aguardando análise." },
+    em_analise: { label: "Pedido em análise", descricao: "Estamos conferindo disponibilidade, veículo ideal e janela de atendimento." },
+    programacao: { label: "Serviço programado", descricao: "Sua operação foi programada com sucesso." },
+    coleta: { label: "Em coleta", descricao: "Sua carga está sendo coletada." },
+    em_rota: { label: "Em distribuição", descricao: "Sua carga está a caminho do destino." },
     em_andamento: { label: "Em distribuição", descricao: "Sua operação está em andamento." },
+    entregue: { label: "Entrega concluída", descricao: "A entrega foi realizada com sucesso." },
     concluida: { label: "Entrega concluída", descricao: "Sua operação foi finalizada com sucesso." },
     finalizada: { label: "Entrega concluída", descricao: "Sua operação foi finalizada com sucesso." },
+    atrasada: { label: "Em atraso", descricao: "Sua entrega está fora da janela prevista. Nossa equipe está atuando." },
     cancelada: { label: "Solicitação cancelada", descricao: "Esta solicitação foi cancelada." },
   };
   
@@ -272,6 +284,8 @@ interface Entrega {
   assinatura_url?: string | null;
   horario_inicio_real?: string | null;
   horario_fim_real?: string | null;
+  distancia_km?: number | null;
+  distanciaKm?: number | null;
 }
 
 interface Endereco {
@@ -282,6 +296,8 @@ interface Endereco {
   cidade: string;
   uf: string;
   complemento?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface HistoricoItem {
@@ -293,7 +309,9 @@ interface HistoricoItem {
 interface PodItem {
   foto_url?: string;
   assinatura_url?: string;
+  canhoto_url?: string;
   receptor?: string;
+  recebedor_nome?: string;
   grau_parentesco?: string;
   created_at?: string;
   local?: string;
@@ -333,9 +351,10 @@ interface Notificacao {
   id: string;
   titulo: string;
   mensagem: string;
-  tipo: "entrega" | "risco" | "avaliacao" | "ocorrencia";
+  tipo: string;
   lida: boolean;
   created_at: string;
+  acao?: string;
 }
 
 interface RoteirizacaoRota {
@@ -503,8 +522,6 @@ export default function PortalCliente() {
   const [showNovoPedidoModal, setShowNovoPedidoModal] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [showRotaModal, setShowRotaModal] = useState(false);
-  const [showVeiculoModal, setShowVeiculoModal] = useState(false);
-  const [showFilialModal, setShowFilialModal] = useState(false);
   const [showFaturaModal, setShowFaturaModal] = useState(false);
   const [showComprovanteModal, setShowComprovanteModal] = useState(false);
   const [showAvaliacaoModal, setShowAvaliacaoModal] = useState(false);
@@ -520,8 +537,6 @@ export default function PortalCliente() {
   const [selectedPrestadorAvaliacao, setSelectedPrestadorAvaliacao] = useState<any>(null);
   const [prestadoresDisponiveis, setPrestadoresDisponiveis] = useState<any[]>([]);
   const [selectedRota, setSelectedRota] = useState<RoteirizacaoRota | null>(null);
-  const [selectedVeiculo, setSelectedVeiculo] = useState<any>(null);
-  const [selectedFilial, setSelectedFilial] = useState<any>(null);
   const [selectedFatura, setSelectedFatura] = useState<Fatura | null>(null);
   const [novaOcorrencia, setNovaOcorrencia] = useState({ tipo: "", descricao: "", os_id: "", prioridade: "media" });
   const [novaAvaliacao, setNovaAvaliacao] = useState({ nota: 0, comentario: "", os_id: "" });
@@ -529,6 +544,7 @@ export default function PortalCliente() {
   const [comprovantesData, setComprovantesData] = useState<ComprovanteResumo[]>([]);
   const [protocolosData, setProtocolosData] = useState<ProtocoloResumo[]>([]);
   const [comprovantesLoading, setComprovantesLoading] = useState(false);
+  const [comprovantesRefreshKey, setComprovantesRefreshKey] = useState(0);
   const [selectedComprovante, setSelectedComprovante] = useState<ComprovanteResumo | null>(null);
   const [selectedProtocolo, setSelectedProtocolo] = useState<ProtocoloResumo | null>(null);
   const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
@@ -1344,7 +1360,7 @@ export default function PortalCliente() {
       }
 
       const [{ data: entregasData }, { data: faturasData }, metrics] = await Promise.all([
-        supabase.from('ordens_servico').select('id, numero, status, cliente, cliente_id, origem, destino, data_servico, created_at, valor_cliente, peso, volumes, carga_descricao, prestador, placa_alocada, veiculo').eq('cliente_id', clienteId).order('created_at', { ascending: false }).limit(50),
+        supabase.from('ordens_servico').select('id, numero, status, cliente, cliente_id, origem, destino, enderecos, carga, distancia_km, data_servico, created_at, valor_cliente, peso, volumes, carga_descricao, prestador, placa_alocada, veiculo').eq('cliente_id', clienteId).order('created_at', { ascending: false }).limit(50),
         supabase.from('vw_portal_financeiro_cliente').select('*').eq('cliente_id', clienteId).order('data_vencimento', { ascending: false }).limit(20),
         buscarDashboardMetrics(clienteId, clienteInfo?.nome_fantasia || ""),
       ]);
@@ -1352,59 +1368,129 @@ export default function PortalCliente() {
       setDashboardMetrics(metrics);
       setInsights(gerarInsights(metrics));
 
-      let alocacoesMap = new Map<string, any>();
-      if (entregasData && entregasData.length > 0) {
-        const osIds = entregasData.map((o: any) => o.id).filter(Boolean);
-        if (osIds.length > 0) {
-          const { data: alocacoes } = await supabase
-            .from("alocacoes_escala")
-            .select("id, ordem_servico_id, status, aceite_prestador, data_aceite, finalizada, comprovante_url, assinatura_url, fotos_entrega, prestador_id, horario_inicio_real, horario_fim_real")
-            .in("ordem_servico_id", osIds);
-          if (alocacoes) {
-            // APP-E2E-11D — resolve comprovante/assinatura da alocação (bucket privado).
-            await Promise.all(alocacoes.map(async (a: any) => {
-              alocacoesMap.set(a.ordem_servico_id, {
-                ...a,
-                comprovante_url: await resolverMidiaPod(a.comprovante_url),
-                assinatura_url: await resolverMidiaPod(a.assinatura_url),
-              });
-            }));
-          }
+      const alocacoesMap = new Map<string, any>();
+      const osIds = (entregasData || []).map((o: any) => o.id).filter(Boolean);
+
+      if (osIds.length > 0) {
+        const { data: alocacoes } = await supabase
+          .from("alocacoes_escala")
+          .select("id, ordem_servico_id, status, aceite_prestador, data_aceite, finalizada, comprovante_url, assinatura_url, fotos_entrega, prestador_id, horario_inicio_real, horario_fim_real")
+          .in("ordem_servico_id", osIds);
+
+        const prestadorIds = Array.from(new Set((alocacoes || []).map((a: any) => a.prestador_id).filter(Boolean)));
+        const prestadoresMap = new Map<string, any>();
+        if (prestadorIds.length > 0) {
+          const { data: prestadores } = await supabase
+            .from("prestadores")
+            .select("id, nome_completo, telefone, whatsapp")
+            .in("id", prestadorIds);
+          (prestadores || []).forEach((p: any) => prestadoresMap.set(p.id, p));
         }
+
+        await Promise.all((alocacoes || []).map(async (a: any) => {
+          const prestador = prestadoresMap.get(a.prestador_id);
+          alocacoesMap.set(a.ordem_servico_id, {
+            ...a,
+            prestador_nome: prestador?.nome_completo || null,
+            prestador_telefone: prestador?.whatsapp || prestador?.telefone || null,
+            comprovante_url: await resolverMidiaPod(a.comprovante_url),
+            assinatura_url: await resolverMidiaPod(a.assinatura_url),
+          });
+        }));
+      }
+
+      const podsMap = new Map<string, any>();
+      if (osIds.length > 0) {
+        const { data: pods } = await supabase
+          .from("entregas_protocolo")
+          .select("ordem_servico_id, foto_entrega_url, foto_canhoto_url, assinatura_url, nome_recebedor, data_hora_entrega")
+          .in("ordem_servico_id", osIds);
+        await Promise.all((pods || []).map(async (p: any) => {
+          if (p.ordem_servico_id && !podsMap.has(p.ordem_servico_id)) {
+            podsMap.set(p.ordem_servico_id, {
+              ...p,
+              foto_entrega_url: await resolverMidiaPod(p.foto_entrega_url),
+              foto_canhoto_url: await resolverMidiaPod(p.foto_canhoto_url),
+              assinatura_url: await resolverMidiaPod(p.assinatura_url),
+            });
+          }
+        }));
       }
 
       if (entregasData) {
         const entregasTransformadas = entregasData.map((os: any) => {
           const aloc = alocacoesMap.get(os.id);
-          const statusInfo = mapStatusCliente(os.status, aloc);
+          const statusNormalizado = normalizarStatusCliente(os.status, aloc?.status);
+          const enderecos = Array.isArray(os.enderecos) ? os.enderecos : [];
+          const coleta = enderecos.find((e: any) => e?.tipo === "coleta") || enderecos[0];
+          const entregaEnd = [...enderecos].reverse().find((e: any) => e?.tipo === "entrega") || enderecos[enderecos.length - 1];
+          const pod = podsMap.get(os.id);
+          const dist = Number(os.distancia_km ?? os.carga?.distancia_km ?? 0);
           return {
             id: os.id,
             numero: os.numero || `OS-${os.id.slice(0, 8)}`,
-            status: os.status || 'pendente',
-            status_label: statusInfo.label,
-            origem: { cep: '', rua: '', numero: '', bairro: '', cidade: os.origem || 'A definir', uf: '' },
-            destino: { cep: '', rua: '', numero: '', bairro: '', cidade: os.destino || 'A definir', uf: '' },
-            previsao: new Date().toISOString(),
+            status: statusNormalizado,
+            status_label: labelStatusPortal(statusNormalizado),
+            origem: {
+              cep: coleta?.cep || "",
+              rua: coleta?.logradouro || coleta?.rua || os.origem || "A definir",
+              numero: coleta?.numero || "",
+              bairro: coleta?.bairro || "",
+              cidade: coleta?.cidade || os.origem || "A definir",
+              uf: coleta?.uf || "",
+              complemento: coleta?.complemento || "",
+              latitude: coleta?.latitude ?? null,
+              longitude: coleta?.longitude ?? null,
+            },
+            destino: {
+              cep: entregaEnd?.cep || "",
+              rua: entregaEnd?.logradouro || entregaEnd?.rua || os.destino || "A definir",
+              numero: entregaEnd?.numero || "",
+              bairro: entregaEnd?.bairro || "",
+              cidade: entregaEnd?.cidade || os.destino || "A definir",
+              uf: entregaEnd?.uf || "",
+              complemento: entregaEnd?.complemento || "",
+              latitude: entregaEnd?.latitude ?? null,
+              longitude: entregaEnd?.longitude ?? null,
+            },
+            previsao: os.data_servico || os.created_at,
             created_at: os.created_at,
             valor_frete: os.valor_cliente || 0,
             peso: os.peso || 0,
             volumes: os.volumes || 1,
-            mercadoria: os.carga_descricao || 'Mercadoria',
-            cliente_nome: clienteInfo?.nome_fantasia || clienteInfo?.razao_social || 'Cliente',
-            destinatario: undefined,
-            prestador: undefined,
+            mercadoria: os.carga_descricao || "Mercadoria",
+            cliente_nome: clienteInfo?.nome_fantasia || clienteInfo?.razao_social || "Cliente",
+            prestador: aloc?.prestador_nome
+              ? {
+                  nome: aloc.prestador_nome,
+                  telefone: aloc.prestador_telefone || undefined,
+                  veiculo: os.veiculo || undefined,
+                  placa: os.placa_alocada || undefined,
+                }
+              : undefined,
+            pod: pod
+              ? {
+                  foto_url: pod.foto_entrega_url || undefined,
+                  canhoto_url: pod.foto_canhoto_url || undefined,
+                  assinatura_url: pod.assinatura_url || undefined,
+                  receptor: pod.nome_recebedor || undefined,
+                  recebedor_nome: pod.nome_recebedor || undefined,
+                  created_at: pod.data_hora_entrega || undefined,
+                }
+              : undefined,
             historico: [],
-            sla: 100,
-            // Dados da alocação
+            sla: statusNormalizado === "atrasada" ? 0 : 100,
+            distancia_km: dist,
+            distanciaKm: dist,
             alocacao_id: aloc?.id || null,
             alocacao_status: aloc?.status || null,
             aceite_prestador: aloc?.aceite_prestador || false,
             data_aceite: aloc?.data_aceite || null,
             alocacao_finalizada: aloc?.finalizada || false,
-            comprovante_url: aloc?.comprovante_url || null,
-            assinatura_url: aloc?.assinatura_url || null,
+            comprovante_url: aloc?.comprovante_url || pod?.foto_entrega_url || null,
+            assinatura_url: aloc?.assinatura_url || pod?.assinatura_url || null,
             horario_inicio_real: aloc?.horario_inicio_real || null,
-            horario_fim_real: aloc?.horario_fim_real || null,
+            horario_fim_real: aloc?.horario_fim_real || pod?.data_hora_entrega || null,
           };
         });
         setEntregas(entregasTransformadas);
@@ -1418,7 +1504,7 @@ export default function PortalCliente() {
           os_vinculadas: [f.os_id?.slice(0, 8) || ''],
           vencimento: f.data_vencimento || f.vencimento,
           valor: f.valor || 0,
-          status: f.status === 'pago' || f.status === 'recebido' ? 'paga' : f.status === 'vencida' ? 'vencida' : 'a_vencer',
+          status: (f.status === 'pago' || f.status === 'recebido' ? 'paga' : f.status === 'vencida' ? 'vencida' : 'a_vencer') as Fatura["status"],
         }));
         setFaturas(faturasTransformadas);
       }
@@ -1431,27 +1517,56 @@ export default function PortalCliente() {
     }
   }, [user]);
 
+  const carregarNotificacoes = useCallback(async () => {
+    if (!clienteData?.id) {
+      setNotificacoes([]);
+      return;
+    }
+    try {
+      const lista = await buscarNotificacoesPortal(clienteData.id, 50);
+      setNotificacoes(
+        lista.map((n) => ({
+          id: n.id,
+          titulo: n.titulo,
+          mensagem: n.mensagem,
+          tipo: n.tipo,
+          lida: n.lida,
+          created_at: n.created_at,
+          acao: (n as any).acao || undefined,
+        })),
+      );
+    } catch (err) {
+      console.warn("[PortalCliente] Erro ao carregar notificacoes:", err);
+    }
+  }, [clienteData?.id]);
+
   const onEntregaUpdate = useCallback((update: any) => {
     setEntregas(prev => prev.map(e => {
       if (e.id !== update.id) return e;
-      const statusInfo = mapStatusCliente(update.status, { status: update.status, aceite_prestador: update.aceite_prestador, finalizada: update.finalizada });
-      return { ...e, status: update.status, status_label: statusInfo.label };
+      const status = normalizarStatusCliente(update.status, update.status);
+      return { ...e, status, status_label: labelStatusPortal(status), sla: status === "atrasada" ? 0 : 100 };
     }));
   }, []);
 
   const onNotificacao = useCallback((n: any) => {
-    toast({ title: n.titulo, description: "Nova atualização no seu pedido." });
+    toast({ title: n.titulo, description: "Nova atualizacao no seu pedido." });
     carregarDados();
-  }, [toast, carregarDados]);
+    void carregarNotificacoes();
+  }, [toast, carregarDados, carregarNotificacoes]);
 
   const onOcorrencia = useCallback(() => {
     carregarDados();
   }, [carregarDados]);
 
+  const onComprovanteUpdate = useCallback(() => {
+    setComprovantesRefreshKey((k) => k + 1);
+  }, []);
+
   usePortalRealtime({
     onEntregaUpdate,
     onNotificacao,
     onOcorrencia,
+    onComprovanteUpdate,
     enabled: true,
     clienteId: clienteData?.id,
   });
@@ -1461,24 +1576,44 @@ export default function PortalCliente() {
   }, [carregarDados, initialLoading]);
 
   useEffect(() => {
-    if (clienteData?.id) {
-      buscarStatusPatioCliente(clienteData.id).then(setPatioClientData).catch((err) => console.warn("[PortalCliente] Erro ao buscar status pátio:", err));
-      // Carregar progresso do onboarding
-      supabase.from("portal_preferencias_cliente").select("onboarding_etapa_atual, onboarding_concluido")
-        .eq("cliente_id", clienteData.id).maybeSingle().then(({ data }) => {
-          if (data && !data.onboarding_concluido && data.onboarding_etapa_atual != null) {
-            setOnboardingStep(data.onboarding_etapa_atual);
-          }
-        }).catch((err) => console.warn("[PortalCliente] Erro ao carregar onboarding:", err));
-    }
-  }, [clienteData?.id]);
+    if (!clienteData?.id) return;
+    const cid = clienteData.id;
+
+    void buscarStatusPatioCliente(cid)
+      .then(setPatioClientData)
+      .catch((err) => console.warn("[PortalCliente] Erro ao buscar status patio:", err));
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from("portal_preferencias_cliente")
+          .select("onboarding_etapa_atual, onboarding_concluido")
+          .eq("cliente_id", cid)
+          .maybeSingle();
+        if (data && !data.onboarding_concluido && data.onboarding_etapa_atual != null) {
+          setOnboardingStep(data.onboarding_etapa_atual);
+        }
+      } catch (err) {
+        console.warn("[PortalCliente] Erro ao carregar onboarding:", err);
+      }
+    })();
+
+    void carregarNotificacoes();
+  }, [clienteData?.id, carregarNotificacoes]);
 
   const carregarComprovantes = useCallback(async () => {
+    // SEGURANÇA: nunca consultar sem saber o cliente_id (evita leitura cruzada).
+    if (!clienteData?.id) {
+      setComprovantesData([]);
+      setProtocolosData([]);
+      setComprovantesLoading(false);
+      return;
+    }
     setComprovantesLoading(true);
     try {
       const [comp, prot] = await Promise.all([
-        buscarComprovantesPortal(clienteData?.id, 100),
-        buscarProtocolosPortal(clienteData?.id, 100),
+        buscarComprovantesPortal(clienteData.id, 100),
+        buscarProtocolosPortal(clienteData.id, 100),
       ]);
       setComprovantesData(comp);
       setProtocolosData(prot);
@@ -1487,13 +1622,19 @@ export default function PortalCliente() {
     } finally {
       setComprovantesLoading(false);
     }
-  }, []);
+  }, [clienteData?.id]);
 
   useEffect(() => {
     if (activeTab === "comprovantes") {
       carregarComprovantes();
     }
   }, [activeTab, carregarComprovantes]);
+
+  useEffect(() => {
+    if (comprovantesRefreshKey > 0) {
+      carregarComprovantes();
+    }
+  }, [comprovantesRefreshKey, carregarComprovantes]);
 
   useEffect(() => {
     const atrasadas = entregas.filter(e => e.status === "atrasada").length;
@@ -1524,16 +1665,6 @@ export default function PortalCliente() {
     } else {
       toast({ title: "Pedido não encontrado", description: "O pedido solicitado não está disponível no momento." });
     }
-  };
-
-  const handleVerVeiculo = (id: string) => {
-    setSelectedVeiculo({ id, nome: "Motorista Teste", telefone: "(11) 99999-9999", veiculo: "Van", placa: "ABC-1234", capacidade: 1000, regiao: "Zona Sul", entregas: 5, status: "ativo" });
-    setShowVeiculoModal(true);
-  };
-
-  const handleVerFilial = (id: string) => {
-    setSelectedFilial({ id, nome: "Filial Teste", endereco: "Av. Paulista, 1000", responsavel: "João Silva", entregas: 150, sla: 98, custo: 15000, occurencias: 2 });
-    setShowFilialModal(true);
   };
 
   const handleVerOcorrencia = (id: string) => {
@@ -2067,7 +2198,13 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-[#64748B] hover:text-[#F97316] relative rounded-full w-10 h-10 transition-all">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-[#64748B] hover:text-[#F97316] relative rounded-full w-10 h-10 transition-all"
+                    onClick={() => setActiveTab("notificacoes")}
+                    title="Notificações"
+                  >
                     <Bell className="w-5 h-5" />
                     {(notificacoes.filter(n => !n.lida).length) > 0 && (
                       <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
@@ -2530,7 +2667,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             {activeTab === "patio" && (
               <div className="space-y-6">
                 <PortalPatio
-                  clienteId={clienteData?.id || user?.id || ""}
+                  clienteId={clienteData?.id || ""}
                   clienteNome={clienteData?.nome_fantasia || clienteData?.razao_social}
                 />
               </div>
@@ -2782,7 +2919,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                                   <p className="text-sm font-bold text-[#111827]">{selectedEntrega.prestador.nome}</p>
                                   {selectedEntrega.prestador.veiculo && (
                                     <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-tighter">
-                                      {selectedEntrega.prestador.veiculo} • {selectedEntrega.prestador.placa || selectedEntrega.prestador.plate || "N/A"}
+                                      {selectedEntrega.prestador.veiculo} • {selectedEntrega.prestador.placa || "N/A"}
                                     </p>
                                   )}
                                 </div>
@@ -2907,6 +3044,8 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             {/* ===== NOTIFICAÇÕES ===== */}
             {activeTab === "notificacoes" && (
               <PortalNotificacoes
+                clienteId={clienteData?.id}
+                onRead={carregarNotificacoes}
                 onAction={(notificacaoId, acao) => {
                   handleNotificacaoAction(notificacaoId, acao);
                 }}
