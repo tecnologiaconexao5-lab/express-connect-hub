@@ -1,4 +1,4 @@
-import { Route, MapPin, Truck, Package, Clock, Navigation, AlertTriangle, CheckCircle, Fuel, Users, TrendingUp, Filter, RefreshCw, Eye, ChevronRight } from "lucide-react";
+import { Route, MapPin, Truck, Package, Clock, Navigation, AlertTriangle, CheckCircle, Fuel, Users, TrendingUp, Filter, RefreshCw, Eye, ChevronRight, FileSpreadsheet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { buscarRotas, buscarSaudeOperacional, buscarInsights, buscarParadasDaRota } from "@/services/portalCliente/roteirizacaoService";
 import type { Rota, SaudeOperacional, InsightIA, Parada } from "@/services/portalCliente/roteirizacaoService";
 import { PortalTrackingMap } from "./PortalTrackingMap";
+import { PortalImportadorLote } from "./PortalImportadorLote";
 import type { TrackingPosition } from "@/services/rastreamento/trackingService";
 import { MAPBOX_ACCESS_TOKEN } from "@/lib/mapboxToken";
 
@@ -45,6 +46,7 @@ export function PortalRoteirizacao({ clienteId, clienteNome }: PortalRoteirizaca
   const [loadingParadas, setLoadingParadas] = useState(false);
   const [selectedParada, setSelectedParada] = useState<Parada | null>(null);
   const [showParadaDetail, setShowParadaDetail] = useState(false);
+  const [modoImportacao, setModoImportacao] = useState(false);
   const selectedRotaIdRef = useRef<string | null>(null);
 
   const carregarDados = useCallback(async () => {
@@ -153,6 +155,15 @@ export function PortalRoteirizacao({ clienteId, clienteNome }: PortalRoteirizaca
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={modoImportacao ? "default" : "outline"}
+            size="sm"
+            className={`h-9 rounded-lg ${modoImportacao ? "bg-[#F97316] hover:bg-[#EA580C] text-white" : "border-[#E5E7EB]"}`}
+            onClick={() => setModoImportacao((v) => !v)}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+            {modoImportacao ? "Ocultar importador" : "Importar planilha"}
+          </Button>
           <Select value={periodo} onValueChange={setPeriodo}>
             <SelectTrigger className="w-[140px] h-9 bg-white border-[#E5E7EB] text-xs">
               <Filter className="w-3 h-3 mr-1" />
@@ -170,6 +181,10 @@ export function PortalRoteirizacao({ clienteId, clienteNome }: PortalRoteirizaca
           </Button>
         </div>
       </div>
+
+      {modoImportacao && (
+        <PortalImportadorLote clienteId={clienteId} clienteNome={clienteNome} />
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <Card className="bg-white border-[#E5E7EB] rounded-2xl shadow-sm">

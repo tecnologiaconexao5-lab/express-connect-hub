@@ -94,6 +94,10 @@ import {
   criarPedidoPortal,
   validarPedido,
   confirmarPedidoPortal,
+  buscarPedidosPortal,
+  reprocessarConversaoPedido,
+  cancelarPedidoPortal,
+  statusCores as pedidoStatusCores,
   gerarResumoInteligente,
   gerarSugestaoInteligente,
   type PedidoPortal,
@@ -102,6 +106,9 @@ import {
   type ConfirmacaoPedidoResultado,
 
 } from "@/services/portalCliente/pedidosService";
+import { PortalMovimentacaoCarga } from "@/components/portal-cliente/PortalMovimentacaoCarga";
+import { gerarFichaPODPDF } from "@/lib/pdf/podFicha";
+import { gerarPDFProfissional } from "@/utils/pdfGenerator";
 
 const fmtFin = (v: number | null | undefined) => {
   if (v === null || v === undefined || isNaN(v)) return "R$ 0,00";
@@ -429,6 +436,21 @@ const statusCores: Record<string, string> = {
   "servico_concluido": "bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50",
 };
 
+const pedidoStatusLabels: Record<string, string> = {
+  rascunho: "Rascunho",
+  enviado: "Enviado",
+  em_analise: "Em análise",
+  aprovado: "Aprovado",
+  convertido: "OS gerada",
+  programado: "Programado",
+  coleta: "Em coleta",
+  em_rota: "Em rota",
+  entregue: "Entregue",
+  rejeitado: "Rejeitado",
+  erro_conversao: "Erro na conversão",
+  cancelado: "Cancelado",
+};
+
 const statusIcones: Record<string, typeof Truck> = {
   "programacao": Clock3,
   "coleta": Package2,
@@ -545,6 +567,10 @@ export default function PortalCliente() {
   const [protocolosData, setProtocolosData] = useState<ProtocoloResumo[]>([]);
   const [comprovantesLoading, setComprovantesLoading] = useState(false);
   const [comprovantesRefreshKey, setComprovantesRefreshKey] = useState(0);
+  const [pedidosPortal, setPedidosPortal] = useState<PedidoPortal[]>([]);
+  const [pedidosLoading, setPedidosLoading] = useState(false);
+  const [pedidoAcaoId, setPedidoAcaoId] = useState<string | null>(null);
+  const [pedidosSubTab, setPedidosSubTab] = useState<"entregas" | "solicitacoes">("entregas");
   const [selectedComprovante, setSelectedComprovante] = useState<ComprovanteResumo | null>(null);
   const [selectedProtocolo, setSelectedProtocolo] = useState<ProtocoloResumo | null>(null);
   const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
@@ -1311,6 +1337,23 @@ export default function PortalCliente() {
     }
   };
 
+  const carregarPedidosPortal = useCallback(async () => {
+    if (!clienteData?.id) {
+      setPedidosPortal([]);
+      return;
+    }
+    setPedidosLoading(true);
+    try {
+      const lista = await buscarPedidosPortal(clienteData.id, undefined, 100);
+      setPedidosPortal(lista);
+    } catch (e) {
+      console.warn("[PortalCliente] Erro ao carregar solicitações:", e);
+      setPedidosPortal([]);
+    } finally {
+      setPedidosLoading(false);
+    }
+  }, [clienteData?.id]);
+
   const carregarDados = useCallback(async (isInitial = false) => {
     if (isInitial) setInitialLoading(true);
     else setRefreshing(true);
@@ -1509,13 +1552,14 @@ export default function PortalCliente() {
         setFaturas(faturasTransformadas);
       }
 
+      void carregarPedidosPortal();
     } catch (error) {
       console.warn('Erro ao carregar dados do Supabase:', error);
     } finally {
       setInitialLoading(false);
       setRefreshing(false);
     }
-  }, [user]);
+  }, [user, carregarPedidosPortal]);
 
   const carregarNotificacoes = useCallback(async () => {
     if (!clienteData?.id) {
@@ -1711,59 +1755,102 @@ export default function PortalCliente() {
     }
   };
 
-  const handleBaixarComprovante = (id: string) => {
+  const handleBaixarComprovante = async (id: string) => {
     const comp = comprovantesData.find(c => c.id === id);
-    if (comp?.url) {
-      window.open(comp.url, '_blank');
-    } else if (comp) {
-      const fotoEntrega = (comp as any)?.foto_entrega_url ? "Sim" : "Não";
-      const fotoCanhoto = (comp as any)?.foto_canhoto_url ? "Sim" : "Não";
-      const assinatura = (comp as any)?.assinatura_url ? "Sim" : "Não";
-      const obs = (comp as any)?.observacao || "—";
-      const dados = `COMPROVANTE DE ENTREGA
-=========================
-OS: ${comp.titulo}
-Tipo: ${comp.tipo}
-Destinatário: ${comp.nome_recebedor || "Não informado"}
-Documento: ${comp.documento_recebedor || "Não informado"}
-Data: ${comp.data_entrega ? new Date(comp.data_entrega).toLocaleString("pt-BR") : "Não informado"}
-Foto de entrega: ${fotoEntrega}
-Canhoto: ${fotoCanhoto}
-Assinatura: ${assinatura}
-Observação: ${obs}
-
-Gerado em: ${new Date().toLocaleString("pt-BR")}`;
-      const blob = new Blob([dados], { type: 'text/plain;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${comp.titulo || 'comprovante'}.txt`;
-      link.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "Download iniciado", description: "Arquivo gerado com os dados do comprovante" });
-    } else {
+    if (!comp) {
       toast({ title: "Comprovante não encontrado", description: "O comprovante solicitado não está mais disponível." });
+      return;
+    }
+    try {
+      await gerarFichaPODPDF(comp);
+      toast({ title: "Ficha POD gerada", description: "Comprovante exportado em PDF." });
+    } catch (e) {
+      console.warn("[PortalCliente] Falha ao gerar ficha POD:", e);
+      toast({ title: "Não foi possível gerar o PDF", description: "Tente novamente em instantes.", variant: "destructive" });
     }
   };
 
-  const handleBaixarTodosComprovantes = () => {
+  const handleBaixarTodosComprovantes = async () => {
     if (comprovantesData.length === 0) {
       toast({ title: "Nenhum comprovante disponível", description: "Assim que uma entrega for concluída, o comprovante aparecerá aqui." });
       return;
     }
-    const dados = comprovantesData.map(c => 
-      `OS: ${c.titulo} | Tipo: ${c.tipo} | Recebedor: ${c.nome_recebedor || "N/A"} | Data: ${c.data_entrega ? new Date(c.data_entrega).toLocaleDateString("pt-BR") : "N/A"}`
-    ).join('\n');
-    
-    const header = "COMPROVANTES DE ENTREGA\n" + "=".repeat(50) + "\n\n";
-    const blob = new Blob([header + dados], { type: 'text/plain;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `comprovantes_${new Date().toISOString().slice(0, 10)}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast({ title: "Download iniciado", description: `${comprovantesData.length} comprovantes exportados` });
+    if (comprovantesData.length === 1) {
+      await handleBaixarComprovante(comprovantesData[0].id);
+      return;
+    }
+    try {
+      await gerarPDFProfissional({
+        titulo: "Comprovantes de Entrega (POD)",
+        subtitulo: `${comprovantesData.length} registro(s)`,
+        colunas: ["OS/Pedido", "Recebedor", "Documento", "Data/Hora", "Fotos"],
+        linhas: comprovantesData.map((c) => [
+          c.numero_os || c.titulo || "N/I",
+          c.nome_recebedor || "N/I",
+          c.documento_recebedor || "N/I",
+          c.data_entrega ? new Date(c.data_entrega).toLocaleString("pt-BR") : "N/I",
+          [c.foto_entrega_url, c.foto_canhoto_url, c.assinatura_url].filter(Boolean).length.toString(),
+        ]),
+        orientacao: "landscape",
+      });
+      toast({ title: "PDF gerado", description: `${comprovantesData.length} comprovantes exportados` });
+    } catch (e) {
+      console.warn("[PortalCliente] Falha ao gerar PDF de comprovantes:", e);
+      toast({ title: "Não foi possível gerar o PDF", variant: "destructive" });
+    }
+  };
+
+  const handleReprocessarPedido = async (pedido: PedidoPortal) => {
+    if (!clienteData?.id || pedidoAcaoId) return;
+    setPedidoAcaoId(pedido.id);
+    try {
+      const res = await reprocessarConversaoPedido(
+        pedido.id,
+        clienteData.id,
+        clienteData.nome_fantasia || clienteData.razao_social || "Cliente",
+        clienteData.tenant_id || undefined,
+      );
+      if (res.sucesso) {
+        toast({
+          title: "Conversão reprocessada",
+          description: res.os_numero ? `OS ${res.os_numero} gerada com sucesso.` : "Pedido convertido com sucesso.",
+        });
+        await Promise.all([carregarPedidosPortal(), carregarDados()]);
+      } else {
+        toast({
+          title: "Não foi possível converter",
+          description: res.erro || "O pedido permanece pendente para nova tentativa.",
+          variant: "destructive",
+        });
+        await carregarPedidosPortal();
+      }
+    } finally {
+      setPedidoAcaoId(null);
+    }
+  };
+
+  const handleCancelarPedido = async (pedido: PedidoPortal) => {
+    if (!clienteData?.id || pedidoAcaoId) return;
+    const podeCancelar = ["rascunho", "enviado", "em_analise", "aprovado", "erro_conversao", "rejeitado"].includes(
+      String(pedido.status),
+    );
+    if (!podeCancelar) {
+      toast({ title: "Pedido já está em execução", description: "Este pedido não pode mais ser cancelado pelo portal." });
+      return;
+    }
+    if (!window.confirm(`Cancelar a solicitação ${pedido.numero_pedido}? Esta ação não pode ser desfeita.`)) return;
+    setPedidoAcaoId(pedido.id);
+    try {
+      const ok = await cancelarPedidoPortal(pedido.id, clienteData.id);
+      if (ok) {
+        toast({ title: "Solicitação cancelada", description: `Pedido ${pedido.numero_pedido} cancelado.` });
+        await carregarPedidosPortal();
+      } else {
+        toast({ title: "Não foi possível cancelar", variant: "destructive" });
+      }
+    } finally {
+      setPedidoAcaoId(null);
+    }
   };
 
   const handleVerProtocolo = (id: string) => {
@@ -2676,6 +2763,32 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             {/* ===== PEDIDOS ===== */}
             {activeTab === "pedidos" && (
               <div className="space-y-6">
+
+                <PortalMovimentacaoCarga clienteId={clienteData?.id} />
+
+                <div className="inline-flex rounded-xl bg-[#F8FAFC] p-1 border border-[#E5E7EB]">
+                  <button
+                    type="button"
+                    onClick={() => setPedidosSubTab("entregas")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${pedidosSubTab === "entregas" ? "bg-white text-[#F97316] shadow-sm" : "text-[#64748B]"}`}
+                  >
+                    Entregas em Execução
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPedidosSubTab("solicitacoes")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${pedidosSubTab === "solicitacoes" ? "bg-white text-[#F97316] shadow-sm" : "text-[#64748B]"}`}
+                  >
+                    Solicitações Enviadas
+                    {pedidosPortal.length > 0 && (
+                      <span className="bg-[#F97316] text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                        {pedidosPortal.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {pedidosSubTab === "entregas" && (<>
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-bold text-[#111827]">Pedidos</h2>
                   <div className="flex gap-3">
@@ -2802,7 +2915,100 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                     description="Tente ajustar os filtros ou verificar novamente mais tarde."
                   />
                 )}
-              </div>
+              </>)}
+
+                  {pedidosSubTab === "solicitacoes" && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-[#0F172A]">Solicitações Enviadas</h3>
+                          <p className="text-xs text-[#64748B]">Pedidos criados pelo portal, status e vínculo com a OS.</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl border-[#E5E7EB] text-[#475569] bg-white"
+                          onClick={carregarPedidosPortal}
+                          disabled={pedidosLoading}
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${pedidosLoading ? "animate-spin" : ""}`} />
+                          Atualizar
+                        </Button>
+                      </div>
+
+                      {pedidosLoading ? (
+                        <div className="py-8 text-center text-xs text-[#64748B]">Carregando solicitações...</div>
+                      ) : pedidosPortal.length === 0 ? (
+                        <PortalEmptyState
+                          type="sem-dados"
+                          title="Nenhuma solicitação enviada"
+                          description="Seus pedidos criados no portal aparecerão aqui com o status e a OS vinculada."
+                        />
+                      ) : (
+                        <div className="space-y-3">
+                          {pedidosPortal.map((pedido) => {
+                            const podeReprocessar = !pedido.os_vinculada_id && ["rascunho", "enviado", "em_analise", "aprovado", "erro_conversao", "rejeitado"].includes(String(pedido.status));
+                            const podeCancelar = ["rascunho", "enviado", "em_analise", "aprovado", "erro_conversao", "rejeitado"].includes(String(pedido.status));
+                            const emAcao = pedidoAcaoId === pedido.id;
+                            return (
+                              <Card key={pedido.id} className="border-[#E5E7EB] shadow-sm rounded-xl">
+                                <CardContent className="p-4">
+                                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-extrabold text-[#0F172A]">
+                                          {pedido.numero_pedido || pedido.id.slice(0, 8)}
+                                        </p>
+                                        <Badge className={`text-[10px] border-0 ${pedidoStatusCores[pedido.status] || "bg-slate-100 text-slate-600"}`}>
+                                          {pedidoStatusLabels[pedido.status] || pedido.status}
+                                        </Badge>
+                                        {pedido.os_numero && (
+                                          <Badge variant="outline" className="text-[10px]">OS {pedido.os_numero}</Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-[#64748B] mt-1">
+                                        {pedido.coleta_cidade || "—"}{pedido.coleta_uf ? `/${pedido.coleta_uf}` : ""} → {pedido.entrega_cidade || "—"}{pedido.entrega_uf ? `/${pedido.entrega_uf}` : ""}
+                                      </p>
+                                      <p className="text-[11px] text-[#94A3B8] mt-1">
+                                        {fmtData(pedido.created_at)} • {pedido.volumes || 0} volume(s){pedido.peso ? ` • ${pedido.peso} kg` : ""}
+                                      </p>
+                                      {pedido.status === "erro_conversao" && pedido.erro_processamento && (
+                                        <p className="text-[11px] text-red-600 mt-1">{pedido.erro_processamento}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {podeReprocessar && (
+                                        <Button
+                                          size="sm"
+                                          className="bg-[#F97316] hover:bg-[#EA580C] text-white text-xs"
+                                          onClick={() => handleReprocessarPedido(pedido)}
+                                          disabled={emAcao}
+                                        >
+                                          <RefreshCw className={`w-3 h-3 mr-1 ${emAcao ? "animate-spin" : ""}`} />
+                                          Reprocessar Conversão
+                                        </Button>
+                                      )}
+                                      {podeCancelar && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-xs border-red-200 text-red-600"
+                                          onClick={() => handleCancelarPedido(pedido)}
+                                          disabled={emAcao}
+                                        >
+                                          Cancelar
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}</div>
             )}
 
             {/* ===== RASTREAMENTO ===== */}

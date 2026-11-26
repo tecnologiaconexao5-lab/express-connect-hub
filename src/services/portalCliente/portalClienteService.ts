@@ -136,6 +136,7 @@ export interface ComprovanteResumo {
   tipo: string;
   titulo: string;
   url: string | null;
+  numero_os?: string | null;
   nome_recebedor: string | null;
   documento_recebedor: string | null;
   data_entrega: string | null;
@@ -655,11 +656,12 @@ export async function buscarPODsPorCliente(clienteId?: string, limit: number = 2
 
     const { data: osData } = await supabase
       .from("ordens_servico")
-      .select("id")
+      .select("id, numero")
       .eq("cliente_id", clienteId)
       .limit(200);
 
     const osIds = (osData || []).map((o: any) => o.id).filter(Boolean);
+    const numeroPorOs = new Map((osData || []).map((o: any) => [o.id, o.numero as string]));
     // Sem OS do cliente → não há POD legítimo para retornar.
     if (osIds.length === 0) return [];
 
@@ -678,7 +680,8 @@ export async function buscarPODsPorCliente(clienteId?: string, limit: number = 2
     const mapped = (data || []).map((ep: any) => ({
       id: ep.id,
       tipo: "entrega",
-      titulo: `OS ${ep.alocacao_id?.slice(0, 8) || ""}`,
+      titulo: numeroPorOs.get(ep.ordem_servico_id) ? `OS ${numeroPorOs.get(ep.ordem_servico_id)}` : `OS ${ep.alocacao_id?.slice(0, 8) || ""}`,
+      numero_os: numeroPorOs.get(ep.ordem_servico_id) || null,
       url: ep.foto_entrega_url || ep.foto_canhoto_url || null,
       nome_recebedor: ep.nome_recebedor || null,
       documento_recebedor: ep.documento_recebedor || null,
@@ -2392,6 +2395,162 @@ export async function buscarDetalheFilial(
     };
   } catch (e) {
     console.warn("[PortalCliente] buscarDetalheFilial erro:", e);
+    return null;
+  }
+}
+// =====================================================
+// ONDA 2 — Movimentação de carga & logística reversa
+// =====================================================
+export interface MovimentacaoEvento {
+  id: string;
+  tipo: "devolucao" | "recusa" | "retorno";
+  titulo: string;
+  descricao: string;
+  data: string;
+  os_numero?: string;
+  volumes?: number;
+}
+
+export interface MovimentacaoCargaResumo {
+  totalPedidos: number;
+  volumesExpedidos: number;
+  entregues: number;
+  volumesEntregues: number;
+  emTransito: number;
+  volumesEmTransito: number;
+  emDevolucao: number;
+  volumesEmDevolucao: number;
+  volumesDevolvidos: number;
+  eventos: MovimentacaoEvento[];
+}
+
+const TIPOS_REVERSA = new Set(["devolucao", "coleta_reversa", "troca", "retorno_cd"]);
+const STATUS_ENTREGUE = new Set(["finalizada", "finalizado", "entregue", "concluida", "concluido"]);
+const STATUS_TRANSITO = new Set(["coleta", "coletando", "em_rota", "em_andamento", "saiu_para_rota", "em_transito", "aceita"]);
+
+export async function buscarMovimentacaoCargaCliente(
+  clienteId?: string,
+  periodo: string = "30dias",
+): Promise<MovimentacaoCargaResumo | null> {
+  if (!clienteId) return null;
+  const { inicio, fim } = getPeriodoFilter(periodo);
+
+  try {
+    const [osRes, alocRes, ocRes] = await Promise.all([
+      supabase
+        .from("ordens_servico")
+        .select("id, numero, status, volumes, created_at, tipo_reversa, reversa_qtd_volumes")
+        .eq("cliente_id", clienteId)
+        .gte("created_at", inicio)
+        .lte("created_at", fim)
+        .limit(500),
+      supabase
+        .from("alocacoes_escala")
+        .select("id, ordem_servico_id, status, tipo_reversa, reversa_status, reversa_qtd_volumes, updated_at")
+        .eq("cliente_id", clienteId)
+        .gte("created_at", inicio)
+        .lte("created_at", fim)
+        .limit(500),
+      supabase
+        .from("portal_ocorrencias")
+        .select("id, os_id, tipo, descricao, status, created_at")
+        .eq("cliente_id", clienteId)
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
+
+    const ordens = osRes.data || [];
+    const alocacoes = alocRes.data || [];
+    const ocorrencias = ocRes.data || [];
+
+    const alocPorOs = new Map<string, any>();
+    alocacoes.forEach((a: any) => {
+      if (a.ordem_servico_id) alocPorOs.set(String(a.ordem_servico_id), a);
+    });
+    const numeroPorOs = new Map<string, string>();
+    ordens.forEach((o: any) => numeroPorOs.set(String(o.id), o.numero || ""));
+
+    let volumesExpedidos = 0;
+    let entregues = 0;
+    let volumesEntregues = 0;
+    let emTransito = 0;
+    let volumesEmTransito = 0;
+    let emDevolucao = 0;
+    let volumesEmDevolucao = 0;
+    let volumesDevolvidos = 0;
+
+    const eventos: MovimentacaoEvento[] = [];
+
+    for (const os of ordens) {
+      const vols = Number(os.volumes || 0);
+      const st = String(os.status || "").toLowerCase();
+      const aloc = alocPorOs.get(String(os.id));
+      const alocSt = String(aloc?.status || "").toLowerCase();
+      const reversaTipo = String(os.tipo_reversa || aloc?.tipo_reversa || "").toLowerCase();
+      const reversaStatus = String(aloc?.reversa_status || "").toLowerCase();
+      const volsReversa = Number(os.reversa_qtd_volumes || aloc?.reversa_qtd_volumes || 0);
+
+      volumesExpedidos += vols;
+
+      if (STATUS_ENTREGUE.has(st)) {
+        entregues += 1;
+        volumesEntregues += vols;
+      } else if (STATUS_TRANSITO.has(st) || STATUS_TRANSITO.has(alocSt)) {
+        emTransito += 1;
+        volumesEmTransito += vols;
+      }
+
+      const ehReversa = TIPOS_REVERSA.has(reversaTipo) || volsReversa > 0;
+      if (ehReversa) {
+        const concluida = ["concluida", "concluido", "finalizada", "entregue", "recebida"].includes(reversaStatus);
+        const qtd = volsReversa || vols;
+        if (concluida) {
+          volumesDevolvidos += qtd;
+        } else {
+          emDevolucao += 1;
+          volumesEmDevolucao += qtd;
+        }
+        eventos.push({
+          id: `os-${os.id}`,
+          tipo: "devolucao",
+          titulo: concluida ? "Retorno à base concluído" : "Em devolução / retorno à base",
+          descricao: `OS ${os.numero || os.id.slice(0, 8)} • ${qtd} volume(s) em logística reversa.`,
+          data: os.created_at,
+          os_numero: os.numero || undefined,
+          volumes: qtd,
+        });
+      }
+    }
+
+    for (const oc of ocorrencias) {
+      const texto = `${oc.tipo || ""} ${oc.descricao || ""}`.toLowerCase();
+      if (!/(recus|devolu|retorn|reversa)/.test(texto)) continue;
+      eventos.push({
+        id: `oc-${oc.id}`,
+        tipo: "recusa",
+        titulo: "Mercadoria recusada / devolução registrada",
+        descricao: oc.descricao || oc.tipo || "Ocorrência de devolução",
+        data: oc.created_at,
+        os_numero: oc.os_id ? numeroPorOs.get(String(oc.os_id)) : undefined,
+      });
+    }
+
+    eventos.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+
+    return {
+      totalPedidos: ordens.length,
+      volumesExpedidos,
+      entregues,
+      volumesEntregues,
+      emTransito,
+      volumesEmTransito,
+      emDevolucao,
+      volumesEmDevolucao,
+      volumesDevolvidos,
+      eventos: eventos.slice(0, 30),
+    };
+  } catch (e) {
+    console.warn("[PortalCliente] buscarMovimentacaoCargaCliente erro:", e);
     return null;
   }
 }

@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { PortalEmptyState, PortalDrawerPOD, PortalComparacaoEntregas } from "@/components/portal-cliente";
 import { gerarPDFProfissional } from "@/utils/pdfGenerator";
+import { gerarFichaPODPDF } from "@/lib/pdf/podFicha";
 import type { ComprovanteResumo } from "@/services/portalCliente/portalClienteService";
 
 interface ComprovanteCardProps {
@@ -215,27 +216,14 @@ export default function PortalComprovantesPremium({ comprovantes, loading, onRef
     }
   }, [filtered]);
 
-  const handleDownloadIndividual = useCallback((comp: ComprovanteResumo) => {
-    const fotos = [comp.foto_entrega_url, comp.foto_canhoto_url, comp.assinatura_url].filter(Boolean) as string[];
-    if (fotos.length > 0) {
-      fotos.forEach(url => window.open(url, "_blank"));
-      toast({ title: "Download iniciado", description: `${fotos.length} arquivo(s) aberto(s)` });
-      return;
+  const handleDownloadIndividual = useCallback(async (comp: ComprovanteResumo) => {
+    try {
+      await gerarFichaPODPDF(comp);
+      toast({ title: "Ficha POD gerada", description: "Comprovante exportado em PDF." });
+    } catch (e) {
+      console.warn("[PortalComprovantes] Falha ao gerar ficha POD:", e);
+      toast({ title: "Não foi possível gerar o PDF", variant: "destructive" });
     }
-    gerarPDFProfissional({
-      titulo: `Comprovante ${comp.titulo || "OS"}`,
-      subtitulo: `Recebedor: ${comp.nome_recebedor || "N/I"} | ${fmtData(comp.data_entrega)}`,
-      colunas: ["Campo", "Valor"],
-      linhas: [
-        ["OS", comp.titulo || "N/I"],
-        ["Tipo", comp.tipo],
-        ["Recebedor", comp.nome_recebedor || "Não informado"],
-        ["Documento", comp.documento_recebedor || "Não informado"],
-        ["Data", fmtDataHora(comp.data_entrega)],
-        ["Observação", comp.observacao || "—"],
-      ],
-    });
-    toast({ title: "PDF gerado", description: "Comprovante exportado em PDF" });
   }, [toast]);
 
   const filteredSelected = useMemo(() => filtered.filter(c => selecionados.has(c.id)), [filtered, selecionados]);

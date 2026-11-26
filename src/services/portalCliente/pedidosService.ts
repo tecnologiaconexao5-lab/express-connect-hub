@@ -9,7 +9,7 @@ export interface PedidoPortal {
   id: string;
   cliente_id?: string;
   numero_pedido: string;
-  status: "rascunho" | "enviado" | "em_analise" | "programado" | "coleta" | "em_rota" | "entregue" | "cancelado";
+  status: "rascunho" | "enviado" | "em_analise" | "aprovado" | "convertido" | "programado" | "coleta" | "em_rota" | "entregue" | "rejeitado" | "erro_conversao" | "cancelado";
   
   // Solicitante
   solicitante_nome?: string;
@@ -68,6 +68,10 @@ export interface PedidoPortal {
   // Automação
   payload_n8n?: Record<string, any>;
   os_vinculada_id?: string;
+  /** Número da OS vinculada (preenchido por buscarPedidosPortal). */
+  os_numero?: string;
+  erro_processamento?: string | null;
+  codigo_erro?: string | null;
   metadata?: Record<string, any>;
   
   created_at: string;
@@ -151,6 +155,52 @@ export interface ConfirmacaoPedidoResultado {
   previsao_entrega?: string;
   veiculo_sugerido?: string;
   erro?: string;
+}
+
+export interface ParadaLotePortal {
+  tipo: "coleta" | "entrega";
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  contato?: string;
+  telefone?: string;
+  email?: string;
+  janela_inicio?: string;
+  janela_fim?: string;
+  instrucoes?: string;
+  volumes?: number;
+  peso_kg?: number;
+  cubagem_m3?: number;
+  comprimento_cm?: number;
+  largura_cm?: number;
+  altura_cm?: number;
+}
+
+export interface LoteRoteirizadoInput {
+  clienteId: string;
+  clienteNome: string;
+  tenantId?: string;
+  coleta: {
+    cep?: string;
+    rua?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cidade?: string;
+    uf?: string;
+  };
+  paradas: ParadaLotePortal[];
+  totais: { volumes: number; pesoKg: number; cubagemM3: number };
+  distanciaKm: number;
+  tempoMin: number;
+  veiculoSugerido: string;
+  precoEstimado: number;
+  macroRegioes: string[];
+  frota: { tipo: string; quantidade: number }[];
 }
 
 // =====================================================
@@ -407,6 +457,161 @@ export async function confirmarPedidoPortal(
 // =====================================================
 // SUGESTÃO DE VEÍCULO
 // =====================================================
+/**
+ * Reprocessa um pedido que ficou sem OS (erro/rascunho/rejeitado).
+ * Reenvia o status para "enviado" e delega ao fluxo transacional existente.
+ * Não expõe custo/margem — o retorno contém apenas dados do pedido/OS/preço cliente.
+ */
+export async function reprocessarConversaoPedido(
+  pedidoId: string,
+  clienteId: string,
+  clienteNome: string,
+  tenantId?: string,
+): Promise<ConfirmacaoPedidoResultado> {
+  try {
+    const { data: pedido, error } = await supabase
+      .from("portal_pedidos")
+      .select("id, status, os_vinculada_id")
+      .eq("id", pedidoId)
+      .eq("cliente_id", clienteId)
+      .maybeSingle();
+
+    if (error || !pedido) {
+      return { sucesso: false, erro: "Pedido não encontrado" };
+    }
+
+    if (pedido.os_vinculada_id) {
+      const { data: os } = await supabase
+        .from("ordens_servico")
+        .select("id, numero")
+        .eq("id", pedido.os_vinculada_id)
+        .maybeSingle();
+      return {
+        sucesso: true,
+        pedido_id: pedidoId,
+        os_id: pedido.os_vinculada_id,
+        os_numero: os?.numero,
+        erro: undefined,
+      };
+    }
+
+    if (["rascunho", "erro_conversao", "rejeitado"].includes(String(pedido.status))) {
+      await supabase
+        .from("portal_pedidos")
+        .update({
+          status: "enviado",
+          erro_processamento: null,
+          codigo_erro: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pedidoId)
+        .eq("cliente_id", clienteId);
+    }
+
+    return await confirmarPedidoPortal(pedidoId, clienteId, clienteNome, tenantId);
+  } catch (err) {
+    return {
+      sucesso: false,
+      erro: err instanceof Error ? err.message : "Falha ao reprocessar pedido",
+    };
+  }
+}
+
+/**
+ * Envia um lote importado (planilha roteirizada) como UM pedido multi-paradas
+ * e aciona a conversão para OS. O preço informado é SEMPRE o valor do cliente.
+ */
+export async function enviarLoteRoteirizadoPortal(
+  input: LoteRoteirizadoInput,
+): Promise<ConfirmacaoPedidoResultado> {
+  const ultima = input.paradas[input.paradas.length - 1];
+  if (!ultima) {
+    return { sucesso: false, erro: "Nenhuma parada válida para envio" };
+  }
+
+  const paradas = input.paradas.map((p, idx) => ({
+    sequencia: idx,
+    tipo: p.tipo,
+    cep: p.cep || "",
+    logradouro: p.logradouro || "",
+    numero: p.numero || "",
+    complemento: p.complemento || "",
+    bairro: p.bairro || "",
+    cidade: p.cidade || "",
+    uf: p.uf || "",
+    contato: p.contato || "",
+    telefone: p.telefone || "",
+    email: p.email || "",
+    janela_inicio: p.janela_inicio || "",
+    janela_fim: p.janela_fim || "",
+    instrucoes: p.instrucoes || "",
+    volumes: p.volumes ?? 1,
+    peso_kg: p.peso_kg ?? 0,
+    cubagem_m3: p.cubagem_m3 ?? 0,
+    comprimento_cm: p.comprimento_cm ?? 0,
+    largura_cm: p.largura_cm ?? 0,
+    altura_cm: p.altura_cm ?? 0,
+  }));
+
+  const dados: PedidoFormData = {
+    solicitante_nome: input.clienteNome,
+    prioridade: "normal",
+    coleta_cep: input.coleta.cep,
+    coleta_rua: input.coleta.rua,
+    coleta_numero: input.coleta.numero,
+    coleta_complemento: input.coleta.complemento,
+    coleta_bairro: input.coleta.bairro,
+    coleta_cidade: input.coleta.cidade,
+    coleta_uf: input.coleta.uf,
+    coleta_data: new Date().toISOString().slice(0, 10),
+    entrega_destinatario: ultima.contato || "",
+    entrega_telefone: ultima.telefone || "",
+    entrega_email: ultima.email || "",
+    entrega_cep: ultima.cep,
+    entrega_rua: ultima.logradouro,
+    entrega_numero: ultima.numero,
+    entrega_complemento: ultima.complemento,
+    entrega_bairro: ultima.bairro,
+    entrega_cidade: ultima.cidade,
+    entrega_uf: ultima.uf,
+    descricao: `Lote roteirizado (${input.paradas.length} parada(s))`,
+    volumes: input.totais.volumes,
+    peso: input.totais.pesoKg,
+    tipo_carga: "seca",
+    observacoes: "Lote roteirizado pelo Portal do Cliente",
+    metadata: {
+      origem_roteirizacao: "portal_importador",
+      importado_em: new Date().toISOString(),
+      paradas,
+      totais: {
+        volumes: input.totais.volumes,
+        peso_kg: input.totais.pesoKg,
+        cubagem_m3: input.totais.cubagemM3,
+      },
+      distancia_km: input.distanciaKm,
+      tempo_min: input.tempoMin,
+      veiculo_sugerido: input.veiculoSugerido,
+      preco_estimado: input.precoEstimado,
+      macro_regioes: input.macroRegioes,
+      frota: input.frota,
+    },
+  };
+
+  const pedido = await criarPedidoPortal(dados, input.clienteId);
+  if (!pedido) {
+    return { sucesso: false, erro: "Não foi possível registrar o lote no portal" };
+  }
+
+  const confirmacao = await confirmarPedidoPortal(
+    pedido.id,
+    input.clienteId,
+    input.clienteNome,
+    input.tenantId,
+  );
+
+  return { ...confirmacao, pedido_id: pedido.id };
+}
+
 export function sugerirVeiculo(peso: number, tipoCarga?: string): string {
   if (!peso || peso <= 0) return "Consulte";
   
@@ -657,7 +862,20 @@ export async function buscarPedidosPortal(
       console.error('[PedidosService] Erro ao carregar pedidos do Supabase:', error.message);
       return [];
     }
-    return data || [];
+    const pedidos = (data || []) as PedidoPortal[];
+    const osIds = [...new Set(pedidos.map(p => p.os_vinculada_id).filter(Boolean))] as string[];
+    if (osIds.length > 0) {
+      const { data: ordens } = await supabase
+        .from("ordens_servico")
+        .select("id, numero")
+        .in("id", osIds);
+      const numeroPorId = new Map((ordens || []).map(o => [o.id, o.numero as string]));
+      return pedidos.map(p => ({
+        ...p,
+        os_numero: p.os_vinculada_id ? numeroPorId.get(p.os_vinculada_id) || undefined : undefined,
+      }));
+    }
+    return pedidos;
   } catch (error) {
     console.error('[PedidosService] Erro ao buscar pedidos:', error);
     return [];
