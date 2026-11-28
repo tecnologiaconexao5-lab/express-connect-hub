@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ClienteRegrasOperacaoTab from "@/components/cadastros/ClienteRegrasOperacaoTab";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -421,13 +422,14 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
       {/* Abas */}
       <Tabs defaultValue="gerais" className="w-full">
-        <TabsList className="grid grid-cols-2 md:grid-cols-6 bg-muted/60 mb-6 h-auto p-1">
+        <TabsList className="grid grid-cols-2 md:grid-cols-7 bg-muted/60 mb-6 h-auto p-1">
           <TabsTrigger value="gerais" className="py-2.5">Dados Gerais</TabsTrigger>
           <TabsTrigger value="enderecos" className="py-2.5">Endereços</TabsTrigger>
           <TabsTrigger value="estrutura" className="py-2.5">Estrutura</TabsTrigger>
           <TabsTrigger value="comercial" className="py-2.5">Comercial</TabsTrigger>
           <TabsTrigger value="fiscal" className="py-2.5">Fiscal</TabsTrigger>
           <TabsTrigger value="contratos" className="py-2.5">Contratos</TabsTrigger>
+          <TabsTrigger value="regras_operacao" className="py-2.5">Procedimentos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gerais" className="space-y-6">
@@ -902,6 +904,10 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="regras_operacao">
+          <ClienteRegrasOperacaoTab clienteId={clienteId} />
         </TabsContent>
 
         <TabsContent value="contratos">

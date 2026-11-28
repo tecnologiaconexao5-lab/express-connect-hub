@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { sincronizarComEscala, gerarNumeroOS } from "@/services/ordemServicoService";
 import { useTenant } from "@/contexts/TenantContext";
 import { diagnosticarOS, type DiagnosticoSincronizacao, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
+import VolumesPanel from "@/components/operacao/VolumesPanel";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
 import { OrdemServico, OSEndereco, OSHistorico, OSCarga, STATUS_CORES, OSStatus, obterStatusGlobalOS, type PortadorExterno } from "./osTypes";
 import { STATUS_GLOBAL_ORDER, STATUS_GLOBAL_INFO, obterClasseDotGlobal, obterClasseBadgeGlobal, obterInfoGlobal, type StatusGlobal } from "./statusGlobal";
@@ -3905,6 +3906,15 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   </div>
                 </CardContent>
               </Card>
+
+              <VolumesPanel
+                ordemServicoId={data.id}
+                numeroOS={data.numero}
+                quantidadeSugerida={Number(data.carga.volumes) || 0}
+                pesoTotalKg={Number(data.carga.peso) || 0}
+                cubagemTotalM3={Number(data.carga.cubagem) || resultadoCubagem?.cubagemTotal || 0}
+                readOnly={readOnly}
+              />
 
               <Card className="border-none shadow-md rounded-2xl overflow-hidden">
                 <CardHeader className="bg-slate-50/50 border-b pb-4">

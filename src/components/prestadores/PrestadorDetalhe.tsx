@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { listarOcorrenciasAtivasPrestador } from "@/services/operacao/segurancaAppService";
 import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, ShieldCheck, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge, KeyRound, Mail, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PrestadorHomologacaoTab from "@/components/cadastros/PrestadorHomologacaoTab";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -284,6 +286,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   // === INDICADORES REAIS (do banco) ===
   const [qtdEntregasReais, setQtdEntregasReais] = useState<number | null>(null);
   const [ocorrenciasReais, setOcorrenciasReais] = useState<any[]>([]);
+  const [sosAtivos, setSosAtivos] = useState<any[]>([]);
   const [documentosMetadata, setDocumentosMetadata] = useState<DocumentoMetadata[]>([]);
   const [docIAAtual, setDocIAAtual] = useState<{ tipo: string; nome?: string | null } | null>(null);
   const [resultadoIA, setResultadoIA] = useState<RelatorioIA | null>(null);
@@ -626,6 +629,18 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     };
 
     carregarIndicadores();
+  }, [p.id]);
+
+  useEffect(() => {
+    let ativo = true;
+    if (!p.id) {
+      setSosAtivos([]);
+      return;
+    }
+    listarOcorrenciasAtivasPrestador(p.id).then((dados) => {
+      if (ativo) setSosAtivos(dados);
+    });
+    return () => { ativo = false; };
   }, [p.id]);
 
   // === DIRTY TRACKING ===
@@ -1542,6 +1557,19 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       </div>
 
       {/* Resumo Operacional - Motor de Verificação (Etapa 7: perfil operacional automático) */}
+      {p.id && sosAtivos.length > 0 && (
+        <div className="rounded-xl border-2 border-red-300 bg-red-50 p-3 flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-bold text-red-800">Bloqueado para Novas Oportunidades (Aguardando Liberação da Torre)</p>
+            <p className="text-xs text-red-700 mt-0.5">Repasse da OS Retido até Conferência de Carga (Retorno à Base ou Transbordo)</p>
+            <p className="text-[11px] text-red-600 mt-1">{sosAtivos.length} ocorrência(s) de segurança ativa(s) para este prestador parceiro.</p>
+          </div>
+        </div>
+      )}
+
       <ConexaoTalentAIProfile
         veiculo={veiculoResumoTalent}
         regiao={
@@ -1656,6 +1684,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <TabsTrigger value="dados">Dados Gerais</TabsTrigger>
               <TabsTrigger value="documentacao">Documentação</TabsTrigger>
               <TabsTrigger value="veiculos">Veículos</TabsTrigger>
+              <TabsTrigger value="homologacao">Homologação</TabsTrigger>
               <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
               <TabsTrigger value="qualidade">Qualidade</TabsTrigger>
               <TabsTrigger value="torre">Torre</TabsTrigger>
@@ -1962,6 +1991,10 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           </TabsContent>
 
           {/* ABA 3 - VEÍCULOS */}
+          <TabsContent value="homologacao" className="space-y-4 mt-4">
+            <PrestadorHomologacaoTab prestadorId={p.id} />
+          </TabsContent>
+
           <TabsContent value="veiculos" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{p.veiculos?.length || 0} veículo(s) vinculada(s)</span>

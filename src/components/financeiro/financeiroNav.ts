@@ -34,6 +34,7 @@ export const GRUPOS_NAVEGACAO: FinanceiroNavGrupo[] = [
     itens: [
       { valor: "pagar", label: "Contas a Pagar" },
       { valor: "pagamento-prestadores", label: "Pag. Prestadores" },
+      { valor: "reembolsos-parceiro", label: "Despesas do Parceiro" },
     ],
   },
   {

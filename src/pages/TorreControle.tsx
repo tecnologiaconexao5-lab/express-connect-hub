@@ -36,6 +36,7 @@ import type { TipoEventoTimeline, TimelineEvent } from "@/components/torre-contr
 import { TIMELINE_LABELS, TIMELINE_ICONS, TIMELINE_COLORS, SEVERIDADE_BADGE } from "@/components/torre-controle/timelineVisuals";
 import { ExecutiveKpis, KpiItem } from "@/components/torre-controle/ExecutiveKpis";
 import { CentralAlertas, ResumoAlertas } from "@/components/torre-controle/CentralAlertas";
+import AlertaSOSPanel from "@/components/torre-controle/AlertaSOSPanel";
 import { usePermissaoFinanceira } from "@/hooks/usePermissaoFinanceira";
 
 /**
@@ -966,6 +967,8 @@ const TorreControle = () => {
 
       {/* DASHBOARD EXECUTIVO — 12 KPIs reais */}
       <ExecutiveKpis items={executiveKpis} />
+
+      <AlertaSOSPanel />
 
       {/* CENTRO — MAPA PROTAGONISTA + CENTRAL DE ALERTAS + TIMELINE */}
       <div className="flex flex-col xl:flex-row gap-4 xl:h-[720px]">

@@ -37,6 +37,7 @@ import FaturaLista from "@/components/financeiro/FaturaLista";
 import RelatorioFaturamentoCliente from "@/components/financeiro/relatorios/RelatorioFaturamentoCliente";
 import ConfigFinanceira from "@/components/financeiro/ConfigFinanceira";
 import RegrasFinanceirasClienteTab from "@/components/financeiro/RegrasFinanceirasClienteTab";
+import ReembolsosPrestadorAppPanel from "@/components/financeiro/ReembolsosPrestadorAppPanel";
 import { GRUPOS_NAVEGACAO, grupoPorTab, funcaoPadraoDoGrupo, type FinanceiroNavGrupo } from "@/components/financeiro/financeiroNav";
 import { cn } from "@/lib/utils";
 
@@ -228,6 +229,10 @@ export default function Financeiro() {
         {/* --- PAGAMENTO DE PRESTADORES --- */}
         <TabsContent value="pagamento-prestadores" className="pt-4">
            <PagamentoPrestadores />
+        </TabsContent>
+
+        <TabsContent value="reembolsos-parceiro" className="pt-4">
+           <ReembolsosPrestadorAppPanel />
         </TabsContent>
 
         {/* --- CONTAS & CAIXAS (NOVO) --- */}

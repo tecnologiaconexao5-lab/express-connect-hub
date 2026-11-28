@@ -8,6 +8,7 @@ import EscalaLista from "@/components/operacao/EscalaLista";
 import PodLista from "@/components/operacao/PodLista";
 import RoteirizadorWeb from "@/components/operacao/RoteirizadorWeb";
 import SolicitacoesClienteLista from "@/components/operacao/SolicitacoesClienteLista";
+import ProtocolosDivergenciaLista from "@/components/operacao/ProtocolosDivergenciaLista";
 
 const Operacao = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -21,6 +22,7 @@ const Operacao = () => {
   // componente. Antes, o TabsContent da aba OS era forçado a permanecer montado
   // e a lista de Ordens de Serviço aparecia em todas as abas selecionadas.
   const renderizarConteudo = () => {
+    if (currentTab === "devolucoes") return <ProtocolosDivergenciaLista />;
     switch (currentTab) {
       case "solicitacoes":
         return <SolicitacoesClienteLista />;
